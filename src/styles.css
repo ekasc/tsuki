@@ -29,8 +29,8 @@
 
   --color-ring: var(--active);
 
-  --color-destructive: oklch(53% 0.22 27);
-  --color-destructive-foreground: oklch(98% 0.01 264);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
 
   --radius-sm: var(--radius);
   --radius-md: var(--radius);
@@ -40,13 +40,107 @@
 
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
+:root {
+  --bg: #efe6d3;
+  --bg-soft: #f6efdd;
+  --surface: #fff9ea;
+  --surface-soft: #f0e4cc;
+  --text: #17120d;
+  --text-soft: #615442;
+  --border: #241d16;
+  --border-strong: #0f0b08;
+  --active: #1d140d;
+  --active-contrast: #fff7e7;
+  --accent: #ac1d12;
+  --accent-soft: #f2d0ca;
+  --destructive: #b3261e;
+  --destructive-foreground: #fff7f5;
+  --shadow: rgba(36, 24, 12, 0.44);
+  --radius: 2px;
+}
+
+:root[data-theme='dark'] {
+  --bg: #141218;
+  --bg-soft: #191620;
+  --surface: #201c27;
+  --surface-soft: #2a2433;
+  --text: #e8e3d8;
+  --text-soft: #b8b2a7;
+  --border: #5a5268;
+  --border-strong: #766d86;
+  --active: #dbd3c4;
+  --active-contrast: #1c1823;
+  --accent: #c86b5d;
+  --accent-soft: #3a2828;
+  --destructive: #d98478;
+  --destructive-foreground: #21181c;
+  --shadow: rgba(0, 0, 0, 0.42);
+}
+
+:root[data-theme='paper'] {
+  --bg: #f1eee6;
+  --bg-soft: #f8f5ee;
+  --surface: #fffdf8;
+  --surface-soft: #ece8df;
+  --text: #1d1d1b;
+  --text-soft: #65615a;
+  --border: #26231f;
+  --border-strong: #11100f;
+  --active: #181715;
+  --active-contrast: #fffdf8;
+  --accent: #9d1d14;
+  --accent-soft: #f0d8d3;
+  --destructive: #a32a22;
+  --destructive-foreground: #fff9f8;
+  --shadow: rgba(29, 29, 27, 0.36);
+}
+
 @layer base {
   * {
+    box-sizing: border-box;
     @apply border-border;
   }
 
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
   body {
+    margin: 0;
     @apply bg-background text-foreground antialiased;
+    font-family:
+      'Yu Gothic UI', 'Hiragino Kaku Gothic ProN', 'Segoe UI', sans-serif;
+    background:
+      radial-gradient(
+          circle at 1px 1px,
+          color-mix(in oklab, var(--text), transparent 95%) 1px,
+          transparent 1px
+        )
+        0 0 / 11px 11px,
+      linear-gradient(
+        180deg,
+        var(--bg-soft) 0%,
+        var(--bg) 52%,
+        color-mix(in oklab, var(--bg), #000 4%) 100%
+      );
+  }
+
+  [data-theme='dark'] body {
+    background:
+      radial-gradient(
+          circle at 1px 1px,
+          color-mix(in oklab, var(--text), transparent 98.5%) 1px,
+          transparent 1px
+        )
+        0 0 / 12px 12px,
+      linear-gradient(
+        180deg,
+        color-mix(in oklab, var(--bg-soft), #000 8%) 0%,
+        var(--bg) 54%,
+        color-mix(in oklab, var(--bg), #000 10%) 100%
+      );
   }
 
   h1,
@@ -55,8 +149,8 @@
   h4,
   h5,
   h6 {
-    font-family: 'IBM Plex Sans', 'Avenir Next', 'Segoe UI', sans-serif;
-    letter-spacing: -0.015em;
+    font-family: 'Yu Mincho', 'Hiragino Mincho ProN', 'Times New Roman', serif;
+    letter-spacing: -0.01em;
   }
 
   a {
@@ -73,116 +167,265 @@
 }
 
 @layer components {
-  .ui-panel {
-    @apply border border-border bg-surface shadow-[0_16px_32px_-28px_var(--shadow)];
+  .app-canvas {
+    position: relative;
+    isolation: isolate;
   }
 
-  .ui-panel-soft {
-    @apply border border-border bg-surface-soft;
+  .app-canvas::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    pointer-events: none;
+    background: linear-gradient(
+      90deg,
+      color-mix(in oklab, var(--accent), transparent 94%) 0%,
+      transparent 14%,
+      transparent 86%,
+      color-mix(in oklab, var(--accent), transparent 94%) 100%
+    );
   }
 
-  .ui-link-card {
-    @apply border border-border bg-surface transition-colors duration-150 ease-out hover:border-border-strong hover:bg-surface-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35;
+  .app-canvas::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      -12deg,
+      transparent 0,
+      transparent 27px,
+      color-mix(in oklab, var(--text), transparent 97%) 27px,
+      color-mix(in oklab, var(--text), transparent 97%) 28px
+    );
   }
 
-  .ui-kicker {
+  .exp-toolbar,
+  .exp-hero,
+  .exp-surface,
+  .exp-surface-soft {
+    position: relative;
+    overflow: hidden;
+    border: 2px solid var(--border);
+    border-radius: 2px;
+    background: color-mix(in oklab, var(--surface) 92%, var(--bg) 8%);
+    box-shadow:
+      3px 3px 0 color-mix(in oklab, var(--shadow), transparent 18%),
+      inset 0 1px 0 color-mix(in oklab, var(--surface), transparent 24%);
+  }
+
+  .exp-toolbar::before,
+  .exp-hero::before,
+  .exp-surface::before,
+  .exp-surface-soft::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 3px;
+    background: color-mix(in oklab, var(--accent), transparent 18%);
+    opacity: 0.65;
+    pointer-events: none;
+  }
+
+  .exp-toolbar {
+    @apply px-3 py-2;
+  }
+
+  .exp-hero {
+    @apply p-6 md:p-8;
+  }
+
+  .exp-surface,
+  .exp-surface-soft {
+    @apply p-4 md:p-5;
+  }
+
+  .exp-surface-soft {
+    background: color-mix(in oklab, var(--surface-soft) 80%, var(--bg) 20%);
+  }
+
+  .exp-kicker {
     @apply text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground;
   }
 
-  .ui-pill {
-    @apply inline-flex items-center border border-border bg-surface-soft px-3 py-1 text-xs text-muted-foreground;
+  .manga-title {
+    font-family: 'Yu Mincho', 'Hiragino Mincho ProN', 'Times New Roman', serif;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
   }
 
-  .ui-check {
-    @apply inline-flex size-5 shrink-0 items-center justify-center border text-xs font-semibold;
+  .manga-subtitle {
+    font-family:
+      'Yu Gothic UI', 'Hiragino Kaku Gothic ProN', 'Segoe UI', sans-serif;
+    letter-spacing: 0.01em;
   }
-}
 
-:root {
-  --bg: #eef2f6;
-  --bg-soft: #f8fafc;
-  --surface: #ffffff;
-  --surface-soft: #f5f7fb;
-  --text: #111827;
-  --text-soft: #5f6e86;
-  --border: #d6deea;
-  --border-strong: #b7c4d8;
-  --active: #0f172a;
-  --active-contrast: #f8fafc;
-  --accent: #0f766e;
-  --accent-soft: #dcf4f0;
-  --shadow: rgba(15, 23, 42, 0.17);
-  --radius: 0px;
-}
+  .manga-stamp {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid color-mix(in oklab, var(--border), transparent 18%);
+    background: color-mix(in oklab, var(--surface-soft) 82%, var(--bg) 18%);
+    padding: 0.18rem 0.5rem;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-soft);
+  }
 
-:root[data-theme='dark'] {
-  --bg: #090f18;
-  --bg-soft: #101826;
-  --surface: #121b2b;
-  --surface-soft: #182334;
-  --text: #f3f7ff;
-  --text-soft: #9db0cb;
-  --border: #29384f;
-  --border-strong: #3a516f;
-  --active: #e7efff;
-  --active-contrast: #08111f;
-  --accent: #2dd4bf;
-  --accent-soft: #103f3a;
-  --shadow: rgba(2, 8, 20, 0.62);
-}
+  .issue-label {
+    display: inline-flex;
+    align-items: center;
+    border: 2px solid var(--border);
+    background: color-mix(in oklab, var(--surface-soft) 82%, var(--bg) 18%);
+    padding: 0.24rem 0.62rem;
+    line-height: 1;
+    font-size: 0.64rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-soft);
+  }
 
-:root[data-theme='paper'] {
-  --bg: #f6f0e4;
-  --bg-soft: #fcf6ea;
-  --surface: #fffdf8;
-  --surface-soft: #f7efdf;
-  --text: #372a17;
-  --text-soft: #78624b;
-  --border: #ddceb7;
-  --border-strong: #c8b398;
-  --active: #4a3621;
-  --active-contrast: #fff9ef;
-  --accent: #b85f0e;
-  --accent-soft: #f8e6c7;
-  --shadow: rgba(71, 50, 32, 0.2);
-}
+  [data-theme='dark'] .issue-label {
+    border-width: 1px;
+  }
 
-* {
-  box-sizing: border-box;
-}
-
-html,
-body,
-#root {
-  min-height: 100%;
-}
-
-body {
-  margin: 0;
-  color: var(--text);
-  background:
-    linear-gradient(
-      180deg,
-      var(--bg-soft) 0%,
-      var(--bg) 42%,
-      color-mix(in oklab, var(--bg), #000 3%) 100%
-    ),
-    repeating-linear-gradient(
+  .manga-divider {
+    height: 2px;
+    width: 100%;
+    background: repeating-linear-gradient(
       90deg,
-      color-mix(in oklab, var(--active), transparent 97%) 0,
-      color-mix(in oklab, var(--active), transparent 97%) 1px,
-      transparent 1px,
-      transparent 36px
+      color-mix(in oklab, var(--border), transparent 14%) 0,
+      color-mix(in oklab, var(--border), transparent 14%) 8px,
+      transparent 8px,
+      transparent 14px
     );
-  font-family: 'IBM Plex Sans', 'Avenir Next', 'Segoe UI', sans-serif;
-  transition:
-    background-color 180ms ease,
-    color 180ms ease;
-}
+    opacity: 0.78;
+  }
 
-@media (max-width: 1024px) {
-  .minimal-layout {
-    grid-template-columns: 1fr;
+  .exp-chip {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--border);
+    background: color-mix(in oklab, var(--surface-soft) 84%, var(--bg) 16%);
+    padding: 0.22rem 0.6rem;
+    font-size: 0.72rem;
+    color: var(--text-soft);
+  }
+
+  .exp-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 1px solid var(--border);
+    background: color-mix(in oklab, var(--surface-soft) 84%, var(--bg) 16%);
+    padding: 0.32rem 0.62rem;
+    font-size: 0.72rem;
+    color: var(--text-soft);
+    transition: background-color 150ms ease;
+  }
+
+  .exp-back-link:hover {
+    background: color-mix(in oklab, var(--surface) 88%, var(--accent-soft) 12%);
+    color: var(--text);
+  }
+
+  .exp-dropzone {
+    @apply relative overflow-hidden border-2 border-dashed px-4 py-6 text-center;
+    border-color: color-mix(in oklab, var(--border), transparent 16%);
+    background: color-mix(in oklab, var(--surface-soft) 78%, var(--bg) 22%);
+  }
+
+  .exp-history-item {
+    @apply inline-flex items-center gap-2 border px-3 py-2 text-sm;
+    border-color: color-mix(in oklab, var(--border), transparent 24%);
+    background: color-mix(in oklab, var(--surface) 88%, var(--bg) 12%);
+    transition: background-color 150ms ease;
+  }
+
+  .exp-history-item:hover {
+    background: color-mix(in oklab, var(--surface-soft) 85%, var(--bg) 15%);
+  }
+
+  .exp-list-link,
+  .exp-row {
+    border: 1px solid color-mix(in oklab, var(--border), transparent 28%);
+    background: color-mix(in oklab, var(--surface) 90%, var(--bg) 10%);
+    transition: background-color 170ms ease;
+  }
+
+  .exp-list-link {
+    @apply flex items-center justify-between gap-3 px-3 py-2.5;
+  }
+
+  .exp-row {
+    @apply flex items-center gap-3 px-3 py-3;
+  }
+
+  .exp-list-link:hover,
+  .exp-row:hover {
+    background: color-mix(in oklab, var(--surface-soft) 84%, var(--bg) 16%);
+  }
+
+  .reader-shell-panel {
+    border-right: 2px solid var(--border);
+    background: color-mix(in oklab, var(--surface) 92%, var(--bg) 8%);
+    box-shadow: 3px 0 0 color-mix(in oklab, var(--shadow), transparent 34%);
+  }
+
+  .reader-shell-toggle {
+    border: 2px solid var(--border);
+    background: color-mix(in oklab, var(--surface-soft) 86%, var(--bg) 14%);
+    color: var(--text);
+    box-shadow: 2px 2px 0 color-mix(in oklab, var(--shadow), transparent 24%);
+  }
+
+  .reader-hud {
+    border: 1px solid color-mix(in oklab, var(--border), transparent 16%);
+    background: color-mix(in oklab, var(--surface-soft) 86%, var(--bg) 14%);
+    color: var(--text);
+  }
+
+  .reader-quick-strip,
+  .reader-key-hints,
+  .reader-shortcut-sheet,
+  .reader-chapter-jump {
+    border: 1px solid color-mix(in oklab, var(--border), transparent 18%);
+    background: color-mix(in oklab, var(--surface-soft) 86%, var(--bg) 14%);
+    box-shadow: 2px 2px 0 color-mix(in oklab, var(--shadow), transparent 26%);
+    padding: 0.35rem;
+  }
+
+  .reader-key-hints {
+    padding: 0.25rem 0.6rem;
+    white-space: nowrap;
+  }
+
+  .reader-shortcut-sheet {
+    display: grid;
+    gap: 0.25rem;
+    color: var(--text-soft);
+  }
+
+  .reader-focus-mode {
+    filter: contrast(1.06) saturate(0.92);
+  }
+
+  @media (max-width: 768px) {
+    .reader-quick-strip {
+      left: 0.75rem;
+      right: 0.75rem;
+      top: auto;
+      bottom: 4.25rem;
+      justify-content: center;
+    }
+
+    .reader-key-hints {
+      display: none;
+    }
   }
 }
 
@@ -198,13 +441,8 @@ body {
 }
 
 .animate-enter {
-  animation: enter-fade-up 210ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: enter-fade-up 180ms ease-out both;
   animation-delay: var(--enter-delay, 0ms);
-  will-change: transform, opacity;
-}
-
-* {
-  border-radius: 0 !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
