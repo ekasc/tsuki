@@ -59,10 +59,25 @@ export function inferAutoSpreadFlags(
   config: SpreadHeuristicConfig = DEFAULT_SPREAD_CONFIG,
 ): boolean[] {
   const widths = pages.map((page) => safeWidth(page.width))
-  const medianWidth = median(widths)
+  const heights = pages.map((page) => safeWidth(page.height))
+  const aspects = widths.map((width, index) => width / heights[index]!)
+
+  const portraitWidths = widths.filter((_, index) => aspects[index]! < 0.95)
+  const baselineWidth = median(
+    portraitWidths.length > 0 ? portraitWidths : widths,
+  )
+  const medianWidth = baselineWidth
   const thresholdWidth = medianWidth * config.widthMultiplier
 
-  return widths.map((width) => width > thresholdWidth)
+  const widthTolerance = 1.06
+
+  return widths.map((width, index) => {
+    const aspect = aspects[index]!
+    const landscapeSpread = aspect >= 0.95
+    const widerThanSingle = width > thresholdWidth * widthTolerance
+
+    return landscapeSpread || widerThanSingle
+  })
 }
 
 export function buildTwoPageSteps(

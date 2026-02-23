@@ -10,7 +10,7 @@ export function RangeSlider({ className, ...props }: RangeSliderProps) {
     <input
       type="range"
       className={cn(
-        'w-full cursor-pointer accent-primary transition-opacity duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] disabled:cursor-not-allowed disabled:opacity-50',
+        'h-2 w-full cursor-pointer appearance-none accent-primary transition-opacity duration-150 ease-out disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}
       {...props}

@@ -77,6 +77,7 @@ export interface ReadingHistoryItem {
   pageIndex: number
   mode: ReaderMode
   readerRoute?: 'local' | 'weebcentral'
+  completed?: boolean
   updatedAt: number
 }
 

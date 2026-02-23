@@ -11,6 +11,7 @@ interface PagePaneProps {
   zoomPreset: ZoomPreset
   loading?: 'eager' | 'lazy'
   testId?: string
+  onImageMeasure?: (pageIndex: number, width: number, height: number) => void
 }
 
 function imageClassName(zoomPreset: ZoomPreset) {
@@ -52,7 +53,7 @@ function useStableImageSource(source: string) {
         void image
           .decode()
           .catch(() => {
-            // If decode fails, still swap to avoid a stuck frame.
+            // Ignore decode failures and still commit loaded source.
           })
           .finally(commit)
         return
@@ -80,10 +81,7 @@ function useStableImageSource(source: string) {
     }
   }, [readySource, source])
 
-  return {
-    readySource,
-    isPending: readySource !== source,
-  }
+  return readySource
 }
 
 export function PagePane({
@@ -94,14 +92,15 @@ export function PagePane({
   zoomPreset,
   loading = 'lazy',
   testId,
+  onImageMeasure,
 }: PagePaneProps) {
   const resolvedImageUrl = useMemo(
     () => imageUrl ?? `/api/image/${chapterId}/${page.pageIndex}`,
     [chapterId, imageUrl, page.pageIndex],
   )
+  const readySource = useStableImageSource(resolvedImageUrl)
   const paneAspectRatio =
     unit.type === 'half' ? Math.max(0.1, page.aspect / 2) : page.aspect
-  const { readySource } = useStableImageSource(resolvedImageUrl)
   const fetchPriority = loading === 'eager' ? 'high' : 'auto'
 
   return (
@@ -121,6 +120,13 @@ export function PagePane({
           decoding="async"
           fetchPriority={fetchPriority}
           draggable={false}
+          onLoad={(event) => {
+            onImageMeasure?.(
+              page.pageIndex,
+              event.currentTarget.naturalWidth,
+              event.currentTarget.naturalHeight,
+            )
+          }}
         />
       ) : (
         <div className="relative h-full w-full overflow-hidden">
@@ -132,6 +138,13 @@ export function PagePane({
             decoding="async"
             fetchPriority={fetchPriority}
             draggable={false}
+            onLoad={(event) => {
+              onImageMeasure?.(
+                page.pageIndex,
+                event.currentTarget.naturalWidth,
+                event.currentTarget.naturalHeight,
+              )
+            }}
             style={{
               width: '200%',
               transform:

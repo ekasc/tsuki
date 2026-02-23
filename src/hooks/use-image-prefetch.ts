@@ -9,6 +9,7 @@ interface PrefetchOptions {
   enabled?: boolean
   lookahead?: number
   lookbehind?: number
+  concurrency?: number
 }
 
 export function useImagePrefetch({
@@ -18,6 +19,7 @@ export function useImagePrefetch({
   enabled = true,
   lookahead = 8,
   lookbehind = 4,
+  concurrency = 2,
 }: PrefetchOptions) {
   useEffect(() => {
     if (!enabled) {
@@ -45,7 +47,7 @@ export function useImagePrefetch({
       return
     }
 
-    const concurrency = 2
+    const workerCount = Math.max(1, Math.min(8, concurrency))
     let cursor = 0
 
     const runWorker = async () => {
@@ -66,10 +68,18 @@ export function useImagePrefetch({
       }
     }
 
-    void Promise.all(Array.from({ length: concurrency }, runWorker))
+    void Promise.all(Array.from({ length: workerCount }, runWorker))
 
     return () => {
       controller.abort()
     }
-  }, [chapterId, enabled, lookahead, lookbehind, startPageIndex, totalPages])
+  }, [
+    chapterId,
+    concurrency,
+    enabled,
+    lookahead,
+    lookbehind,
+    startPageIndex,
+    totalPages,
+  ])
 }

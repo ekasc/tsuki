@@ -44,6 +44,7 @@ export function upsertReadingHistory(input: {
   pageIndex: number
   mode: ReaderMode
   readerRoute?: 'local' | 'weebcentral'
+  completed?: boolean
   updatedAt?: number
 }) {
   if (typeof window === 'undefined') {
@@ -51,8 +52,11 @@ export function upsertReadingHistory(input: {
   }
 
   const updatedAt = input.updatedAt ?? Date.now()
+  const nextReaderRoute = input.readerRoute ?? 'local'
   const existing = loadReadingHistory().filter(
-    (item) => item.chapterId !== input.chapterId,
+    (item) =>
+      item.chapterId !== input.chapterId ||
+      item.readerRoute !== nextReaderRoute,
   )
 
   const next: ReadingHistoryItem[] = [
@@ -63,7 +67,8 @@ export function upsertReadingHistory(input: {
       chapterTitle: input.chapterTitle,
       pageIndex: input.pageIndex,
       mode: input.mode,
-      readerRoute: input.readerRoute ?? 'local',
+      readerRoute: nextReaderRoute,
+      completed: Boolean(input.completed),
       updatedAt,
     },
     ...existing,

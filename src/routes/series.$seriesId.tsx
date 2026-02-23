@@ -1,11 +1,11 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 
 const createAnyFileRoute = createFileRoute as any
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { buttonVariants } from '#/components/ui/button'
 import type { SeriesDetail } from '#/lib/contracts'
 import { fetchJson } from '#/lib/http-client'
+import { loadReadingHistory } from '#/lib/reading-history'
 import { cn } from '#/lib/utils'
 
 export const Route = createAnyFileRoute('/series/$seriesId')({
@@ -17,6 +17,9 @@ function SeriesPage() {
   const [series, setSeries] = useState<SeriesDetail | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [completedChapters, setCompletedChapters] = useState<Set<string>>(
+    () => new Set<string>(),
+  )
 
   const loadSeries = useCallback(async () => {
     setIsLoading(true)
@@ -40,18 +43,41 @@ function SeriesPage() {
     void loadSeries()
   }, [loadSeries])
 
+  useEffect(() => {
+    const completed = loadReadingHistory()
+      .filter(
+        (item) =>
+          item.readerRoute !== 'weebcentral' &&
+          item.seriesId === params.seriesId &&
+          item.completed,
+      )
+      .map((item) => item.chapterId)
+
+    setCompletedChapters(new Set(completed))
+  }, [params.seriesId])
+
+  const chapterStatuses = useMemo(() => completedChapters, [completedChapters])
+  const orderedChapters = useMemo(
+    () =>
+      [...(series?.chapters ?? [])].sort((left, right) => {
+        if (left.chapterNumber !== right.chapterNumber) {
+          return left.chapterNumber - right.chapterNumber
+        }
+
+        return left.sortIndex - right.sortIndex
+      }),
+    [series?.chapters],
+  )
+
   return (
     <div className="space-y-4">
       <div
-        className="animate-enter rounded-2xl border border-border bg-surface p-5 shadow-[0_16px_30px_-26px_var(--shadow)]"
+        className="animate-enter ui-panel p-5"
         style={{ animationDelay: '20ms' }}
       >
         <Link
           to="/"
-          className={cn(
-            buttonVariants({ variant: 'soft', size: 'sm' }),
-            'rounded-full text-muted-foreground',
-          )}
+          className="ui-link-card inline-flex items-center px-3 py-1.5 text-xs text-muted-foreground"
         >
           Back to library
         </Link>
@@ -63,57 +89,53 @@ function SeriesPage() {
             <p className="mt-1 text-muted-foreground">
               {series.description ?? 'No description'}
             </p>
-            <div className="mt-3 inline-flex items-center rounded-full border border-border bg-surface-soft px-3 py-1 text-xs text-muted-foreground">
-              Source: {series.source}
-            </div>
+            <div className="ui-pill mt-3">Source: {series.source}</div>
           </>
         ) : null}
       </div>
 
       {isLoading ? (
-        <div className="rounded-xl border border-border bg-surface p-5 text-muted-foreground">
+        <div className="ui-panel p-5 text-muted-foreground">
           Loading chapters…
         </div>
       ) : null}
 
       {error ? (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-5 text-destructive">
+        <div className="border border-destructive/30 bg-destructive/10 p-5 text-destructive">
           {error}
         </div>
       ) : null}
 
       {!isLoading && series ? (
-        <div className="space-y-3">
-          {series.chapters.map((chapter) => (
-            <article
+        <div className="space-y-2">
+          {orderedChapters.map((chapter) => (
+            <Link
               key={chapter.id}
-              className="animate-enter group rounded-xl border border-border bg-surface p-4 transition-colors duration-200 hover:border-primary/50"
+              to="/reader/$chapterId"
+              params={{ chapterId: chapter.id }}
+              className="ui-link-card animate-enter group block px-3 py-3"
               style={{ animationDelay: `${80 + chapter.pageCount * 3}ms` }}
             >
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                    ch {chapter.chapterNumber}
-                  </p>
-                  <h3 className="mt-1 text-xl font-semibold tracking-tight text-foreground">
+              <div className="flex items-center gap-3">
+                <span
+                  className={cn(
+                    'ui-check',
+                    chapterStatuses.has(chapter.id)
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border bg-surface-soft text-muted-foreground',
+                  )}
+                  aria-hidden
+                >
+                  {chapterStatuses.has(chapter.id) ? '✓' : ''}
+                </span>
+                <div className="min-w-0">
+                  <p className="ui-kicker">ch {chapter.chapterNumber}</p>
+                  <h3 className="truncate text-base font-semibold text-foreground group-hover:text-primary">
                     {chapter.title}
                   </h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {chapter.pageCount} pages
-                  </p>
                 </div>
-                <Link
-                  className={cn(
-                    buttonVariants({ variant: 'soft' }),
-                    'rounded-full',
-                  )}
-                  to="/reader/$chapterId"
-                  params={{ chapterId: chapter.id }}
-                >
-                  Read chapter
-                </Link>
               </div>
-            </article>
+            </Link>
           ))}
         </div>
       ) : null}

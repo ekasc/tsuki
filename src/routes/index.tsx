@@ -8,7 +8,7 @@ import type {
   ReadingHistoryItem,
   WeebcentralSeriesDTO,
 } from '#/lib/contracts'
-import { Button, buttonVariants } from '#/components/ui/button'
+import { Button } from '#/components/ui/button'
 import { FilePickerButton } from '#/components/ui/file-picker-button'
 import { Input } from '#/components/ui/input'
 import { fetchJson } from '#/lib/http-client'
@@ -58,19 +58,19 @@ function LibraryPage() {
     }
   }, [])
 
-  const refreshHistory = useCallback(() => {
+  const refreshSideData = useCallback(() => {
     setHistory(loadReadingHistory())
     setSavedRemoteSeries(loadSavedWeebcentralSeries())
   }, [])
 
   useEffect(() => {
     void loadSeries()
-    refreshHistory()
-  }, [loadSeries, refreshHistory])
+    refreshSideData()
+  }, [loadSeries, refreshSideData])
 
   useEffect(() => {
     const onFocus = () => {
-      refreshHistory()
+      refreshSideData()
     }
 
     window.addEventListener('focus', onFocus)
@@ -78,7 +78,7 @@ function LibraryPage() {
     return () => {
       window.removeEventListener('focus', onFocus)
     }
-  }, [refreshHistory])
+  }, [refreshSideData])
 
   const uploadArchive = useCallback(
     async (archive: File) => {
@@ -204,12 +204,12 @@ function LibraryPage() {
   }, [])
 
   return (
-    <div className="minimal-layout grid gap-4 lg:grid-cols-[320px_1fr]">
+    <div className="minimal-layout grid gap-4 lg:grid-cols-[300px_1fr]">
       <aside
-        className="animate-enter rounded-2xl border border-border bg-surface/95 p-5 shadow-[0_16px_30px_-26px_var(--shadow)]"
+        className="animate-enter ui-panel p-5"
         style={{ animationDelay: '20ms' }}
       >
-        <h2 className="text-lg font-semibold tracking-wide text-foreground">
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">
           Import
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -217,10 +217,10 @@ function LibraryPage() {
         </p>
 
         <div
-          className={`mt-4 rounded-2xl border-2 border-dashed p-5 text-center transition ${
+          className={`mt-4 border border-dashed p-5 text-center transition-colors duration-150 ${
             isDragging
-              ? 'border-primary bg-primary/10'
-              : 'border-border-strong bg-surface-soft'
+              ? 'border-border-strong bg-surface'
+              : 'border-border bg-surface-soft'
           }`}
           onDragEnter={(event) => {
             event.preventDefault()
@@ -246,10 +246,10 @@ function LibraryPage() {
             }
           }}
         >
-          <p className="text-sm text-muted-foreground">Drop archive</p>
+          <p className="ui-kicker">Drop archive</p>
           <FilePickerButton
             variant="soft"
-            className="mt-3 rounded-full"
+            className="mt-3"
             accept=".cbz,.zip"
             onFileSelect={(file) => {
               void uploadArchive(file)
@@ -262,11 +262,9 @@ function LibraryPage() {
 
         {history.length > 0 ? (
           <div className="mt-6">
-            <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              History
-            </h3>
-            <div className="mt-2 space-y-2">
-              {history.slice(0, 6).map((item) => (
+            <h3 className="ui-kicker">History</h3>
+            <div className="mt-2 space-y-1.5">
+              {history.slice(0, 8).map((item) => (
                 <Link
                   key={`${item.readerRoute ?? 'local'}:${item.chapterId}`}
                   to={
@@ -283,16 +281,22 @@ function LibraryPage() {
                         }
                       : undefined
                   }
-                  className="animate-enter group block rounded-xl border border-border bg-surface px-3 py-2 transition-colors duration-200 hover:border-primary/50 hover:bg-primary/5"
-                  style={{ animationDelay: `${80 + item.pageIndex * 20}ms` }}
+                  className="ui-link-card group flex items-center gap-2 px-3 py-2"
                 >
-                  <p className="truncate text-sm font-medium text-foreground group-hover:text-primary">
+                  <span
+                    className={cn(
+                      'inline-flex size-4 shrink-0 items-center justify-center border text-[10px] font-semibold',
+                      item.completed
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border bg-surface-soft text-muted-foreground',
+                    )}
+                    aria-hidden
+                  >
+                    {item.completed ? '✓' : ''}
+                  </span>
+                  <span className="truncate text-sm text-foreground group-hover:text-primary">
                     {item.chapterTitle}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {item.readerRoute === 'weebcentral' ? 'WeebCentral · ' : ''}
-                    Page {item.pageIndex + 1} · {item.mode}
-                  </p>
+                  </span>
                 </Link>
               ))}
             </div>
@@ -306,12 +310,12 @@ function LibraryPage() {
 
       <section className="space-y-4">
         <div
-          className="animate-enter rounded-2xl border border-border bg-surface/95 p-4 shadow-[0_16px_30px_-26px_var(--shadow)]"
+          className="animate-enter ui-panel p-4"
           style={{ animationDelay: '50ms' }}
         >
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-2xl font-semibold text-foreground">Library</h2>
-            <p className="rounded-full border border-border bg-surface-soft px-3 py-1 text-xs text-muted-foreground">
+            <p className="ui-pill">
               {libraryStats.seriesCount} series · {libraryStats.chapterCount}{' '}
               chapters
             </p>
@@ -322,14 +326,12 @@ function LibraryPage() {
         </div>
 
         <div
-          className="animate-enter rounded-2xl border border-border bg-surface/95 p-4 shadow-[0_16px_30px_-26px_var(--shadow)]"
+          className="animate-enter ui-panel p-4"
           style={{ animationDelay: '90ms' }}
         >
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-primary">
-                WeebCentral Proxy
-              </p>
+              <p className="ui-kicker text-primary">WeebCentral Proxy</p>
               <h3 className="mt-1 text-xl font-semibold text-foreground">
                 Load Remote Series
               </h3>
@@ -368,16 +370,16 @@ function LibraryPage() {
 
           {remoteSeries ? (
             <div className="mt-4 grid gap-4 lg:grid-cols-[220px_1fr]">
-              <div className="rounded-xl border border-border bg-surface-soft p-3">
+              <div className="ui-panel-soft p-3">
                 {remoteSeries.coverUrl ? (
                   <img
                     src={remoteSeries.coverUrl}
                     alt={`${remoteSeries.title} cover`}
-                    className="h-64 w-full rounded-xl border border-border object-cover"
+                    className="h-64 w-full border border-border object-cover"
                     loading="lazy"
                   />
                 ) : (
-                  <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground">
+                  <div className="flex h-64 items-center justify-center border border-dashed border-border text-sm text-muted-foreground">
                     No cover
                   </div>
                 )}
@@ -403,20 +405,24 @@ function LibraryPage() {
                 ) : null}
               </div>
 
-              <div className="rounded-xl border border-border bg-surface-soft p-3">
+              <div className="ui-panel-soft p-3">
                 <div className="mb-3 flex items-center justify-between">
-                  <h4 className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                    Chapters
-                  </h4>
+                  <h4 className="ui-kicker">Chapters</h4>
                   <p className="text-xs text-muted-foreground">
                     {remoteSeries.chapters.length} total
                   </p>
                 </div>
                 <div className="max-h-[26rem] space-y-2 overflow-auto pr-1">
                   {remoteSeries.chapters.map((chapter) => (
-                    <div
+                    <Link
                       key={chapter.id}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-3 py-2"
+                      to="/weebcentral/$chapterId"
+                      params={{ chapterId: chapter.id }}
+                      search={{
+                        seriesId: remoteSeries.id,
+                        seriesTitle: remoteSeries.title,
+                      }}
+                      className="ui-link-card group flex items-center justify-between gap-3 px-3 py-2"
                     >
                       <div>
                         <p className="text-sm font-medium text-foreground">
@@ -426,18 +432,10 @@ function LibraryPage() {
                           {chapter.date ? chapter.date : 'Unknown release date'}
                         </p>
                       </div>
-                      <Link
-                        to="/weebcentral/$chapterId"
-                        params={{ chapterId: chapter.id }}
-                        search={{
-                          seriesId: remoteSeries.id,
-                          seriesTitle: remoteSeries.title,
-                        }}
-                        className="inline-flex shrink-0 items-center justify-center rounded-full border border-border bg-surface-soft px-3 py-1.5 text-xs font-medium transition hover:border-primary/60 hover:bg-primary/10"
-                      >
+                      <span className="ui-kicker shrink-0 transition-colors group-hover:text-foreground">
                         Read
-                      </Link>
-                    </div>
+                      </span>
+                    </Link>
                   ))}
                 </div>
               </div>
@@ -446,13 +444,13 @@ function LibraryPage() {
         </div>
 
         {isLoading ? (
-          <div className="rounded-xl border border-border bg-surface p-5 text-muted-foreground">
+          <div className="ui-panel p-5 text-muted-foreground">
             Loading library…
           </div>
         ) : null}
 
         {!isLoading && series.length === 0 ? (
-          <div className="rounded-xl border border-border bg-surface p-5 text-muted-foreground">
+          <div className="ui-panel p-5 text-muted-foreground">
             No series yet. Import a CBZ/ZIP to begin.
           </div>
         ) : null}
@@ -460,62 +458,43 @@ function LibraryPage() {
         {savedRemoteSeries.length > 0 ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {savedRemoteSeries.map((item) => {
-              const latestChapter = item.chapters[0]
-
               return (
                 <article
                   key={`remote:${item.id}`}
-                  className="group rounded-xl border border-border bg-surface p-3 shadow-[0_12px_24px_-24px_var(--shadow)] transition-colors duration-200 hover:border-primary/40"
+                  className="ui-panel p-3 transition-colors duration-150 hover:border-border-strong"
                 >
-                  {item.coverUrl ? (
-                    <img
-                      className="h-44 w-full rounded-xl border border-border object-cover"
-                      src={item.coverUrl}
-                      alt={`${item.title} cover`}
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="flex h-44 items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground">
-                      No cover
-                    </div>
-                  )}
-
-                  <h3 className="mt-3 text-base font-semibold text-foreground">
-                    {item.title}
-                  </h3>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    WeebCentral saved series
-                  </p>
-
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    {latestChapter ? (
-                      <Link
-                        to="/weebcentral/$chapterId"
-                        params={{ chapterId: latestChapter.id }}
-                        search={{
-                          seriesId: item.id,
-                          seriesTitle: item.title,
-                        }}
-                        className={cn(
-                          buttonVariants({ variant: 'soft' }),
-                          'w-full',
-                        )}
-                      >
-                        Read
-                      </Link>
+                  <Link
+                    to="/weebcentral-series/$seriesId"
+                    params={{ seriesId: item.id }}
+                    className="group block"
+                  >
+                    {item.coverUrl ? (
+                      <img
+                        className="h-44 w-full border border-border object-cover"
+                        src={item.coverUrl}
+                        alt={`${item.title} cover`}
+                        loading="lazy"
+                      />
                     ) : (
-                      <span className="inline-flex w-full items-center justify-center border border-border bg-surface-soft px-3 py-2 text-sm text-muted-foreground">
-                        No chapters
-                      </span>
+                      <div className="flex h-44 items-center justify-center border border-dashed border-border text-sm text-muted-foreground">
+                        No cover
+                      </div>
                     )}
-                    <Button
-                      variant="soft"
-                      className="w-full border-destructive/35 text-destructive hover:bg-destructive/10"
-                      onClick={() => removeRemoteSeriesFromLibrary(item.id)}
-                    >
-                      Remove
-                    </Button>
-                  </div>
+
+                    <h3 className="mt-3 text-base font-semibold text-foreground transition-colors group-hover:text-primary">
+                      {item.title}
+                    </h3>
+                    <p className="ui-kicker mt-1">WeebCentral saved series</p>
+                  </Link>
+
+                  <Button
+                    variant="soft"
+                    size="sm"
+                    className="mt-3 w-full border-destructive/35 text-destructive hover:bg-destructive/10"
+                    onClick={() => removeRemoteSeriesFromLibrary(item.id)}
+                  >
+                    Remove
+                  </Button>
                 </article>
               )
             })}
@@ -526,58 +505,53 @@ function LibraryPage() {
           {series.map((item) => (
             <article
               key={item.id}
-              className="animate-enter group rounded-xl border border-border bg-surface p-3 shadow-[0_12px_24px_-24px_var(--shadow)] transition-colors duration-200 hover:border-primary/40"
+              className="animate-enter ui-panel p-3 transition-colors duration-150 hover:border-border-strong"
               style={{
                 animationDelay: `${120 + (item.chapterCount % 8) * 22}ms`,
               }}
             >
-              {item.coverChapterId !== null && item.coverPageIndex !== null ? (
-                <img
-                  className="h-44 w-full rounded-xl border border-border object-cover"
-                  src={`/api/image/${item.coverChapterId}/${item.coverPageIndex}?thumb=1`}
-                  alt={`${item.title} cover`}
-                  loading="lazy"
-                />
-              ) : (
-                <div className="flex h-44 items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground">
-                  No cover
+              <Link
+                to="/series/$seriesId"
+                params={{ seriesId: item.id }}
+                className="group block"
+              >
+                {item.coverChapterId !== null &&
+                item.coverPageIndex !== null ? (
+                  <img
+                    className="h-44 w-full border border-border object-cover"
+                    src={`/api/image/${item.coverChapterId}/${item.coverPageIndex}?thumb=1`}
+                    alt={`${item.title} cover`}
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="flex h-44 items-center justify-center border border-dashed border-border text-sm text-muted-foreground">
+                    No cover
+                  </div>
+                )}
+
+                <h3 className="mt-3 text-base font-semibold text-foreground transition-colors group-hover:text-primary">
+                  {item.title}
+                </h3>
+                <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                  {item.description ?? 'No description'}
+                </p>
+
+                <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{item.source}</span>
+                  <span>{item.chapterCount} chapters</span>
                 </div>
-              )}
+              </Link>
 
-              <h3 className="mt-3 text-base font-semibold text-foreground">
-                {item.title}
-              </h3>
-              <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                {item.description ?? 'No description'}
-              </p>
-
-              <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                <span>{item.source}</span>
-                <span>{item.chapterCount} chapters</span>
-              </div>
-
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <Link
-                  to="/series/$seriesId"
-                  params={{ seriesId: item.id }}
-                  className={cn(
-                    buttonVariants({ variant: 'soft' }),
-                    'w-full rounded-full',
-                  )}
-                >
-                  Open
-                </Link>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  className="w-full rounded-full border border-destructive/35 bg-destructive/10 text-destructive hover:bg-destructive/20"
-                  onClick={() => removeSeries(item.id, item.title)}
-                  disabled={removingSeriesId === item.id}
-                >
-                  {removingSeriesId === item.id ? 'Removing...' : 'Remove'}
-                </Button>
-              </div>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="mt-3 w-full"
+                onClick={() => removeSeries(item.id, item.title)}
+                disabled={removingSeriesId === item.id}
+              >
+                {removingSeriesId === item.id ? 'Removing...' : 'Remove'}
+              </Button>
             </article>
           ))}
         </div>

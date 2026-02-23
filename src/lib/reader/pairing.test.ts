@@ -31,6 +31,26 @@ describe('inferAutoSpreadFlags', () => {
 
     expect(spreads).toEqual([false, false, true])
   })
+
+  it('does not mark near-equal portrait pages as spreads', () => {
+    const spreads = inferAutoSpreadFlags([
+      { width: 1200, height: 1800 },
+      { width: 1210, height: 1800 },
+      { width: 1220, height: 1800 },
+    ])
+
+    expect(spreads).toEqual([false, false, false])
+  })
+
+  it('marks landscape pages as spreads', () => {
+    const spreads = inferAutoSpreadFlags([
+      { width: 1200, height: 1800 },
+      { width: 2100, height: 1500 },
+      { width: 1180, height: 1800 },
+    ])
+
+    expect(spreads).toEqual([false, true, false])
+  })
 })
 
 describe('buildTwoPageSteps', () => {

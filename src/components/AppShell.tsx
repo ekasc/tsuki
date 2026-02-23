@@ -40,13 +40,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background pb-8 text-foreground">
       <header className="mx-auto max-w-7xl px-4 pt-4 md:px-8">
-        <div className="animate-enter flex items-center justify-between gap-3 rounded-2xl border border-border bg-surface/95 p-4 shadow-[0_14px_30px_-26px_var(--shadow)]">
+        <div className="animate-enter ui-panel flex items-center justify-between gap-4 px-4 py-3">
           <Link to="/" className="group flex items-center gap-3">
-            <span className="inline-flex size-9 items-center justify-center rounded-lg border border-border bg-linear-to-br from-primary/20 to-primary/10">
-              <BookOpenText className="size-4 text-foreground" />
+            <span className="inline-flex size-8 items-center justify-center border border-border bg-surface-soft text-muted-foreground transition-colors group-hover:text-foreground">
+              <BookOpenText className="size-4" />
             </span>
             <span className="flex flex-col">
-              <span className="text-sm font-semibold tracking-[0.12em]">
+              <span className="text-sm font-semibold tracking-[0.16em]">
                 SUKI
               </span>
               <span className="text-xs text-muted-foreground transition group-hover:text-foreground">
@@ -67,7 +67,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               value={selectedTheme}
               onChange={(event) => setTheme(event.target.value)}
               disabled={!mounted}
-              className="w-auto min-w-28 rounded-full px-3 py-1.5 text-xs font-medium"
+              className="h-8 w-auto min-w-24 px-2 text-xs"
               options={THEME_OPTIONS}
             ></SelectField>
           </div>

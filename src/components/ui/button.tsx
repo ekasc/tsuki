@@ -4,25 +4,27 @@ import * as React from 'react'
 import { cn } from '#/lib/utils'
 
 const buttonVariants = cva(
-  'inline-flex cursor-pointer items-center justify-center whitespace-nowrap rounded-xl text-sm font-medium transition-[transform,opacity,color,background-color,border-color] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.97] motion-reduce:active:scale-100 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50',
+  'inline-flex cursor-pointer items-center justify-center whitespace-nowrap border text-sm font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50',
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+        default:
+          'border-primary bg-primary text-primary-foreground hover:bg-primary/92',
         secondary:
-          'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        soft: 'border border-border bg-surface-soft text-foreground hover:border-primary/55 hover:bg-primary/10',
+          'border-border bg-secondary text-secondary-foreground hover:bg-secondary/80',
+        soft: 'border-border bg-surface text-foreground hover:border-border-strong hover:bg-surface-soft',
         outline:
-          'border border-border bg-background text-foreground hover:bg-accent hover:text-accent-foreground',
-        ghost: 'text-foreground hover:bg-accent hover:text-accent-foreground',
+          'border-border-strong bg-background text-foreground hover:bg-surface-soft',
+        ghost:
+          'border-transparent bg-transparent text-muted-foreground hover:border-border hover:bg-surface-soft hover:text-foreground',
         destructive:
-          'bg-destructive text-destructive-foreground hover:bg-destructive/90',
+          'border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/16',
       },
       size: {
-        default: 'h-10 px-4 py-2',
-        sm: 'h-9 px-3',
-        lg: 'h-11 px-8',
-        icon: 'size-10',
+        default: 'h-10 px-4',
+        sm: 'h-8 px-3 text-xs',
+        lg: 'h-11 px-6',
+        icon: 'size-10 p-0',
       },
     },
     defaultVariants: {

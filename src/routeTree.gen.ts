@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WeebcentralChapterIdRouteImport } from './routes/weebcentral.$chapterId'
+import { Route as WeebcentralSeriesSeriesIdRouteImport } from './routes/weebcentral-series.$seriesId'
 import { Route as SeriesSeriesIdRouteImport } from './routes/series.$seriesId'
 import { Route as ReaderChapterIdRouteImport } from './routes/reader.$chapterId'
 import { Route as ApiUploadRouteImport } from './routes/api.upload'
@@ -36,6 +37,12 @@ const WeebcentralChapterIdRoute = WeebcentralChapterIdRouteImport.update({
   path: '/weebcentral/$chapterId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WeebcentralSeriesSeriesIdRoute =
+  WeebcentralSeriesSeriesIdRouteImport.update({
+    id: '/weebcentral-series/$seriesId',
+    path: '/weebcentral-series/$seriesId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const SeriesSeriesIdRoute = SeriesSeriesIdRouteImport.update({
   id: '/series/$seriesId',
   path: '/series/$seriesId',
@@ -117,6 +124,7 @@ export interface FileRoutesByFullPath {
   '/api/upload': typeof ApiUploadRoute
   '/reader/$chapterId': typeof ReaderChapterIdRoute
   '/series/$seriesId': typeof SeriesSeriesIdRoute
+  '/weebcentral-series/$seriesId': typeof WeebcentralSeriesSeriesIdRoute
   '/weebcentral/$chapterId': typeof WeebcentralChapterIdRoute
   '/api/chapter/$chapterId': typeof ApiChapterChapterIdRouteWithChildren
   '/api/series/$seriesId': typeof ApiSeriesSeriesIdRoute
@@ -135,6 +143,7 @@ export interface FileRoutesByTo {
   '/api/upload': typeof ApiUploadRoute
   '/reader/$chapterId': typeof ReaderChapterIdRoute
   '/series/$seriesId': typeof SeriesSeriesIdRoute
+  '/weebcentral-series/$seriesId': typeof WeebcentralSeriesSeriesIdRoute
   '/weebcentral/$chapterId': typeof WeebcentralChapterIdRoute
   '/api/chapter/$chapterId': typeof ApiChapterChapterIdRouteWithChildren
   '/api/series/$seriesId': typeof ApiSeriesSeriesIdRoute
@@ -154,6 +163,7 @@ export interface FileRoutesById {
   '/api/upload': typeof ApiUploadRoute
   '/reader/$chapterId': typeof ReaderChapterIdRoute
   '/series/$seriesId': typeof SeriesSeriesIdRoute
+  '/weebcentral-series/$seriesId': typeof WeebcentralSeriesSeriesIdRoute
   '/weebcentral/$chapterId': typeof WeebcentralChapterIdRoute
   '/api/chapter/$chapterId': typeof ApiChapterChapterIdRouteWithChildren
   '/api/series/$seriesId': typeof ApiSeriesSeriesIdRoute
@@ -174,6 +184,7 @@ export interface FileRouteTypes {
     | '/api/upload'
     | '/reader/$chapterId'
     | '/series/$seriesId'
+    | '/weebcentral-series/$seriesId'
     | '/weebcentral/$chapterId'
     | '/api/chapter/$chapterId'
     | '/api/series/$seriesId'
@@ -192,6 +203,7 @@ export interface FileRouteTypes {
     | '/api/upload'
     | '/reader/$chapterId'
     | '/series/$seriesId'
+    | '/weebcentral-series/$seriesId'
     | '/weebcentral/$chapterId'
     | '/api/chapter/$chapterId'
     | '/api/series/$seriesId'
@@ -210,6 +222,7 @@ export interface FileRouteTypes {
     | '/api/upload'
     | '/reader/$chapterId'
     | '/series/$seriesId'
+    | '/weebcentral-series/$seriesId'
     | '/weebcentral/$chapterId'
     | '/api/chapter/$chapterId'
     | '/api/series/$seriesId'
@@ -229,6 +242,7 @@ export interface RootRouteChildren {
   ApiUploadRoute: typeof ApiUploadRoute
   ReaderChapterIdRoute: typeof ReaderChapterIdRoute
   SeriesSeriesIdRoute: typeof SeriesSeriesIdRoute
+  WeebcentralSeriesSeriesIdRoute: typeof WeebcentralSeriesSeriesIdRoute
   WeebcentralChapterIdRoute: typeof WeebcentralChapterIdRoute
   ApiChapterChapterIdRoute: typeof ApiChapterChapterIdRouteWithChildren
   V1ImageB64Route: typeof V1ImageB64Route
@@ -253,6 +267,13 @@ declare module '@tanstack/react-router' {
       path: '/weebcentral/$chapterId'
       fullPath: '/weebcentral/$chapterId'
       preLoaderRoute: typeof WeebcentralChapterIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/weebcentral-series/$seriesId': {
+      id: '/weebcentral-series/$seriesId'
+      path: '/weebcentral-series/$seriesId'
+      fullPath: '/weebcentral-series/$seriesId'
+      preLoaderRoute: typeof WeebcentralSeriesSeriesIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/series/$seriesId': {
@@ -387,6 +408,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiUploadRoute: ApiUploadRoute,
   ReaderChapterIdRoute: ReaderChapterIdRoute,
   SeriesSeriesIdRoute: SeriesSeriesIdRoute,
+  WeebcentralSeriesSeriesIdRoute: WeebcentralSeriesSeriesIdRoute,
   WeebcentralChapterIdRoute: WeebcentralChapterIdRoute,
   ApiChapterChapterIdRoute: ApiChapterChapterIdRouteWithChildren,
   V1ImageB64Route: V1ImageB64Route,
