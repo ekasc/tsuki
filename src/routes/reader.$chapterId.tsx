@@ -45,7 +45,26 @@ export const Route = createAnyFileRoute('/reader/$chapterId')({
 const prefetchedLocalChapterPayloads = new Map<string, ChapterPayload>()
 const prefetchedLocalSeriesDetails = new Map<string, SeriesDetail>()
 const optimisticLocalProgress = new Map<string, ChapterProgress>()
-const LOCAL_READER_UI_PREFS_KEY = 'suki-local-reader-ui.v1'
+const LOCAL_READER_UI_PREFS_KEY = 'tsuki-local-reader-ui.v1'
+const LEGACY_LOCAL_READER_UI_PREFS_KEY = 'suki-local-reader-ui.v1'
+const LOCAL_READER_SERIES_PRESETS_KEY = 'tsuki-local-reader-series-presets.v1'
+const LEGACY_LOCAL_READER_SERIES_PRESETS_KEY =
+  'suki-local-reader-series-presets.v1'
+
+function readStorageWithLegacy(key: string, legacyKey: string): string | null {
+  const value = window.localStorage.getItem(key)
+  if (value) {
+    return value
+  }
+
+  const legacyValue = window.localStorage.getItem(legacyKey)
+  if (!legacyValue) {
+    return null
+  }
+
+  window.localStorage.setItem(key, legacyValue)
+  return legacyValue
+}
 
 interface ReaderUiPrefs {
   mode: ReaderMode
@@ -62,13 +81,91 @@ interface ReaderUiPrefs {
   magnifierZoom: number
 }
 
-function loadReaderUiPrefs(storageKey: string): ReaderUiPrefs | null {
+interface ReaderSeriesPreset {
+  mode: ReaderMode
+  zoomPreset: ZoomPreset
+  doublePageOffset: boolean
+  magnifierEnabled: boolean
+  focusMode: boolean
+}
+
+function loadReaderSeriesPreset(seriesId: string): ReaderSeriesPreset | null {
   if (typeof window === 'undefined') {
     return null
   }
 
   try {
-    const raw = window.localStorage.getItem(storageKey)
+    const raw = readStorageWithLegacy(
+      LOCAL_READER_SERIES_PRESETS_KEY,
+      LEGACY_LOCAL_READER_SERIES_PRESETS_KEY,
+    )
+    if (!raw) {
+      return null
+    }
+
+    const payload = JSON.parse(raw) as Record<
+      string,
+      Partial<ReaderSeriesPreset>
+    >
+    const preset = payload[seriesId]
+    if (!preset) {
+      return null
+    }
+
+    return {
+      mode:
+        preset.mode === 'double' || preset.mode === 'scroll'
+          ? preset.mode
+          : 'single',
+      zoomPreset:
+        preset.zoomPreset === 'fit-width' || preset.zoomPreset === 'actual'
+          ? preset.zoomPreset
+          : 'fit-height',
+      doublePageOffset: Boolean(preset.doublePageOffset),
+      magnifierEnabled: Boolean(preset.magnifierEnabled),
+      focusMode: Boolean(preset.focusMode),
+    }
+  } catch {
+    return null
+  }
+}
+
+function saveReaderSeriesPreset(seriesId: string, preset: ReaderSeriesPreset) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    const raw = readStorageWithLegacy(
+      LOCAL_READER_SERIES_PRESETS_KEY,
+      LEGACY_LOCAL_READER_SERIES_PRESETS_KEY,
+    )
+    const payload = raw
+      ? (JSON.parse(raw) as Record<string, ReaderSeriesPreset>)
+      : {}
+
+    payload[seriesId] = preset
+    window.localStorage.setItem(
+      LOCAL_READER_SERIES_PRESETS_KEY,
+      JSON.stringify(payload),
+    )
+  } catch {
+    // Ignore localStorage persistence failures.
+  }
+}
+
+function loadReaderUiPrefs(
+  storageKey: string,
+  legacyKey?: string,
+): ReaderUiPrefs | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const raw = legacyKey
+      ? readStorageWithLegacy(storageKey, legacyKey)
+      : window.localStorage.getItem(storageKey)
     if (!raw) {
       return null
     }
@@ -229,51 +326,96 @@ function ReaderPage() {
   >([])
 
   const [mode, setMode] = useState<ReaderMode>(
-    () => loadReaderUiPrefs(LOCAL_READER_UI_PREFS_KEY)?.mode ?? 'single',
+    () =>
+      loadReaderUiPrefs(
+        LOCAL_READER_UI_PREFS_KEY,
+        LEGACY_LOCAL_READER_UI_PREFS_KEY,
+      )?.mode ?? 'single',
   )
   const [zoomPreset, setZoomPreset] = useState<ZoomPreset>(
     () =>
-      loadReaderUiPrefs(LOCAL_READER_UI_PREFS_KEY)?.zoomPreset ?? 'fit-height',
+      loadReaderUiPrefs(
+        LOCAL_READER_UI_PREFS_KEY,
+        LEGACY_LOCAL_READER_UI_PREFS_KEY,
+      )?.zoomPreset ?? 'fit-height',
   )
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(
-    () => loadReaderUiPrefs(LOCAL_READER_UI_PREFS_KEY)?.sidebarOpen ?? false,
+    () =>
+      loadReaderUiPrefs(
+        LOCAL_READER_UI_PREFS_KEY,
+        LEGACY_LOCAL_READER_UI_PREFS_KEY,
+      )?.sidebarOpen ?? false,
   )
   const [doublePageOffset, setDoublePageOffset] = useState<boolean>(
     () =>
-      loadReaderUiPrefs(LOCAL_READER_UI_PREFS_KEY)?.doublePageOffset ?? false,
+      loadReaderUiPrefs(
+        LOCAL_READER_UI_PREFS_KEY,
+        LEGACY_LOCAL_READER_UI_PREFS_KEY,
+      )?.doublePageOffset ?? false,
   )
   const [settingsTab, setSettingsTab] = useState<'basic' | 'advanced'>('basic')
   const [preloadAhead, setPreloadAhead] = useState<number>(
-    () => loadReaderUiPrefs(LOCAL_READER_UI_PREFS_KEY)?.preloadAhead ?? 8,
+    () =>
+      loadReaderUiPrefs(
+        LOCAL_READER_UI_PREFS_KEY,
+        LEGACY_LOCAL_READER_UI_PREFS_KEY,
+      )?.preloadAhead ?? 8,
   )
   const [preloadBehind, setPreloadBehind] = useState<number>(
-    () => loadReaderUiPrefs(LOCAL_READER_UI_PREFS_KEY)?.preloadBehind ?? 4,
+    () =>
+      loadReaderUiPrefs(
+        LOCAL_READER_UI_PREFS_KEY,
+        LEGACY_LOCAL_READER_UI_PREFS_KEY,
+      )?.preloadBehind ?? 4,
   )
   const [prefetchConcurrency, setPrefetchConcurrency] = useState<number>(
     () =>
-      loadReaderUiPrefs(LOCAL_READER_UI_PREFS_KEY)?.prefetchConcurrency ?? 2,
+      loadReaderUiPrefs(
+        LOCAL_READER_UI_PREFS_KEY,
+        LEGACY_LOCAL_READER_UI_PREFS_KEY,
+      )?.prefetchConcurrency ?? 2,
   )
   const [nextChapterPrefetchThreshold, setNextChapterPrefetchThreshold] =
     useState<number>(
       () =>
-        loadReaderUiPrefs(LOCAL_READER_UI_PREFS_KEY)
-          ?.nextChapterPrefetchThreshold ?? 8,
+        loadReaderUiPrefs(
+          LOCAL_READER_UI_PREFS_KEY,
+          LEGACY_LOCAL_READER_UI_PREFS_KEY,
+        )?.nextChapterPrefetchThreshold ?? 8,
     )
   const [nextChapterWarmPages, setNextChapterWarmPages] = useState<number>(
     () =>
-      loadReaderUiPrefs(LOCAL_READER_UI_PREFS_KEY)?.nextChapterWarmPages ?? 4,
+      loadReaderUiPrefs(
+        LOCAL_READER_UI_PREFS_KEY,
+        LEGACY_LOCAL_READER_UI_PREFS_KEY,
+      )?.nextChapterWarmPages ?? 4,
   )
   const [uiAutoHideMs, setUiAutoHideMs] = useState<number>(
-    () => loadReaderUiPrefs(LOCAL_READER_UI_PREFS_KEY)?.uiAutoHideMs ?? 1400,
+    () =>
+      loadReaderUiPrefs(
+        LOCAL_READER_UI_PREFS_KEY,
+        LEGACY_LOCAL_READER_UI_PREFS_KEY,
+      )?.uiAutoHideMs ?? 1400,
   )
   const [magnifierEnabled, setMagnifierEnabled] = useState(false)
   const [magnifierSize, setMagnifierSize] = useState<number>(
-    () => loadReaderUiPrefs(LOCAL_READER_UI_PREFS_KEY)?.magnifierSize ?? 220,
+    () =>
+      loadReaderUiPrefs(
+        LOCAL_READER_UI_PREFS_KEY,
+        LEGACY_LOCAL_READER_UI_PREFS_KEY,
+      )?.magnifierSize ?? 220,
   )
   const [magnifierZoom, setMagnifierZoom] = useState<number>(
-    () => loadReaderUiPrefs(LOCAL_READER_UI_PREFS_KEY)?.magnifierZoom ?? 2.4,
+    () =>
+      loadReaderUiPrefs(
+        LOCAL_READER_UI_PREFS_KEY,
+        LEGACY_LOCAL_READER_UI_PREFS_KEY,
+      )?.magnifierZoom ?? 2.4,
   )
   const [showReaderChrome, setShowReaderChrome] = useState(false)
+  const [focusMode, setFocusMode] = useState(false)
+  const [showShortcutHelp, setShowShortcutHelp] = useState(false)
+  const [chapterFilter, setChapterFilter] = useState('')
   const [magnifierFrame, setMagnifierFrame] = useState<{
     x: number
     y: number
@@ -288,12 +430,17 @@ function ReaderPage() {
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [showPageHud, setShowPageHud] = useState(false)
+  const [pendingBoundaryDirection, setPendingBoundaryDirection] = useState<
+    'next' | 'prev' | null
+  >(null)
+  const [boundaryNotice, setBoundaryNotice] = useState<string | null>(null)
 
   const viewportRef = useRef<HTMLDivElement>(null)
   const readerStageRef = useRef<HTMLElement>(null)
   const chapterTransitionRef = useRef(false)
   const pageHudTimeoutRef = useRef<number | null>(null)
   const readerUiTimeoutRef = useRef<number | null>(null)
+  const boundaryNoticeTimeoutRef = useRef<number | null>(null)
   const dragStateRef = useRef<{
     active: boolean
     startX: number
@@ -373,6 +520,21 @@ function ReaderPage() {
     return `Pages ${first + 1}-${last + 1} / ${pages.length}`
   }, [currentTargetPageIndex, displayUnits, mode, pages.length])
 
+  const rtlSpreadNumbers = useMemo(() => {
+    const currentNumber = currentTargetPageIndex + 1
+    const rightNumber =
+      currentNumber % 2 === 1 ? currentNumber : currentNumber - 1
+    const leftNumber =
+      rightNumber > 0 && rightNumber + 1 <= pages.length
+        ? rightNumber + 1
+        : null
+
+    return {
+      right: rightNumber > 0 ? rightNumber : null,
+      left: leftNumber,
+    }
+  }, [currentTargetPageIndex, pages.length])
+
   const orderedSeriesChapters = useMemo(
     () =>
       [...seriesChapters].sort((left, right) => {
@@ -384,6 +546,20 @@ function ReaderPage() {
       }),
     [seriesChapters],
   )
+
+  const filteredSeriesChapters = useMemo(() => {
+    const query = chapterFilter.trim()
+    if (!query) {
+      return orderedSeriesChapters
+    }
+
+    return orderedSeriesChapters.filter((chapter) => {
+      const chapterNumber = String(chapter.chapterNumber)
+      return chapterNumber.includes(query)
+    })
+  }, [chapterFilter, orderedSeriesChapters])
+
+  const activeSeriesId = chapterPayload?.manifest.seriesId ?? null
 
   useImagePrefetch({
     chapterId,
@@ -556,11 +732,8 @@ function ReaderPage() {
         }
       })()
     } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : 'Failed to load chapter',
-      )
+      void requestError
+      setError('Could not open this chapter.')
     } finally {
       setIsLoading(false)
     }
@@ -614,6 +787,48 @@ function ReaderPage() {
     uiAutoHideMs,
     zoomPreset,
   ])
+
+  useEffect(() => {
+    if (!activeSeriesId) {
+      return
+    }
+
+    const preset = loadReaderSeriesPreset(activeSeriesId)
+    if (!preset) {
+      return
+    }
+
+    setMode(preset.mode)
+    setZoomPreset(preset.zoomPreset)
+    setDoublePageOffset(preset.doublePageOffset)
+    setMagnifierEnabled(preset.magnifierEnabled)
+    setFocusMode(preset.focusMode)
+  }, [activeSeriesId])
+
+  useEffect(() => {
+    if (!activeSeriesId) {
+      return
+    }
+
+    saveReaderSeriesPreset(activeSeriesId, {
+      mode,
+      zoomPreset,
+      doublePageOffset,
+      magnifierEnabled,
+      focusMode,
+    })
+  }, [
+    activeSeriesId,
+    doublePageOffset,
+    focusMode,
+    magnifierEnabled,
+    mode,
+    zoomPreset,
+  ])
+
+  useEffect(() => {
+    setChapterFilter('')
+  }, [chapterId])
 
   const cycleMode = useCallback(() => {
     setMode((current) => {
@@ -760,6 +975,11 @@ function ReaderPage() {
   }, [isFullscreen])
 
   const revealReaderUi = useCallback(() => {
+    if (focusMode) {
+      setShowReaderChrome(false)
+      return
+    }
+
     setShowReaderChrome(true)
 
     if (readerUiTimeoutRef.current !== null) {
@@ -775,7 +995,7 @@ function ReaderPage() {
       setShowReaderChrome(false)
       readerUiTimeoutRef.current = null
     }, uiAutoHideMs)
-  }, [sidebarOpen, uiAutoHideMs])
+  }, [focusMode, sidebarOpen, uiAutoHideMs])
 
   const updateMagnifierFrame = useCallback(
     (event: MouseEvent<HTMLElement>) => {
@@ -831,6 +1051,8 @@ function ReaderPage() {
     }
 
     chapterTransitionRef.current = true
+    setPendingBoundaryDirection(null)
+    setBoundaryNotice(null)
     setShowPageHud(false)
     persistProgressNow(maxPageIndex, maxStepIndex)
     void navigate({
@@ -845,6 +1067,8 @@ function ReaderPage() {
     }
 
     chapterTransitionRef.current = true
+    setPendingBoundaryDirection(null)
+    setBoundaryNotice(null)
     setShowPageHud(false)
     persistProgressNow(currentTargetPageIndex, currentStepIndex)
     void navigate({
@@ -874,9 +1098,43 @@ function ReaderPage() {
   }, [])
 
   const goNext = useCallback(() => {
+    const armBoundaryNotice = (direction: 'next' | 'prev') => {
+      const hasAdjacent =
+        direction === 'next'
+          ? Boolean(nextChapterId)
+          : Boolean(previousChapterId)
+
+      const message =
+        direction === 'next'
+          ? hasAdjacent
+            ? 'Chapter ended. Press next again for next chapter.'
+            : 'Chapter ended.'
+          : hasAdjacent
+            ? 'At first page. Press previous again for previous chapter.'
+            : 'At first page.'
+
+      setPendingBoundaryDirection(direction)
+      setBoundaryNotice(message)
+
+      if (boundaryNoticeTimeoutRef.current !== null) {
+        window.clearTimeout(boundaryNoticeTimeoutRef.current)
+      }
+
+      boundaryNoticeTimeoutRef.current = window.setTimeout(() => {
+        setBoundaryNotice(null)
+        setPendingBoundaryDirection((value) =>
+          value === direction ? null : value,
+        )
+      }, 1800)
+    }
+
     if (mode === 'double') {
       if (currentStepIndex >= maxStepIndex) {
-        goToNextChapter()
+        if (pendingBoundaryDirection === 'next' && nextChapterId) {
+          goToNextChapter()
+        } else {
+          armBoundaryNotice('next')
+        }
         return
       }
 
@@ -885,14 +1143,22 @@ function ReaderPage() {
       setCurrentPageIndex(
         twoPageSteps[next]?.anchorPageIndex ?? currentPageIndex,
       )
+      setPendingBoundaryDirection(null)
+      setBoundaryNotice(null)
       return
     }
 
     if (currentPageIndex >= maxPageIndex) {
-      goToNextChapter()
+      if (pendingBoundaryDirection === 'next' && nextChapterId) {
+        goToNextChapter()
+      } else {
+        armBoundaryNotice('next')
+      }
       return
     }
 
+    setPendingBoundaryDirection(null)
+    setBoundaryNotice(null)
     goToPage(currentPageIndex + 1)
   }, [
     currentPageIndex,
@@ -902,26 +1168,85 @@ function ReaderPage() {
     maxPageIndex,
     maxStepIndex,
     mode,
+    nextChapterId,
+    pendingBoundaryDirection,
+    previousChapterId,
     twoPageSteps,
   ])
 
   const goPrevious = useCallback(() => {
+    const armBoundaryNotice = (direction: 'next' | 'prev') => {
+      const hasAdjacent =
+        direction === 'next'
+          ? Boolean(nextChapterId)
+          : Boolean(previousChapterId)
+
+      const message =
+        direction === 'next'
+          ? hasAdjacent
+            ? 'Chapter ended. Press next again for next chapter.'
+            : 'Chapter ended.'
+          : hasAdjacent
+            ? 'At first page. Press previous again for previous chapter.'
+            : 'At first page.'
+
+      setPendingBoundaryDirection(direction)
+      setBoundaryNotice(message)
+
+      if (boundaryNoticeTimeoutRef.current !== null) {
+        window.clearTimeout(boundaryNoticeTimeoutRef.current)
+      }
+
+      boundaryNoticeTimeoutRef.current = window.setTimeout(() => {
+        setBoundaryNotice(null)
+        setPendingBoundaryDirection((value) =>
+          value === direction ? null : value,
+        )
+      }, 1800)
+    }
+
     if (mode === 'double') {
+      if (currentStepIndex <= 0) {
+        if (pendingBoundaryDirection === 'prev' && previousChapterId) {
+          goToPreviousChapter()
+        } else {
+          armBoundaryNotice('prev')
+        }
+        return
+      }
+
       const previous = clamp(currentStepIndex - 1, 0, maxStepIndex)
       setCurrentStepIndex(previous)
       setCurrentPageIndex(
         twoPageSteps[previous]?.anchorPageIndex ?? currentPageIndex,
       )
+      setPendingBoundaryDirection(null)
+      setBoundaryNotice(null)
       return
     }
 
+    if (currentPageIndex <= 0) {
+      if (pendingBoundaryDirection === 'prev' && previousChapterId) {
+        goToPreviousChapter()
+      } else {
+        armBoundaryNotice('prev')
+      }
+      return
+    }
+
+    setPendingBoundaryDirection(null)
+    setBoundaryNotice(null)
     goToPage(currentPageIndex - 1)
   }, [
     currentPageIndex,
     currentStepIndex,
     goToPage,
+    goToPreviousChapter,
     maxStepIndex,
     mode,
+    nextChapterId,
+    pendingBoundaryDirection,
+    previousChapterId,
     twoPageSteps,
   ])
 
@@ -1002,6 +1327,33 @@ function ReaderPage() {
         revealReaderUi()
         return
       }
+
+      if (event.code === 'KeyS') {
+        event.preventDefault()
+        blurReaderFocusTarget()
+        setSidebarOpen((value) => !value)
+        return
+      }
+
+      if (event.code === 'KeyX') {
+        event.preventDefault()
+        blurReaderFocusTarget()
+        setFocusMode((value) => !value)
+        return
+      }
+
+      if (event.code === 'Digit0') {
+        event.preventDefault()
+        blurReaderFocusTarget()
+        setZoomPreset('fit-height')
+        return
+      }
+
+      if (event.key === '?') {
+        event.preventDefault()
+        blurReaderFocusTarget()
+        setShowShortcutHelp((value) => !value)
+      }
     }
 
     const suppressOKeypress = (event: KeyboardEvent) => {
@@ -1030,6 +1382,16 @@ function ReaderPage() {
   ])
 
   useEffect(() => {
+    if (!focusMode) {
+      return
+    }
+
+    setSidebarOpen(false)
+    setShowReaderChrome(false)
+    setShowShortcutHelp(false)
+  }, [focusMode])
+
+  useEffect(() => {
     const onFullscreenChange = () => {
       setIsFullscreen(Boolean(document.fullscreenElement))
     }
@@ -1055,7 +1417,7 @@ function ReaderPage() {
   }, [isFullscreen, showPageHudForMoment])
 
   useEffect(() => {
-    if (sidebarOpen) {
+    if (sidebarOpen && !focusMode) {
       setShowReaderChrome(true)
       if (readerUiTimeoutRef.current !== null) {
         window.clearTimeout(readerUiTimeoutRef.current)
@@ -1065,7 +1427,7 @@ function ReaderPage() {
     }
 
     setShowReaderChrome(false)
-  }, [sidebarOpen])
+  }, [focusMode, sidebarOpen])
 
   useEffect(
     () => () => {
@@ -1076,9 +1438,18 @@ function ReaderPage() {
       if (readerUiTimeoutRef.current !== null) {
         window.clearTimeout(readerUiTimeoutRef.current)
       }
+
+      if (boundaryNoticeTimeoutRef.current !== null) {
+        window.clearTimeout(boundaryNoticeTimeoutRef.current)
+      }
     },
     [],
   )
+
+  useEffect(() => {
+    setPendingBoundaryDirection(null)
+    setBoundaryNotice(null)
+  }, [params.chapterId])
 
   useEffect(() => {
     if (isFullscreen) {
@@ -1126,16 +1497,16 @@ function ReaderPage() {
 
   if (isLoading) {
     return (
-      <div className="rounded-xl border border-border bg-surface p-6 text-muted-foreground">
-        Loading reader…
+      <div className="border-2 border-border bg-surface p-6 text-muted-foreground">
+        Opening chapter…
       </div>
     )
   }
 
   if (error || !chapterPayload) {
     return (
-      <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-6 text-destructive">
-        {error ?? 'Chapter failed to load'}
+      <div className="border-2 border-destructive/30 bg-destructive/10 p-6 text-destructive">
+        We could not open this chapter. Please go back and try another one.
       </div>
     )
   }
@@ -1143,7 +1514,9 @@ function ReaderPage() {
   return (
     <div
       className={
-        isFullscreen ? '' : 'relative h-[100dvh] overflow-hidden bg-black'
+        isFullscreen
+          ? ''
+          : `relative h-[100dvh] overflow-hidden bg-black ${focusMode ? 'reader-focus-mode' : ''}`
       }
       onMouseMove={handleReaderMouseMove}
       onMouseLeave={() => {
@@ -1154,7 +1527,7 @@ function ReaderPage() {
         <Button
           variant="ghost"
           size="icon"
-          className={`absolute top-4 z-50 size-10 border border-white/25 bg-black/35 text-white backdrop-blur transition-transform duration-200 ${sidebarOpen ? 'left-[292px]' : 'left-3'} ${showReaderChrome || sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+          className={`reader-shell-toggle absolute top-4 z-50 size-12 transition-transform duration-200 md:size-10 ${sidebarOpen ? 'left-[calc(min(88vw,360px)+12px)]' : 'left-3'} ${showReaderChrome || sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
           onClick={() => setSidebarOpen((current) => !current)}
           type="button"
         >
@@ -1164,23 +1537,32 @@ function ReaderPage() {
 
       {!isFullscreen ? (
         <aside
-          className={`animate-enter absolute inset-y-0 left-0 z-40 w-[280px] overflow-y-auto border-r border-border bg-surface p-3 shadow-[0_20px_40px_-30px_var(--shadow)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+          className={`reader-shell-panel animate-enter absolute inset-y-0 left-0 z-40 w-[min(88vw,360px)] overflow-y-auto p-3 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] max-md:inset-x-0 max-md:inset-y-auto max-md:bottom-0 max-md:top-auto max-md:h-[72dvh] max-md:w-full ${sidebarOpen ? 'translate-x-0 max-md:translate-y-0' : '-translate-x-full max-md:translate-y-full'}`}
           style={{ animationDelay: '20ms' }}
         >
           <div className="space-y-2 text-xs text-muted-foreground">
             <Link
               to="/series/$seriesId"
               params={{ seriesId: chapterPayload.manifest.seriesId }}
-              className="inline-flex hover:text-foreground"
+              className="inline-flex border border-border bg-surface-soft px-2 py-1 hover:bg-surface"
             >
-              Back
+              Back to series
             </Link>
-            <p className="truncate text-sm font-medium text-foreground">
-              {chapterPayload.manifest.title}
-            </p>
+            <Link
+              to="/series/$seriesId"
+              params={{ seriesId: chapterPayload.manifest.seriesId }}
+              className="block truncate text-sm font-semibold leading-snug text-foreground underline-offset-2 hover:underline"
+            >
+              {prefetchedLocalSeriesDetails.get(
+                chapterPayload.manifest.seriesId,
+              )?.title ?? 'Open series page'}
+            </Link>
             <p>
               Ch {chapterPayload.manifest.chapterNumber} ·{' '}
               {chapterPayload.manifest.pageCount}p
+            </p>
+            <p className="text-[11px]">
+              Tip: click left/right side of the page to move.
             </p>
           </div>
 
@@ -1191,7 +1573,7 @@ function ReaderPage() {
               className="h-8 w-full"
               onClick={() => setSettingsTab('basic')}
             >
-              Basic
+              Reading
             </Button>
             <Button
               type="button"
@@ -1199,7 +1581,7 @@ function ReaderPage() {
               className="h-8 w-full"
               onClick={() => setSettingsTab('advanced')}
             >
-              Advanced
+              More settings
             </Button>
           </div>
 
@@ -1223,9 +1605,9 @@ function ReaderPage() {
                   }
                 }}
                 options={[
-                  { value: 'single', label: 'Single' },
-                  { value: 'double', label: 'Double' },
-                  { value: 'scroll', label: 'Scroll' },
+                  { value: 'single', label: 'Single page' },
+                  { value: 'double', label: 'Two-page spread' },
+                  { value: 'scroll', label: 'Continuous scroll' },
                 ]}
               />
 
@@ -1235,7 +1617,7 @@ function ReaderPage() {
                 className="h-9 justify-between px-3"
                 onClick={() => setDoublePageOffset((value) => !value)}
               >
-                <span>Offset first page</span>
+                <span>Book start alignment</span>
                 <span>{doublePageOffset ? 'On' : 'Off'}</span>
               </Button>
 
@@ -1245,8 +1627,18 @@ function ReaderPage() {
                 className="h-9 justify-between px-3"
                 onClick={() => setMagnifierEnabled((value) => !value)}
               >
-                <span>Magnifier (Z)</span>
+                <span>Magnifier</span>
                 <span>{magnifierEnabled ? 'On' : 'Off'}</span>
+              </Button>
+
+              <Button
+                type="button"
+                variant={focusMode ? 'default' : 'soft'}
+                className="h-9 justify-between px-3"
+                onClick={() => setFocusMode((value) => !value)}
+              >
+                <span>Distraction-free mode</span>
+                <span>{focusMode ? 'On' : 'Off'}</span>
               </Button>
 
               <SelectField
@@ -1257,32 +1649,49 @@ function ReaderPage() {
                 className="h-9"
                 data-testid="zoom-select"
                 options={[
-                  { value: 'fit-height', label: 'Fit Height' },
-                  { value: 'fit-width', label: 'Fit Width' },
-                  { value: 'actual', label: 'Actual' },
+                  { value: 'fit-height', label: 'Fit to screen' },
+                  { value: 'fit-width', label: 'Fit to width' },
+                  { value: 'actual', label: 'Actual size' },
                 ]}
               />
 
               {seriesChapters.length > 0 ? (
-                <SelectField
-                  value={chapterPayload.manifest.chapterId}
-                  onChange={(event) => {
-                    const nextId = event.target.value
-                    if (nextId === chapterPayload.manifest.chapterId) {
-                      return
-                    }
-                    persistProgressNow(currentTargetPageIndex, currentStepIndex)
-                    void navigate({
-                      to: '/reader/$chapterId',
-                      params: { chapterId: nextId },
-                    })
-                  }}
-                  className="h-9"
-                  options={orderedSeriesChapters.map((chapter) => ({
-                    value: chapter.id,
-                    label: `Ch ${chapter.chapterNumber}`,
-                  }))}
-                />
+                <>
+                  <Input
+                    value={chapterFilter}
+                    onChange={(event) => setChapterFilter(event.target.value)}
+                    className="h-9"
+                    placeholder="Type chapter number..."
+                  />
+                  {filteredSeriesChapters.length > 0 ? (
+                    <SelectField
+                      value={chapterPayload.manifest.chapterId}
+                      onChange={(event) => {
+                        const nextId = event.target.value
+                        if (nextId === chapterPayload.manifest.chapterId) {
+                          return
+                        }
+                        persistProgressNow(
+                          currentTargetPageIndex,
+                          currentStepIndex,
+                        )
+                        void navigate({
+                          to: '/reader/$chapterId',
+                          params: { chapterId: nextId },
+                        })
+                      }}
+                      className="h-9"
+                      options={filteredSeriesChapters.map((chapter) => ({
+                        value: chapter.id,
+                        label: `Chapter ${chapter.chapterNumber}`,
+                      }))}
+                    />
+                  ) : (
+                    <p className="px-1 text-xs text-muted-foreground">
+                      No chapter found. Try a different number.
+                    </p>
+                  )}
+                </>
               ) : null}
 
               <Link
@@ -1290,7 +1699,7 @@ function ReaderPage() {
                 params={{ seriesId: chapterPayload.manifest.seriesId }}
                 className="inline-flex h-9 items-center justify-center border border-border bg-surface-soft text-xs text-muted-foreground hover:text-foreground"
               >
-                Go to series
+                Open series page
               </Link>
 
               <label className="text-xs text-muted-foreground">
@@ -1470,7 +1879,7 @@ function ReaderPage() {
               onClick={goPrevious}
               data-testid="nav-prev"
             >
-              Previous
+              Previous page
             </Button>
             <Button
               variant="soft"
@@ -1478,7 +1887,7 @@ function ReaderPage() {
               onClick={goNext}
               data-testid="nav-next"
             >
-              Next
+              Next page
             </Button>
           </div>
           <div className="mt-2 flex items-center gap-2">
@@ -1488,7 +1897,7 @@ function ReaderPage() {
               onClick={goToPreviousChapter}
               disabled={!previousChapterId}
             >
-              ] Prev chapter
+              Previous chapter
             </Button>
             <Button
               variant="ghost"
@@ -1496,7 +1905,7 @@ function ReaderPage() {
               onClick={goToNextChapter}
               disabled={!nextChapterId}
             >
-              [ Next chapter
+              Next chapter
             </Button>
           </div>
           <p
@@ -1507,7 +1916,136 @@ function ReaderPage() {
               ? `Spread ${currentStepIndex + 1} / ${Math.max(twoPageSteps.length, 1)}`
               : `Page ${currentTargetPageIndex + 1} / ${Math.max(pages.length, 1)}`}
           </p>
+          <Button
+            type="button"
+            variant="ghost"
+            className="mt-2 h-8 border border-border text-xs"
+            onClick={() => setShowShortcutHelp((value) => !value)}
+          >
+            {showShortcutHelp
+              ? 'Hide keyboard shortcuts'
+              : 'Show keyboard shortcuts'}
+          </Button>
+          {showShortcutHelp ? (
+            <div className="reader-shortcut-sheet mt-2 text-xs">
+              <p>Nav: A/D or arrows, Space, [ ]</p>
+              <p>View: Q mode, 0 reset zoom, F fullscreen</p>
+              <p>UI: S sidebar, X focus, Z magnifier</p>
+            </div>
+          ) : null}
         </aside>
+      ) : null}
+
+      {!isFullscreen && !focusMode && showReaderChrome ? (
+        <div className="reader-quick-strip absolute right-3 top-3 z-30 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="soft"
+            className="h-9 px-3 text-xs"
+            onClick={() => setSidebarOpen((value) => !value)}
+          >
+            Settings
+          </Button>
+          <Button
+            type="button"
+            variant="soft"
+            className="h-9 px-3 text-xs"
+            onClick={() => {
+              void toggleFullscreen()
+            }}
+          >
+            Fullscreen
+          </Button>
+        </div>
+      ) : null}
+
+      {!isFullscreen && (showReaderChrome || sidebarOpen) ? (
+        <div className="reader-chapter-jump absolute bottom-4 right-3 z-30 hidden items-center gap-2 md:flex">
+          <Button
+            type="button"
+            variant="soft"
+            className="h-11 px-3 text-xs"
+            onClick={goToPreviousChapter}
+            disabled={!previousChapterId}
+          >
+            Prev chapter
+          </Button>
+          <Button
+            type="button"
+            variant="soft"
+            className="h-11 px-3 text-xs"
+            onClick={goToNextChapter}
+            disabled={!nextChapterId}
+          >
+            Next chapter
+          </Button>
+        </div>
+      ) : null}
+
+      {!isFullscreen && !focusMode ? (
+        <div className="reader-mobile-nav fixed inset-x-2 bottom-2 z-30 flex items-center gap-2 border border-border bg-surface-soft/95 p-1 backdrop-blur-sm md:hidden">
+          <Button
+            type="button"
+            variant="soft"
+            className="h-9 px-2 text-xs"
+            onClick={goPrevious}
+          >
+            Prev
+          </Button>
+          <div className="min-w-0 flex-1 text-center text-[11px] text-muted-foreground">
+            {currentTargetPageIndex + 1} / {Math.max(pages.length, 1)}
+          </div>
+          <Button
+            type="button"
+            variant="soft"
+            className="h-9 px-2 text-xs"
+            onClick={goNext}
+          >
+            Next
+          </Button>
+        </div>
+      ) : null}
+
+      {!isFullscreen && !focusMode && showReaderChrome ? (
+        <div className="reader-key-hints absolute bottom-4 left-1/2 z-20 -translate-x-1/2 text-xs">
+          Tip: click/tap left or right side to move pages.
+        </div>
+      ) : null}
+
+      {pages.length > 0 ? (
+        mode === 'double' ? (
+          <>
+            <div className="pointer-events-none absolute bottom-2 left-3 z-20 text-[10px] font-medium text-white/55">
+              {rtlSpreadNumbers.left ?? ''}
+            </div>
+            {rtlSpreadNumbers.right ? (
+              <div className="pointer-events-none absolute bottom-2 right-3 z-20 text-[10px] font-medium text-white/55">
+                {rtlSpreadNumbers.right}
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="pointer-events-none absolute bottom-2 right-3 z-20 text-[10px] font-medium text-white/55">
+            {currentTargetPageIndex + 1} / {pages.length}
+          </div>
+        )
+      ) : null}
+
+      {boundaryNotice ? (
+        <div className="reader-hud pointer-events-none absolute bottom-20 left-1/2 z-30 -translate-x-1/2 px-3 py-1 text-xs">
+          {boundaryNotice}
+        </div>
+      ) : null}
+
+      {!isFullscreen && focusMode ? (
+        <Button
+          type="button"
+          variant="soft"
+          className="absolute right-3 top-3 z-30 h-10 px-3 text-xs"
+          onClick={() => setFocusMode(false)}
+        >
+          Exit distraction-free mode
+        </Button>
       ) : null}
 
       <section className={isFullscreen ? '' : 'h-full'} ref={readerStageRef}>
@@ -1523,14 +2061,14 @@ function ReaderPage() {
               }
             />
             {isFullscreen && showPageHud ? (
-              <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/70 px-3 py-1 text-sm text-white">
+              <div className="reader-hud pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 text-sm">
                 {hudPageLabel}
               </div>
             ) : null}
           </div>
         ) : (
           <div
-            className="relative h-[100dvh] bg-black"
+            className={`relative h-[100dvh] bg-black ${focusMode ? 'reader-focus-mode' : ''}`}
             ref={viewportRef}
             onMouseMove={handleReaderMouseMove}
             onPointerDown={(event) => {
@@ -1602,7 +2140,7 @@ function ReaderPage() {
               </>
             ) : null}
             {isFullscreen && showPageHud ? (
-              <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/70 px-3 py-1 text-sm text-white">
+              <div className="reader-hud pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 text-sm">
                 {hudPageLabel}
               </div>
             ) : null}
@@ -1612,7 +2150,7 @@ function ReaderPage() {
 
       {magnifierEnabled && magnifierFrame ? (
         <div
-          className="pointer-events-none fixed z-[90] overflow-hidden border border-white/50 bg-black/25 backdrop-blur-[1px]"
+          className="pointer-events-none fixed z-[90] overflow-hidden border border-border bg-surface/80"
           style={{
             width: magnifierSize,
             height: magnifierSize,
@@ -1632,7 +2170,7 @@ function ReaderPage() {
               top: magnifierSize / 2 - magnifierFrame.relY * magnifierZoom,
             }}
           />
-          <div className="absolute inset-0 border border-white/20" />
+          <div className="absolute inset-0 border border-border/70" />
         </div>
       ) : null}
     </div>
