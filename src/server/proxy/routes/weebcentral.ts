@@ -18,6 +18,11 @@ function readInputQuery(request: Request): string {
   return value
 }
 
+function readForceRefreshQuery(request: Request): boolean {
+  const url = new URL(request.url)
+  return url.searchParams.get('force') === '1'
+}
+
 function assertScrapeRateLimit(request: Request): void {
   assertRateLimit(`proxy-scrape:${requestClientId(request)}`, {
     limit: proxyConfig.scrapeRateLimitPerMinute,
@@ -28,7 +33,9 @@ function assertScrapeRateLimit(request: Request): void {
 export async function getSeriesDtoForRequest(request: Request) {
   assertScrapeRateLimit(request)
   const input = readInputQuery(request)
-  return getWeebcentralSeries(input, proxyConfig)
+  return getWeebcentralSeries(input, proxyConfig, {
+    bypassCache: readForceRefreshQuery(request),
+  })
 }
 
 export async function getChapterDtoForRequest(request: Request) {

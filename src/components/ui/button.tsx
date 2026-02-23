@@ -4,21 +4,21 @@ import * as React from 'react'
 import { cn } from '#/lib/utils'
 
 const buttonVariants = cva(
-  'inline-flex cursor-pointer items-center justify-center whitespace-nowrap border text-sm font-medium transition-colors duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50',
+  'inline-flex cursor-pointer items-center justify-center whitespace-nowrap border-2 text-sm font-semibold transition-[transform,color,background-color,border-color,box-shadow] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:translate-x-px active:translate-y-px disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50',
   {
     variants: {
       variant: {
         default:
-          'border-primary bg-primary text-primary-foreground hover:bg-primary/92',
+          'border-primary bg-primary text-primary-foreground shadow-[2px_2px_0_var(--shadow)] hover:bg-primary/92',
         secondary:
-          'border-border bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        soft: 'border-border bg-surface text-foreground hover:border-border-strong hover:bg-surface-soft',
+          'border-border bg-secondary text-secondary-foreground shadow-[2px_2px_0_var(--shadow)] hover:bg-secondary/84',
+        soft: 'border-border bg-surface text-foreground shadow-[2px_2px_0_var(--shadow)] hover:bg-surface-soft',
         outline:
-          'border-border-strong bg-background text-foreground hover:bg-surface-soft',
+          'border-border bg-background text-foreground hover:bg-surface-soft/75',
         ghost:
-          'border-transparent bg-transparent text-muted-foreground hover:border-border hover:bg-surface-soft hover:text-foreground',
+          'border-transparent bg-transparent text-foreground hover:bg-surface-soft',
         destructive:
-          'border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/16',
+          'border-destructive/32 bg-destructive/12 text-destructive hover:bg-destructive/18',
       },
       size: {
         default: 'h-10 px-4',

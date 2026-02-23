@@ -37,8 +37,8 @@ export function ReaderEdgeArrowButton({
       aria-label={side === 'left' ? 'left-arrow' : 'right-arrow'}
       className={
         side === 'left'
-          ? 'absolute left-2 top-1/2 z-20 inline-flex size-11 -translate-y-1/2 rounded-full border border-white/30 bg-black/35 p-0 text-base text-white backdrop-blur-sm hover:bg-black/55'
-          : 'absolute right-2 top-1/2 z-20 inline-flex size-11 -translate-y-1/2 rounded-full border border-white/30 bg-black/35 p-0 text-base text-white backdrop-blur-sm hover:bg-black/55'
+          ? 'absolute left-2 top-1/2 z-20 inline-flex size-11 -translate-y-1/2 border-2 border-border bg-surface/90 p-0 text-base text-foreground hover:bg-surface-soft'
+          : 'absolute right-2 top-1/2 z-20 inline-flex size-11 -translate-y-1/2 border-2 border-border bg-surface/90 p-0 text-base text-foreground hover:bg-surface-soft'
       }
       onClick={onActivate}
       onMouseDown={(event) => event.preventDefault()}

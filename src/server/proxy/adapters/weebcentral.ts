@@ -284,6 +284,188 @@ function extractTitleFromHtml(html: string, fallback: string): string {
   return fallback
 }
 
+function normalizeSeriesTitle(input: string): string {
+  return input
+    .replace(/\s*[-|]\s*(?:read\s+)?manga.*$/i, '')
+    .replace(/\s*[-|]\s*weebcentral\s*$/i, '')
+    .replace(/\s*chapter\s*\d+(?:\.\d+)?\s*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function parseJsonTitleCandidate(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined
+  }
+
+  const record = value as Record<string, unknown>
+  const titleFields = [record.name, record.headline, record.alternativeHeadline]
+
+  for (const field of titleFields) {
+    if (typeof field === 'string') {
+      const normalized = normalizeSeriesTitle(stripHtml(field))
+      if (normalized.length > 0) {
+        return normalized
+      }
+    }
+  }
+
+  if (Array.isArray(record['@graph'])) {
+    for (const entry of record['@graph']) {
+      const nested = parseJsonTitleCandidate(entry)
+      if (nested) {
+        return nested
+      }
+    }
+  }
+
+  return undefined
+}
+
+function extractSeriesTitle(html: string, fallback: string): string {
+  const scriptPattern =
+    /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+
+  for (const match of html.matchAll(scriptPattern)) {
+    const candidate = match[1]?.trim()
+    if (!candidate) {
+      continue
+    }
+
+    try {
+      const parsed = JSON.parse(candidate) as unknown
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          const nested = parseJsonTitleCandidate(item)
+          if (nested) {
+            return nested
+          }
+        }
+      } else {
+        const nested = parseJsonTitleCandidate(parsed)
+        if (nested) {
+          return nested
+        }
+      }
+    } catch {
+      // Ignore malformed JSON-LD blocks.
+    }
+  }
+
+  const headingWithClassMatch = html.match(
+    /<h1[^>]*class=["'][^"']*(?:title|name|series)[^"']*["'][^>]*>([\s\S]*?)<\/h1>/i,
+  )
+  if (headingWithClassMatch?.[1]) {
+    const normalized = normalizeSeriesTitle(stripHtml(headingWithClassMatch[1]))
+    if (normalized.length > 0) {
+      return normalized
+    }
+  }
+
+  const firstHeadingMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)
+  if (firstHeadingMatch?.[1]) {
+    const normalized = normalizeSeriesTitle(stripHtml(firstHeadingMatch[1]))
+    if (normalized.length > 0) {
+      return normalized
+    }
+  }
+
+  const jsonStringTitleMatch = html.match(
+    /["'](?:seriesName|mangaName|title|name)["']\s*:\s*["']([^"']{2,200})["']/i,
+  )
+  if (jsonStringTitleMatch?.[1]) {
+    const normalized = normalizeSeriesTitle(stripHtml(jsonStringTitleMatch[1]))
+    if (normalized.length > 0) {
+      return normalized
+    }
+  }
+
+  return normalizeSeriesTitle(extractTitleFromHtml(html, fallback)) || fallback
+}
+
+function parseJsonDescriptionCandidate(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined
+  }
+
+  const record = value as Record<string, unknown>
+  if (typeof record.description === 'string') {
+    const cleaned = stripHtml(record.description)
+    if (cleaned.length > 24) {
+      return cleaned
+    }
+  }
+
+  if (Array.isArray(record['@graph'])) {
+    for (const entry of record['@graph']) {
+      const nested = parseJsonDescriptionCandidate(entry)
+      if (nested) {
+        return nested
+      }
+    }
+  }
+
+  return undefined
+}
+
+function extractSeriesDescription(html: string): string | undefined {
+  const scriptPattern =
+    /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+  for (const match of html.matchAll(scriptPattern)) {
+    const candidate = match[1]?.trim()
+    if (!candidate) {
+      continue
+    }
+
+    try {
+      const parsed = JSON.parse(candidate) as unknown
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          const nested = parseJsonDescriptionCandidate(item)
+          if (nested) {
+            return nested
+          }
+        }
+      } else {
+        const nested = parseJsonDescriptionCandidate(parsed)
+        if (nested) {
+          return nested
+        }
+      }
+    } catch {
+      // Ignore malformed JSON-LD blocks.
+    }
+  }
+
+  const sectionPatterns = [
+    /<h[1-6][^>]*>\s*(?:Synopsis|Summary|Description)\s*<\/h[1-6]>\s*<p[^>]*>([\s\S]*?)<\/p>/i,
+    /(?:Synopsis|Summary|Description)<\/[^>]+>\s*<[^>]*>\s*([\s\S]*?)\s*<\/p>/i,
+    /["'](?:synopsis|summary|description)["']\s*:\s*["']([\s\S]{30,3000}?)["']/i,
+  ]
+
+  for (const pattern of sectionPatterns) {
+    const match = html.match(pattern)
+    if (!match?.[1]) {
+      continue
+    }
+
+    const cleaned = stripHtml(match[1])
+    if (cleaned.length > 24) {
+      return cleaned
+    }
+  }
+
+  const metaDescription = extractMetaContent(html, 'description')
+  if (!metaDescription) {
+    return undefined
+  }
+
+  const genericMeta = /(?:read|chapters?).*(?:weebcentral|manga)/i.test(
+    metaDescription,
+  )
+  return genericMeta ? undefined : metaDescription
+}
+
 function normalizeTitle(chapterTitle: string, chapterNumber: number): string {
   const withoutPrefix = chapterTitle
     .replace(/(?:chapter|ch\.?)\s*[0-9]+(?:\.[0-9]+)?\s*[:\-]?\s*/i, '')
@@ -536,10 +718,11 @@ async function resolveSeriesIdFromChapterInput(
 async function fetchSeriesDtoBySeriesId(
   seriesId: string,
   config: ProxyServerConfig,
+  options?: { bypassCache?: boolean },
 ): Promise<SeriesDTO> {
-  const cacheKey = `series:${seriesId}`
+  const cacheKey = `series:v2:${seriesId}`
 
-  return seriesCache.getOrSet(cacheKey, async () => {
+  const fetchSeriesPayload = async () => {
     const seriesUrl = new URL(`/series/${seriesId}`, config.weebcentralOrigin)
     const { text: seriesHtml } = await fetchTextWithWeebcentralGuards(seriesUrl)
     const chapterListUrl = new URL(
@@ -575,23 +758,30 @@ async function fetchSeriesDtoBySeriesId(
 
     return {
       id: seriesId,
-      title: extractTitleFromHtml(seriesHtml, `Series ${seriesId}`),
+      title: extractSeriesTitle(seriesHtml, `Series ${seriesId}`),
       author: extractAuthorFromHtml(seriesHtml),
-      description: extractMetaContent(seriesHtml, 'description'),
+      description: extractSeriesDescription(seriesHtml),
       coverUrl: extractMetaContent(seriesHtml, 'og:image'),
       chapters,
     }
-  })
+  }
+
+  if (options?.bypassCache) {
+    return fetchSeriesPayload()
+  }
+
+  return seriesCache.getOrSet(cacheKey, fetchSeriesPayload)
 }
 
 async function resolveSeriesFromInput(
   input: string,
   config: ProxyServerConfig,
+  options?: { bypassCache?: boolean },
 ): Promise<SeriesDTO> {
   const parsed = parseWeebcentralInput(input)
 
   if (parsed.seriesId) {
-    return fetchSeriesDtoBySeriesId(parsed.seriesId, config)
+    return fetchSeriesDtoBySeriesId(parsed.seriesId, config, options)
   }
 
   if (parsed.chapterId || parsed.url) {
@@ -599,18 +789,18 @@ async function resolveSeriesFromInput(
       parsed,
       config,
     )
-    return fetchSeriesDtoBySeriesId(resolvedSeriesId, config)
+    return fetchSeriesDtoBySeriesId(resolvedSeriesId, config, options)
   }
 
   if (parsed.ambiguousId) {
     try {
-      return await fetchSeriesDtoBySeriesId(parsed.ambiguousId, config)
+      return await fetchSeriesDtoBySeriesId(parsed.ambiguousId, config, options)
     } catch {
       const resolvedSeriesId = await resolveSeriesIdFromChapterInput(
         parsed,
         config,
       )
-      return fetchSeriesDtoBySeriesId(resolvedSeriesId, config)
+      return fetchSeriesDtoBySeriesId(resolvedSeriesId, config, options)
     }
   }
 
@@ -727,8 +917,9 @@ function toProxiedImagePath(url: string): string {
 export async function getWeebcentralSeries(
   input: string,
   config: ProxyServerConfig = proxyConfig,
+  options?: { bypassCache?: boolean },
 ): Promise<SeriesDTO> {
-  return resolveSeriesFromInput(input, config)
+  return resolveSeriesFromInput(input, config, options)
 }
 
 export async function getWeebcentralChapter(

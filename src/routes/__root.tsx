@@ -14,9 +14,13 @@ export const Route = createRootRoute({
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'Suki Reader' },
+      { title: 'Tsuki Reader' },
     ],
-    links: [{ rel: 'stylesheet', href: appCss }],
+    links: [
+      { rel: 'stylesheet', href: appCss },
+      { rel: 'icon', href: '/favicon.ico', sizes: 'any' },
+      { rel: 'icon', href: '/tsuki_favicon.png', type: 'image/png' },
+    ],
   }),
   shellComponent: RootDocument,
   component: RootLayout,
@@ -42,7 +46,7 @@ function RootLayout() {
       attribute="data-theme"
       defaultTheme="system"
       enableSystem
-      storageKey="suki-theme-mode.v1"
+      storageKey="tsuki-theme-mode.v1"
       themes={['light', 'dark', 'paper']}
       disableTransitionOnChange
     >

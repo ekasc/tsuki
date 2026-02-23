@@ -4,7 +4,7 @@ import { useTheme } from 'next-themes'
 import { BookOpenText } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import { SelectField } from '#/components/ui/select'
+import { Button } from '#/components/ui/button'
 
 type ThemeMode = 'light' | 'dark' | 'paper'
 
@@ -26,6 +26,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   })
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const nextTheme = window.localStorage.getItem('tsuki-theme-mode.v1')
+      if (!nextTheme) {
+        const legacyTheme = window.localStorage.getItem('suki-theme-mode.v1')
+        if (legacyTheme) {
+          window.localStorage.setItem('tsuki-theme-mode.v1', legacyTheme)
+        }
+      }
+    }
+
     setMounted(true)
   }, [])
 
@@ -38,38 +48,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-background pb-8 text-foreground">
+    <div className="app-canvas min-h-screen bg-background pb-10 text-foreground">
       <header className="mx-auto max-w-7xl px-4 pt-4 md:px-8">
-        <div className="animate-enter ui-panel flex items-center justify-between gap-4 px-4 py-3">
-          <Link to="/" className="group flex items-center gap-3">
-            <span className="inline-flex size-8 items-center justify-center border border-border bg-surface-soft text-muted-foreground transition-colors group-hover:text-foreground">
+        <div className="exp-toolbar animate-enter flex items-center justify-between gap-3">
+          <Link to="/" className="group flex items-center gap-2">
+            <span className="inline-flex size-8 items-center justify-center border border-border bg-surface-soft text-primary">
               <BookOpenText className="size-4" />
             </span>
-            <span className="flex flex-col">
-              <span className="text-sm font-semibold tracking-[0.16em]">
-                SUKI
-              </span>
-              <span className="text-xs text-muted-foreground transition group-hover:text-foreground">
-                Manga reader
-              </span>
+            <span className="manga-title text-sm font-semibold tracking-tight">
+              Tsuki Reader
             </span>
           </Link>
 
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <label
-              htmlFor="theme-select"
-              className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground"
-            >
-              Theme
-            </label>
-            <SelectField
-              id="theme-select"
-              value={selectedTheme}
-              onChange={(event) => setTheme(event.target.value)}
-              disabled={!mounted}
-              className="h-8 w-auto min-w-24 px-2 text-xs"
-              options={THEME_OPTIONS}
-            ></SelectField>
+          <div className="flex items-center gap-1 border border-border bg-surface-soft p-1">
+            {THEME_OPTIONS.map((option) => (
+              <Button
+                key={option.value}
+                type="button"
+                size="sm"
+                variant={selectedTheme === option.value ? 'default' : 'ghost'}
+                className="h-8 min-w-16 px-2"
+                disabled={!mounted}
+                onClick={() => setTheme(option.value)}
+                aria-pressed={selectedTheme === option.value}
+                aria-label={`Switch theme to ${option.label}`}
+              >
+                {option.label}
+              </Button>
+            ))}
           </div>
         </div>
       </header>

@@ -40,7 +40,8 @@ export const Route = createAnyFileRoute('/weebcentral/$chapterId')({
   component: WeebcentralReaderPage,
 })
 
-const REMOTE_PROGRESS_STORAGE_KEY = 'suki-remote-progress.v1'
+const REMOTE_PROGRESS_STORAGE_KEY = 'tsuki-remote-progress.v1'
+const LEGACY_REMOTE_PROGRESS_STORAGE_KEY = 'suki-remote-progress.v1'
 const prefetchedRemoteChapters = new Map<string, WeebcentralChapterDTO>()
 const prefetchedRemoteSeries = new Map<string, WeebcentralSeriesDTO>()
 interface RemotePageDimension {
@@ -51,7 +52,26 @@ const remotePageDimensionsCache = new Map<
   string,
   Record<number, RemotePageDimension>
 >()
-const REMOTE_READER_UI_PREFS_KEY = 'suki-remote-reader-ui.v1'
+const REMOTE_READER_UI_PREFS_KEY = 'tsuki-remote-reader-ui.v1'
+const LEGACY_REMOTE_READER_UI_PREFS_KEY = 'suki-remote-reader-ui.v1'
+const REMOTE_READER_SERIES_PRESETS_KEY = 'tsuki-remote-reader-series-presets.v1'
+const LEGACY_REMOTE_READER_SERIES_PRESETS_KEY =
+  'suki-remote-reader-series-presets.v1'
+
+function readStorageWithLegacy(key: string, legacyKey: string): string | null {
+  const value = window.localStorage.getItem(key)
+  if (value) {
+    return value
+  }
+
+  const legacyValue = window.localStorage.getItem(legacyKey)
+  if (!legacyValue) {
+    return null
+  }
+
+  window.localStorage.setItem(key, legacyValue)
+  return legacyValue
+}
 
 interface StoredRemoteProgress {
   pageIndex: number
@@ -74,13 +94,91 @@ interface ReaderUiPrefs {
   magnifierZoom: number
 }
 
-function loadReaderUiPrefs(storageKey: string): ReaderUiPrefs | null {
+interface ReaderSeriesPreset {
+  mode: ReaderMode
+  zoomPreset: ZoomPreset
+  doublePageOffset: boolean
+  magnifierEnabled: boolean
+  focusMode: boolean
+}
+
+function loadReaderSeriesPreset(seriesId: string): ReaderSeriesPreset | null {
   if (typeof window === 'undefined') {
     return null
   }
 
   try {
-    const raw = window.localStorage.getItem(storageKey)
+    const raw = readStorageWithLegacy(
+      REMOTE_READER_SERIES_PRESETS_KEY,
+      LEGACY_REMOTE_READER_SERIES_PRESETS_KEY,
+    )
+    if (!raw) {
+      return null
+    }
+
+    const payload = JSON.parse(raw) as Record<
+      string,
+      Partial<ReaderSeriesPreset>
+    >
+    const preset = payload[seriesId]
+    if (!preset) {
+      return null
+    }
+
+    return {
+      mode:
+        preset.mode === 'double' || preset.mode === 'scroll'
+          ? preset.mode
+          : 'single',
+      zoomPreset:
+        preset.zoomPreset === 'fit-width' || preset.zoomPreset === 'actual'
+          ? preset.zoomPreset
+          : 'fit-height',
+      doublePageOffset: Boolean(preset.doublePageOffset),
+      magnifierEnabled: Boolean(preset.magnifierEnabled),
+      focusMode: Boolean(preset.focusMode),
+    }
+  } catch {
+    return null
+  }
+}
+
+function saveReaderSeriesPreset(seriesId: string, preset: ReaderSeriesPreset) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    const raw = readStorageWithLegacy(
+      REMOTE_READER_SERIES_PRESETS_KEY,
+      LEGACY_REMOTE_READER_SERIES_PRESETS_KEY,
+    )
+    const payload = raw
+      ? (JSON.parse(raw) as Record<string, ReaderSeriesPreset>)
+      : {}
+
+    payload[seriesId] = preset
+    window.localStorage.setItem(
+      REMOTE_READER_SERIES_PRESETS_KEY,
+      JSON.stringify(payload),
+    )
+  } catch {
+    // Ignore localStorage persistence failures.
+  }
+}
+
+function loadReaderUiPrefs(
+  storageKey: string,
+  legacyKey?: string,
+): ReaderUiPrefs | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const raw = legacyKey
+      ? readStorageWithLegacy(storageKey, legacyKey)
+      : window.localStorage.getItem(storageKey)
     if (!raw) {
       return null
     }
@@ -235,7 +333,10 @@ function blurReaderFocusTarget() {
 
 function loadRemoteProgress(chapterId: string): StoredRemoteProgress | null {
   try {
-    const raw = window.localStorage.getItem(REMOTE_PROGRESS_STORAGE_KEY)
+    const raw = readStorageWithLegacy(
+      REMOTE_PROGRESS_STORAGE_KEY,
+      LEGACY_REMOTE_PROGRESS_STORAGE_KEY,
+    )
     if (!raw) {
       return null
     }
@@ -254,7 +355,10 @@ function loadRemoteProgress(chapterId: string): StoredRemoteProgress | null {
 
 function saveRemoteProgress(chapterId: string, progress: StoredRemoteProgress) {
   try {
-    const raw = window.localStorage.getItem(REMOTE_PROGRESS_STORAGE_KEY)
+    const raw = readStorageWithLegacy(
+      REMOTE_PROGRESS_STORAGE_KEY,
+      LEGACY_REMOTE_PROGRESS_STORAGE_KEY,
+    )
     const current = raw
       ? (JSON.parse(raw) as Record<string, StoredRemoteProgress>)
       : {}
@@ -305,51 +409,96 @@ function WeebcentralReaderPage() {
   const [error, setError] = useState<string | null>(null)
 
   const [mode, setMode] = useState<ReaderMode>(
-    () => loadReaderUiPrefs(REMOTE_READER_UI_PREFS_KEY)?.mode ?? 'single',
+    () =>
+      loadReaderUiPrefs(
+        REMOTE_READER_UI_PREFS_KEY,
+        LEGACY_REMOTE_READER_UI_PREFS_KEY,
+      )?.mode ?? 'single',
   )
   const [zoomPreset, setZoomPreset] = useState<ZoomPreset>(
     () =>
-      loadReaderUiPrefs(REMOTE_READER_UI_PREFS_KEY)?.zoomPreset ?? 'fit-height',
+      loadReaderUiPrefs(
+        REMOTE_READER_UI_PREFS_KEY,
+        LEGACY_REMOTE_READER_UI_PREFS_KEY,
+      )?.zoomPreset ?? 'fit-height',
   )
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(
-    () => loadReaderUiPrefs(REMOTE_READER_UI_PREFS_KEY)?.sidebarOpen ?? false,
+    () =>
+      loadReaderUiPrefs(
+        REMOTE_READER_UI_PREFS_KEY,
+        LEGACY_REMOTE_READER_UI_PREFS_KEY,
+      )?.sidebarOpen ?? false,
   )
   const [doublePageOffset, setDoublePageOffset] = useState<boolean>(
     () =>
-      loadReaderUiPrefs(REMOTE_READER_UI_PREFS_KEY)?.doublePageOffset ?? false,
+      loadReaderUiPrefs(
+        REMOTE_READER_UI_PREFS_KEY,
+        LEGACY_REMOTE_READER_UI_PREFS_KEY,
+      )?.doublePageOffset ?? false,
   )
   const [settingsTab, setSettingsTab] = useState<'basic' | 'advanced'>('basic')
   const [preloadAhead, setPreloadAhead] = useState<number>(
-    () => loadReaderUiPrefs(REMOTE_READER_UI_PREFS_KEY)?.preloadAhead ?? 8,
+    () =>
+      loadReaderUiPrefs(
+        REMOTE_READER_UI_PREFS_KEY,
+        LEGACY_REMOTE_READER_UI_PREFS_KEY,
+      )?.preloadAhead ?? 8,
   )
   const [preloadBehind, setPreloadBehind] = useState<number>(
-    () => loadReaderUiPrefs(REMOTE_READER_UI_PREFS_KEY)?.preloadBehind ?? 4,
+    () =>
+      loadReaderUiPrefs(
+        REMOTE_READER_UI_PREFS_KEY,
+        LEGACY_REMOTE_READER_UI_PREFS_KEY,
+      )?.preloadBehind ?? 4,
   )
   const [prefetchConcurrency, setPrefetchConcurrency] = useState<number>(
     () =>
-      loadReaderUiPrefs(REMOTE_READER_UI_PREFS_KEY)?.prefetchConcurrency ?? 2,
+      loadReaderUiPrefs(
+        REMOTE_READER_UI_PREFS_KEY,
+        LEGACY_REMOTE_READER_UI_PREFS_KEY,
+      )?.prefetchConcurrency ?? 2,
   )
   const [nextChapterPrefetchThreshold, setNextChapterPrefetchThreshold] =
     useState<number>(
       () =>
-        loadReaderUiPrefs(REMOTE_READER_UI_PREFS_KEY)
-          ?.nextChapterPrefetchThreshold ?? 8,
+        loadReaderUiPrefs(
+          REMOTE_READER_UI_PREFS_KEY,
+          LEGACY_REMOTE_READER_UI_PREFS_KEY,
+        )?.nextChapterPrefetchThreshold ?? 8,
     )
   const [nextChapterWarmPages, setNextChapterWarmPages] = useState<number>(
     () =>
-      loadReaderUiPrefs(REMOTE_READER_UI_PREFS_KEY)?.nextChapterWarmPages ?? 4,
+      loadReaderUiPrefs(
+        REMOTE_READER_UI_PREFS_KEY,
+        LEGACY_REMOTE_READER_UI_PREFS_KEY,
+      )?.nextChapterWarmPages ?? 4,
   )
   const [uiAutoHideMs, setUiAutoHideMs] = useState<number>(
-    () => loadReaderUiPrefs(REMOTE_READER_UI_PREFS_KEY)?.uiAutoHideMs ?? 1400,
+    () =>
+      loadReaderUiPrefs(
+        REMOTE_READER_UI_PREFS_KEY,
+        LEGACY_REMOTE_READER_UI_PREFS_KEY,
+      )?.uiAutoHideMs ?? 1400,
   )
   const [magnifierEnabled, setMagnifierEnabled] = useState(false)
   const [magnifierSize, setMagnifierSize] = useState<number>(
-    () => loadReaderUiPrefs(REMOTE_READER_UI_PREFS_KEY)?.magnifierSize ?? 220,
+    () =>
+      loadReaderUiPrefs(
+        REMOTE_READER_UI_PREFS_KEY,
+        LEGACY_REMOTE_READER_UI_PREFS_KEY,
+      )?.magnifierSize ?? 220,
   )
   const [magnifierZoom, setMagnifierZoom] = useState<number>(
-    () => loadReaderUiPrefs(REMOTE_READER_UI_PREFS_KEY)?.magnifierZoom ?? 2.4,
+    () =>
+      loadReaderUiPrefs(
+        REMOTE_READER_UI_PREFS_KEY,
+        LEGACY_REMOTE_READER_UI_PREFS_KEY,
+      )?.magnifierZoom ?? 2.4,
   )
   const [showReaderChrome, setShowReaderChrome] = useState(false)
+  const [focusMode, setFocusMode] = useState(false)
+  const [showShortcutHelp, setShowShortcutHelp] = useState(false)
+  const [chapterFilter, setChapterFilter] = useState('')
   const [magnifierFrame, setMagnifierFrame] = useState<{
     x: number
     y: number
@@ -366,11 +515,16 @@ function WeebcentralReaderPage() {
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [showPageHud, setShowPageHud] = useState(false)
+  const [pendingBoundaryDirection, setPendingBoundaryDirection] = useState<
+    'next' | 'prev' | null
+  >(null)
+  const [boundaryNotice, setBoundaryNotice] = useState<string | null>(null)
 
   const viewportRef = useRef<HTMLDivElement>(null)
   const readerStageRef = useRef<HTMLElement>(null)
   const pageHudTimeoutRef = useRef<number | null>(null)
   const readerUiTimeoutRef = useRef<number | null>(null)
+  const boundaryNoticeTimeoutRef = useRef<number | null>(null)
   const dragStateRef = useRef<{
     active: boolean
     startX: number
@@ -449,6 +603,22 @@ function WeebcentralReaderPage() {
     [series?.chapters],
   )
 
+  const filteredSeriesChapters = useMemo(() => {
+    const query = chapterFilter.trim().toLowerCase()
+    if (!query) {
+      return orderedSeriesChapters
+    }
+
+    return orderedSeriesChapters.filter((entry) => {
+      const chapterNumber = String(entry.number)
+      const title = entry.title.toLowerCase()
+      return chapterNumber.includes(query) || title.includes(query)
+    })
+  }, [chapterFilter, orderedSeriesChapters])
+
+  const activeSeriesId =
+    series?.id ?? search.seriesId ?? chapter?.seriesId ?? null
+
   const previousChapterId =
     currentChapterIndex >= 0
       ? (series?.chapters[currentChapterIndex + 1]?.id ?? null)
@@ -507,6 +677,21 @@ function WeebcentralReaderPage() {
     return `Pages ${first + 1}-${last + 1} / ${pages.length}`
   }, [currentTargetPageIndex, displayUnits, mode, pages.length])
 
+  const rtlSpreadNumbers = useMemo(() => {
+    const currentNumber = currentTargetPageIndex + 1
+    const rightNumber =
+      currentNumber % 2 === 1 ? currentNumber : currentNumber - 1
+    const leftNumber =
+      rightNumber > 0 && rightNumber + 1 <= pages.length
+        ? rightNumber + 1
+        : null
+
+    return {
+      right: rightNumber > 0 ? rightNumber : null,
+      left: leftNumber,
+    }
+  }, [currentTargetPageIndex, pages.length])
+
   const showPageHudForMoment = useCallback(() => {
     if (!isFullscreen) {
       return
@@ -525,6 +710,11 @@ function WeebcentralReaderPage() {
   }, [isFullscreen])
 
   const revealReaderUi = useCallback(() => {
+    if (focusMode) {
+      setShowReaderChrome(false)
+      return
+    }
+
     setShowReaderChrome(true)
 
     if (readerUiTimeoutRef.current !== null) {
@@ -540,7 +730,7 @@ function WeebcentralReaderPage() {
       setShowReaderChrome(false)
       readerUiTimeoutRef.current = null
     }, uiAutoHideMs)
-  }, [sidebarOpen, uiAutoHideMs])
+  }, [focusMode, sidebarOpen, uiAutoHideMs])
 
   const updateMagnifierFrame = useCallback(
     (event: MouseEvent<HTMLElement>) => {
@@ -631,6 +821,9 @@ function WeebcentralReaderPage() {
       if (!chapterId) {
         return
       }
+
+      setPendingBoundaryDirection(null)
+      setBoundaryNotice(null)
 
       persistRemoteProgressNow(currentTargetPageIndex)
 
@@ -732,11 +925,8 @@ function WeebcentralReaderPage() {
         }
       })()
     } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : 'Failed to load remote chapter',
-      )
+      void requestError
+      setError('Could not open this chapter.')
     } finally {
       setIsLoading(false)
     }
@@ -790,6 +980,48 @@ function WeebcentralReaderPage() {
     uiAutoHideMs,
     zoomPreset,
   ])
+
+  useEffect(() => {
+    if (!activeSeriesId) {
+      return
+    }
+
+    const preset = loadReaderSeriesPreset(activeSeriesId)
+    if (!preset) {
+      return
+    }
+
+    setMode(preset.mode)
+    setZoomPreset(preset.zoomPreset)
+    setDoublePageOffset(preset.doublePageOffset)
+    setMagnifierEnabled(preset.magnifierEnabled)
+    setFocusMode(preset.focusMode)
+  }, [activeSeriesId])
+
+  useEffect(() => {
+    if (!activeSeriesId) {
+      return
+    }
+
+    saveReaderSeriesPreset(activeSeriesId, {
+      mode,
+      zoomPreset,
+      doublePageOffset,
+      magnifierEnabled,
+      focusMode,
+    })
+  }, [
+    activeSeriesId,
+    doublePageOffset,
+    focusMode,
+    magnifierEnabled,
+    mode,
+    zoomPreset,
+  ])
+
+  useEffect(() => {
+    setChapterFilter('')
+  }, [params.chapterId])
 
   const cycleMode = useCallback(() => {
     setMode((current) => {
@@ -998,6 +1230,16 @@ function WeebcentralReaderPage() {
   }, [])
 
   useEffect(() => {
+    if (!focusMode) {
+      return
+    }
+
+    setSidebarOpen(false)
+    setShowReaderChrome(false)
+    setShowShortcutHelp(false)
+  }, [focusMode])
+
+  useEffect(() => {
     if (!isFullscreen) {
       setShowPageHud(false)
       if (pageHudTimeoutRef.current !== null) {
@@ -1011,7 +1253,7 @@ function WeebcentralReaderPage() {
   }, [isFullscreen, showPageHudForMoment])
 
   useEffect(() => {
-    if (sidebarOpen) {
+    if (sidebarOpen && !focusMode) {
       setShowReaderChrome(true)
       if (readerUiTimeoutRef.current !== null) {
         window.clearTimeout(readerUiTimeoutRef.current)
@@ -1021,7 +1263,7 @@ function WeebcentralReaderPage() {
     }
 
     setShowReaderChrome(false)
-  }, [sidebarOpen])
+  }, [focusMode, sidebarOpen])
 
   useEffect(
     () => () => {
@@ -1032,9 +1274,18 @@ function WeebcentralReaderPage() {
       if (readerUiTimeoutRef.current !== null) {
         window.clearTimeout(readerUiTimeoutRef.current)
       }
+
+      if (boundaryNoticeTimeoutRef.current !== null) {
+        window.clearTimeout(boundaryNoticeTimeoutRef.current)
+      }
     },
     [],
   )
+
+  useEffect(() => {
+    setPendingBoundaryDirection(null)
+    setBoundaryNotice(null)
+  }, [params.chapterId])
 
   useEffect(() => {
     const viewport = viewportRef.current
@@ -1093,9 +1344,43 @@ function WeebcentralReaderPage() {
   }, [])
 
   const goNext = useCallback(() => {
+    const armBoundaryNotice = (direction: 'next' | 'prev') => {
+      const hasAdjacent =
+        direction === 'next'
+          ? Boolean(nextChapterId)
+          : Boolean(previousChapterId)
+
+      const message =
+        direction === 'next'
+          ? hasAdjacent
+            ? 'Chapter ended. Press next again for next chapter.'
+            : 'Chapter ended.'
+          : hasAdjacent
+            ? 'At first page. Press previous again for previous chapter.'
+            : 'At first page.'
+
+      setPendingBoundaryDirection(direction)
+      setBoundaryNotice(message)
+
+      if (boundaryNoticeTimeoutRef.current !== null) {
+        window.clearTimeout(boundaryNoticeTimeoutRef.current)
+      }
+
+      boundaryNoticeTimeoutRef.current = window.setTimeout(() => {
+        setBoundaryNotice(null)
+        setPendingBoundaryDirection((value) =>
+          value === direction ? null : value,
+        )
+      }, 1800)
+    }
+
     if (mode === 'double') {
       if (currentStepIndex >= maxStepIndex) {
-        goToChapter(nextChapterId)
+        if (pendingBoundaryDirection === 'next' && nextChapterId) {
+          goToChapter(nextChapterId)
+        } else {
+          armBoundaryNotice('next')
+        }
         return
       }
 
@@ -1104,14 +1389,22 @@ function WeebcentralReaderPage() {
       setCurrentPageIndex(
         twoPageSteps[next]?.anchorPageIndex ?? currentPageIndex,
       )
+      setPendingBoundaryDirection(null)
+      setBoundaryNotice(null)
       return
     }
 
     if (currentPageIndex >= maxPageIndex) {
-      goToChapter(nextChapterId)
+      if (pendingBoundaryDirection === 'next' && nextChapterId) {
+        goToChapter(nextChapterId)
+      } else {
+        armBoundaryNotice('next')
+      }
       return
     }
 
+    setPendingBoundaryDirection(null)
+    setBoundaryNotice(null)
     goToPage(currentPageIndex + 1)
   }, [
     currentPageIndex,
@@ -1122,13 +1415,49 @@ function WeebcentralReaderPage() {
     maxStepIndex,
     mode,
     nextChapterId,
+    pendingBoundaryDirection,
+    previousChapterId,
     twoPageSteps,
   ])
 
   const goPrevious = useCallback(() => {
+    const armBoundaryNotice = (direction: 'next' | 'prev') => {
+      const hasAdjacent =
+        direction === 'next'
+          ? Boolean(nextChapterId)
+          : Boolean(previousChapterId)
+
+      const message =
+        direction === 'next'
+          ? hasAdjacent
+            ? 'Chapter ended. Press next again for next chapter.'
+            : 'Chapter ended.'
+          : hasAdjacent
+            ? 'At first page. Press previous again for previous chapter.'
+            : 'At first page.'
+
+      setPendingBoundaryDirection(direction)
+      setBoundaryNotice(message)
+
+      if (boundaryNoticeTimeoutRef.current !== null) {
+        window.clearTimeout(boundaryNoticeTimeoutRef.current)
+      }
+
+      boundaryNoticeTimeoutRef.current = window.setTimeout(() => {
+        setBoundaryNotice(null)
+        setPendingBoundaryDirection((value) =>
+          value === direction ? null : value,
+        )
+      }, 1800)
+    }
+
     if (mode === 'double') {
       if (currentStepIndex <= 0) {
-        goToChapter(previousChapterId)
+        if (pendingBoundaryDirection === 'prev' && previousChapterId) {
+          goToChapter(previousChapterId)
+        } else {
+          armBoundaryNotice('prev')
+        }
         return
       }
 
@@ -1137,14 +1466,22 @@ function WeebcentralReaderPage() {
       setCurrentPageIndex(
         twoPageSteps[previous]?.anchorPageIndex ?? currentPageIndex,
       )
+      setPendingBoundaryDirection(null)
+      setBoundaryNotice(null)
       return
     }
 
     if (currentPageIndex <= 0) {
-      goToChapter(previousChapterId)
+      if (pendingBoundaryDirection === 'prev' && previousChapterId) {
+        goToChapter(previousChapterId)
+      } else {
+        armBoundaryNotice('prev')
+      }
       return
     }
 
+    setPendingBoundaryDirection(null)
+    setBoundaryNotice(null)
     goToPage(currentPageIndex - 1)
   }, [
     currentPageIndex,
@@ -1153,6 +1490,8 @@ function WeebcentralReaderPage() {
     goToPage,
     maxStepIndex,
     mode,
+    nextChapterId,
+    pendingBoundaryDirection,
     previousChapterId,
     twoPageSteps,
   ])
@@ -1234,6 +1573,33 @@ function WeebcentralReaderPage() {
         revealReaderUi()
         return
       }
+
+      if (event.code === 'KeyS') {
+        event.preventDefault()
+        blurReaderFocusTarget()
+        setSidebarOpen((value) => !value)
+        return
+      }
+
+      if (event.code === 'KeyX') {
+        event.preventDefault()
+        blurReaderFocusTarget()
+        setFocusMode((value) => !value)
+        return
+      }
+
+      if (event.code === 'Digit0') {
+        event.preventDefault()
+        blurReaderFocusTarget()
+        setZoomPreset('fit-height')
+        return
+      }
+
+      if (event.key === '?') {
+        event.preventDefault()
+        blurReaderFocusTarget()
+        setShowShortcutHelp((value) => !value)
+      }
     }
 
     const suppressOKeypress = (event: KeyboardEvent) => {
@@ -1263,21 +1629,23 @@ function WeebcentralReaderPage() {
   ])
 
   const remoteSeriesTitle = series?.title ?? search.seriesTitle ?? 'WeebCentral'
+  const remoteSeriesIdForLink =
+    series?.id ?? search.seriesId ?? chapter?.seriesId ?? params.chapterId
   const activeChapterMetadata =
     series?.chapters.find((entry) => entry.id === params.chapterId) ?? null
 
   if (isLoading) {
     return (
-      <div className="rounded-xl border border-border bg-surface p-6 text-muted-foreground">
-        Loading remote chapter…
+      <div className="border-2 border-border bg-surface p-6 text-muted-foreground">
+        Opening chapter…
       </div>
     )
   }
 
   if (error || !chapter) {
     return (
-      <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-6 text-destructive">
-        {error ?? 'Failed to load WeebCentral chapter'}
+      <div className="border-2 border-destructive/30 bg-destructive/10 p-6 text-destructive">
+        We could not open this chapter. Please go back and try another one.
       </div>
     )
   }
@@ -1285,7 +1653,9 @@ function WeebcentralReaderPage() {
   return (
     <div
       className={
-        isFullscreen ? '' : 'relative h-[100dvh] overflow-hidden bg-black'
+        isFullscreen
+          ? ''
+          : `relative h-[100dvh] overflow-hidden bg-black ${focusMode ? 'reader-focus-mode' : ''}`
       }
       onMouseMove={handleReaderMouseMove}
       onMouseLeave={() => {
@@ -1296,7 +1666,7 @@ function WeebcentralReaderPage() {
         <Button
           variant="ghost"
           size="icon"
-          className={`absolute top-4 z-50 size-10 border border-white/25 bg-black/35 text-white backdrop-blur transition-transform duration-200 ${sidebarOpen ? 'left-[292px]' : 'left-3'} ${showReaderChrome || sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+          className={`reader-shell-toggle absolute top-4 z-50 size-12 transition-transform duration-200 md:size-10 ${sidebarOpen ? 'left-[calc(min(88vw,360px)+12px)]' : 'left-3'} ${showReaderChrome || sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
           onClick={() => setSidebarOpen((current) => !current)}
           type="button"
         >
@@ -1306,20 +1676,30 @@ function WeebcentralReaderPage() {
 
       {!isFullscreen ? (
         <aside
-          className={`animate-enter absolute inset-y-0 left-0 z-40 w-[280px] overflow-y-auto border-r border-border bg-surface p-3 shadow-[0_20px_40px_-30px_var(--shadow)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+          className={`reader-shell-panel animate-enter absolute inset-y-0 left-0 z-40 w-[min(88vw,360px)] overflow-y-auto p-3 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] max-md:inset-x-0 max-md:inset-y-auto max-md:bottom-0 max-md:top-auto max-md:h-[72dvh] max-md:w-full ${sidebarOpen ? 'translate-x-0 max-md:translate-y-0' : '-translate-x-full max-md:translate-y-full'}`}
           style={{ animationDelay: '20ms' }}
         >
           <div className="space-y-2 text-xs text-muted-foreground">
-            <Link to="/" className="inline-flex hover:text-foreground">
-              Back
+            <Link
+              to="/"
+              className="inline-flex border border-border bg-surface-soft px-2 py-1 hover:bg-surface"
+            >
+              Back to home
             </Link>
-            <p className="truncate text-sm font-medium text-foreground">
+            <Link
+              to="/weebcentral-series/$seriesId"
+              params={{ seriesId: remoteSeriesIdForLink }}
+              className="block truncate text-sm font-semibold leading-snug text-foreground underline-offset-2 hover:underline"
+            >
               {remoteSeriesTitle}
-            </p>
+            </Link>
             <p>
               {activeChapterMetadata
                 ? `Ch ${activeChapterMetadata.number}`
                 : `Ch ${chapter.chapterId}`}
+            </p>
+            <p className="text-[11px]">
+              Tip: click left/right side of the page to move.
             </p>
           </div>
 
@@ -1330,7 +1710,7 @@ function WeebcentralReaderPage() {
               className="h-8 w-full"
               onClick={() => setSettingsTab('basic')}
             >
-              Basic
+              Reading
             </Button>
             <Button
               type="button"
@@ -1338,7 +1718,7 @@ function WeebcentralReaderPage() {
               className="h-8 w-full"
               onClick={() => setSettingsTab('advanced')}
             >
-              Advanced
+              More settings
             </Button>
           </div>
 
@@ -1362,9 +1742,9 @@ function WeebcentralReaderPage() {
                   }
                 }}
                 options={[
-                  { value: 'single', label: 'Single' },
-                  { value: 'double', label: 'Double' },
-                  { value: 'scroll', label: 'Scroll' },
+                  { value: 'single', label: 'Single page' },
+                  { value: 'double', label: 'Two-page spread' },
+                  { value: 'scroll', label: 'Continuous scroll' },
                 ]}
               />
 
@@ -1374,7 +1754,7 @@ function WeebcentralReaderPage() {
                 className="h-9 justify-between px-3"
                 onClick={() => setDoublePageOffset((value) => !value)}
               >
-                <span>Offset first page</span>
+                <span>Book start alignment</span>
                 <span>{doublePageOffset ? 'On' : 'Off'}</span>
               </Button>
 
@@ -1384,8 +1764,18 @@ function WeebcentralReaderPage() {
                 className="h-9 justify-between px-3"
                 onClick={() => setMagnifierEnabled((value) => !value)}
               >
-                <span>Magnifier (Z)</span>
+                <span>Magnifier</span>
                 <span>{magnifierEnabled ? 'On' : 'Off'}</span>
+              </Button>
+
+              <Button
+                type="button"
+                variant={focusMode ? 'default' : 'soft'}
+                className="h-9 justify-between px-3"
+                onClick={() => setFocusMode((value) => !value)}
+              >
+                <span>Distraction-free mode</span>
+                <span>{focusMode ? 'On' : 'Off'}</span>
               </Button>
 
               <SelectField
@@ -1395,28 +1785,42 @@ function WeebcentralReaderPage() {
                 }
                 className="h-9"
                 options={[
-                  { value: 'fit-height', label: 'Fit Height' },
-                  { value: 'fit-width', label: 'Fit Width' },
-                  { value: 'actual', label: 'Actual' },
+                  { value: 'fit-height', label: 'Fit to screen' },
+                  { value: 'fit-width', label: 'Fit to width' },
+                  { value: 'actual', label: 'Actual size' },
                 ]}
               />
 
               {orderedSeriesChapters.length ? (
-                <SelectField
-                  value={chapter.chapterId}
-                  onChange={(event) => {
-                    const nextId = event.target.value
-                    if (nextId === chapter.chapterId) {
-                      return
-                    }
-                    goToChapter(nextId)
-                  }}
-                  className="h-9"
-                  options={orderedSeriesChapters.map((entry) => ({
-                    value: entry.id,
-                    label: `Ch ${entry.number}`,
-                  }))}
-                />
+                <>
+                  <Input
+                    value={chapterFilter}
+                    onChange={(event) => setChapterFilter(event.target.value)}
+                    className="h-9"
+                    placeholder="Type chapter number..."
+                  />
+                  {filteredSeriesChapters.length > 0 ? (
+                    <SelectField
+                      value={chapter.chapterId}
+                      onChange={(event) => {
+                        const nextId = event.target.value
+                        if (nextId === chapter.chapterId) {
+                          return
+                        }
+                        goToChapter(nextId)
+                      }}
+                      className="h-9"
+                      options={filteredSeriesChapters.map((entry) => ({
+                        value: entry.id,
+                        label: `Chapter ${entry.number}`,
+                      }))}
+                    />
+                  ) : (
+                    <p className="px-1 text-xs text-muted-foreground">
+                      No chapter found. Try a different number.
+                    </p>
+                  )}
+                </>
               ) : null}
 
               <label className="text-xs text-muted-foreground">
@@ -1590,10 +1994,10 @@ function WeebcentralReaderPage() {
 
           <div className="mt-3 flex items-center gap-2">
             <Button variant="soft" className="w-full" onClick={goPrevious}>
-              Previous
+              Previous page
             </Button>
             <Button variant="soft" className="w-full" onClick={goNext}>
-              Next
+              Next page
             </Button>
           </div>
           <p className="mt-2 text-xs text-muted-foreground">{hudPageLabel}</p>
@@ -1604,7 +2008,7 @@ function WeebcentralReaderPage() {
               onClick={() => goToChapter(previousChapterId)}
               disabled={!previousChapterId}
             >
-              ] Prev chapter
+              Previous chapter
             </Button>
             <Button
               variant="ghost"
@@ -1612,10 +2016,139 @@ function WeebcentralReaderPage() {
               onClick={() => goToChapter(nextChapterId)}
               disabled={!nextChapterId}
             >
-              [ Next chapter
+              Next chapter
             </Button>
           </div>
+          <Button
+            type="button"
+            variant="ghost"
+            className="mt-2 h-8 border border-border text-xs"
+            onClick={() => setShowShortcutHelp((value) => !value)}
+          >
+            {showShortcutHelp
+              ? 'Hide keyboard shortcuts'
+              : 'Show keyboard shortcuts'}
+          </Button>
+          {showShortcutHelp ? (
+            <div className="reader-shortcut-sheet mt-2 text-xs">
+              <p>Nav: A/D or arrows, Space, [ ]</p>
+              <p>View: Q mode, 0 reset zoom, F fullscreen</p>
+              <p>UI: S sidebar, X focus, Z magnifier</p>
+            </div>
+          ) : null}
         </aside>
+      ) : null}
+
+      {!isFullscreen && !focusMode && showReaderChrome ? (
+        <div className="reader-quick-strip absolute right-3 top-3 z-30 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="soft"
+            className="h-9 px-3 text-xs"
+            onClick={() => setSidebarOpen((value) => !value)}
+          >
+            Settings
+          </Button>
+          <Button
+            type="button"
+            variant="soft"
+            className="h-9 px-3 text-xs"
+            onClick={() => {
+              void toggleFullscreen()
+            }}
+          >
+            Fullscreen
+          </Button>
+        </div>
+      ) : null}
+
+      {!isFullscreen && (showReaderChrome || sidebarOpen) ? (
+        <div className="reader-chapter-jump absolute bottom-4 right-3 z-30 hidden items-center gap-2 md:flex">
+          <Button
+            type="button"
+            variant="soft"
+            className="h-11 px-3 text-xs"
+            onClick={() => goToChapter(previousChapterId)}
+            disabled={!previousChapterId}
+          >
+            Prev chapter
+          </Button>
+          <Button
+            type="button"
+            variant="soft"
+            className="h-11 px-3 text-xs"
+            onClick={() => goToChapter(nextChapterId)}
+            disabled={!nextChapterId}
+          >
+            Next chapter
+          </Button>
+        </div>
+      ) : null}
+
+      {!isFullscreen && !focusMode ? (
+        <div className="reader-mobile-nav fixed inset-x-2 bottom-2 z-30 flex items-center gap-2 border border-border bg-surface-soft/95 p-1 backdrop-blur-sm md:hidden">
+          <Button
+            type="button"
+            variant="soft"
+            className="h-9 px-2 text-xs"
+            onClick={goPrevious}
+          >
+            Prev
+          </Button>
+          <div className="min-w-0 flex-1 text-center text-[11px] text-muted-foreground">
+            {currentTargetPageIndex + 1} / {Math.max(pages.length, 1)}
+          </div>
+          <Button
+            type="button"
+            variant="soft"
+            className="h-9 px-2 text-xs"
+            onClick={goNext}
+          >
+            Next
+          </Button>
+        </div>
+      ) : null}
+
+      {!isFullscreen && !focusMode && showReaderChrome ? (
+        <div className="reader-key-hints absolute bottom-4 left-1/2 z-20 -translate-x-1/2 text-xs">
+          Tip: click/tap left or right side to move pages.
+        </div>
+      ) : null}
+
+      {pages.length > 0 ? (
+        mode === 'double' ? (
+          <>
+            <div className="pointer-events-none absolute bottom-2 left-3 z-20 text-[10px] font-medium text-white/55">
+              {rtlSpreadNumbers.left ?? ''}
+            </div>
+            {rtlSpreadNumbers.right ? (
+              <div className="pointer-events-none absolute bottom-2 right-3 z-20 text-[10px] font-medium text-white/55">
+                {rtlSpreadNumbers.right}
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="pointer-events-none absolute bottom-2 right-3 z-20 text-[10px] font-medium text-white/55">
+            {currentTargetPageIndex + 1} / {pages.length}
+          </div>
+        )
+      ) : null}
+
+      {boundaryNotice ? (
+        <div className="reader-hud pointer-events-none absolute bottom-20 left-1/2 z-30 -translate-x-1/2 px-3 py-1 text-xs">
+          {boundaryNotice}
+        </div>
+      ) : null}
+
+      {!isFullscreen && focusMode ? (
+        <Button
+          type="button"
+          variant="soft"
+          className="absolute right-3 top-3 z-30 h-10 px-3 text-xs"
+          onClick={() => setFocusMode(false)}
+        >
+          Exit distraction-free mode
+        </Button>
       ) : null}
 
       <section className={isFullscreen ? '' : 'h-full'} ref={readerStageRef}>
@@ -1632,14 +2165,14 @@ function WeebcentralReaderPage() {
               }
             />
             {isFullscreen && showPageHud ? (
-              <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/70 px-3 py-1 text-sm text-white">
+              <div className="reader-hud pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 text-sm">
                 {hudPageLabel}
               </div>
             ) : null}
           </div>
         ) : (
           <div
-            className="relative h-[100dvh] bg-black"
+            className={`relative h-[100dvh] bg-black ${focusMode ? 'reader-focus-mode' : ''}`}
             ref={viewportRef}
             onMouseMove={handleReaderMouseMove}
             onPointerDown={(event) => {
@@ -1710,7 +2243,7 @@ function WeebcentralReaderPage() {
               </>
             ) : null}
             {isFullscreen && showPageHud ? (
-              <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/70 px-3 py-1 text-sm text-white">
+              <div className="reader-hud pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 text-sm">
                 {hudPageLabel}
               </div>
             ) : null}
@@ -1720,7 +2253,7 @@ function WeebcentralReaderPage() {
 
       {magnifierEnabled && magnifierFrame ? (
         <div
-          className="pointer-events-none fixed z-[90] overflow-hidden border border-white/50 bg-black/25 backdrop-blur-[1px]"
+          className="pointer-events-none fixed z-[90] overflow-hidden border border-border bg-surface/80"
           style={{
             width: magnifierSize,
             height: magnifierSize,
@@ -1740,7 +2273,7 @@ function WeebcentralReaderPage() {
               top: magnifierSize / 2 - magnifierFrame.relY * magnifierZoom,
             }}
           />
-          <div className="absolute inset-0 border border-white/20" />
+          <div className="absolute inset-0 border border-border/70" />
         </div>
       ) : null}
     </div>
