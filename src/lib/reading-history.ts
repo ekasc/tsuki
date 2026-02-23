@@ -1,7 +1,23 @@
 import type { ReaderMode, ReadingHistoryItem } from './contracts'
 
-const HISTORY_STORAGE_KEY = 'suki-reading-history.v1'
+const HISTORY_STORAGE_KEY = 'tsuki-reading-history.v1'
+const LEGACY_HISTORY_STORAGE_KEY = 'suki-reading-history.v1'
 const MAX_HISTORY_ITEMS = 15
+
+function readHistoryRaw(): string | null {
+  const nextValue = window.localStorage.getItem(HISTORY_STORAGE_KEY)
+  if (nextValue) {
+    return nextValue
+  }
+
+  const legacyValue = window.localStorage.getItem(LEGACY_HISTORY_STORAGE_KEY)
+  if (!legacyValue) {
+    return null
+  }
+
+  window.localStorage.setItem(HISTORY_STORAGE_KEY, legacyValue)
+  return legacyValue
+}
 
 export function loadReadingHistory(): ReadingHistoryItem[] {
   if (typeof window === 'undefined') {
@@ -9,7 +25,7 @@ export function loadReadingHistory(): ReadingHistoryItem[] {
   }
 
   try {
-    const raw = window.localStorage.getItem(HISTORY_STORAGE_KEY)
+    const raw = readHistoryRaw()
 
     if (!raw) {
       return []

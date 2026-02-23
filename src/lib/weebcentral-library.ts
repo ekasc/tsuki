@@ -1,6 +1,22 @@
 import type { WeebcentralSeriesDTO } from './contracts'
 
-const STORAGE_KEY = 'suki-weebcentral-library.v1'
+const STORAGE_KEY = 'tsuki-weebcentral-library.v1'
+const LEGACY_STORAGE_KEY = 'suki-weebcentral-library.v1'
+
+function readLibraryRaw(): string | null {
+  const nextValue = window.localStorage.getItem(STORAGE_KEY)
+  if (nextValue) {
+    return nextValue
+  }
+
+  const legacyValue = window.localStorage.getItem(LEGACY_STORAGE_KEY)
+  if (!legacyValue) {
+    return null
+  }
+
+  window.localStorage.setItem(STORAGE_KEY, legacyValue)
+  return legacyValue
+}
 
 export function loadSavedWeebcentralSeries(): WeebcentralSeriesDTO[] {
   if (typeof window === 'undefined') {
@@ -8,7 +24,7 @@ export function loadSavedWeebcentralSeries(): WeebcentralSeriesDTO[] {
   }
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    const raw = readLibraryRaw()
     if (!raw) {
       return []
     }
