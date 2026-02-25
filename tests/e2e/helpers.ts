@@ -23,14 +23,12 @@ export async function primeStorage(page: Page, theme?: ThemeMode) {
 }
 
 export async function resolveDemoSeriesId(page: Page): Promise<string> {
-  const librarySeries = await page.evaluate(async () => {
-    const response = await fetch('/api/series')
-    if (!response.ok) {
-      throw new Error(`Failed to fetch /api/series (${response.status})`)
-    }
+  const response = await page.request.get('/api/series')
+  if (!response.ok()) {
+    throw new Error(`Failed to fetch /api/series (${response.status()})`)
+  }
 
-    return (await response.json()) as LibrarySeriesRecord[]
-  })
+  const librarySeries = (await response.json()) as LibrarySeriesRecord[]
 
   const demoSeries = librarySeries.find((entry) => entry.source === 'demo')
   if (!demoSeries?.id) {
