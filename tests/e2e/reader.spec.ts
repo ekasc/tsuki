@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { openDemoSeries } from './helpers'
 
 async function rewindToStart(page: Page) {
   let attempts = 0
@@ -26,11 +27,7 @@ test.beforeEach(async ({}, testInfo) => {
 test('library to reader flow works', async ({ page }) => {
   await page.goto('/')
   await page.evaluate(() => localStorage.removeItem('tsuki-history.v1'))
-  await page.goto('/series/Li8ezNK4gAuHoCPzk3yuA')
-
-  await expect(
-    page.getByRole('heading', { name: 'Suki Demo Anthology' }),
-  ).toBeVisible()
+  await openDemoSeries(page)
   await page
     .getByRole('link', { name: /Chapter/i })
     .first()
@@ -58,7 +55,7 @@ test('two-page mode never renders more than two containers', async ({
 }) => {
   await page.goto('/')
   await page.evaluate(() => localStorage.removeItem('tsuki-history.v1'))
-  await page.goto('/series/Li8ezNK4gAuHoCPzk3yuA')
+  await openDemoSeries(page)
   await page
     .getByRole('link', { name: /Chapter/i })
     .first()
@@ -83,7 +80,7 @@ test('two-page mode never renders more than two containers', async ({
 test('split spread renders exactly two halves', async ({ page }) => {
   await page.goto('/')
   await page.evaluate(() => localStorage.removeItem('tsuki-history.v1'))
-  await page.goto('/series/Li8ezNK4gAuHoCPzk3yuA')
+  await openDemoSeries(page)
 
   await page
     .getByRole('link', { name: /Chapter/i })
@@ -105,7 +102,7 @@ test('split spread renders exactly two halves', async ({ page }) => {
 test('navigating past final page opens next chapter', async ({ page }) => {
   await page.goto('/')
   await page.evaluate(() => localStorage.removeItem('tsuki-history.v1'))
-  await page.goto('/series/Li8ezNK4gAuHoCPzk3yuA')
+  await openDemoSeries(page)
 
   await page
     .getByRole('link', { name: /Chapter/i })
@@ -126,7 +123,7 @@ test('navigating past final page opens next chapter', async ({ page }) => {
 test('desktop tap zones disable while magnifier is enabled', async ({ page }) => {
   await page.goto('/')
   await page.evaluate(() => localStorage.removeItem('tsuki-history.v1'))
-  await page.goto('/series/Li8ezNK4gAuHoCPzk3yuA')
+  await openDemoSeries(page)
 
   await page
     .getByRole('link', { name: /Chapter/i })

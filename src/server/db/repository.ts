@@ -14,12 +14,14 @@ import { getDatabase } from './client'
 import { chapters, pages, readingProgress, series } from './schema'
 
 interface CreateSeriesInput {
+  id?: string
   title: string
   description: string | null
   source: 'demo' | 'local-upload' | 'custom-stub'
 }
 
 interface CreateChapterInput {
+  id?: string
   seriesId: string
   title: string
   chapterNumber: number
@@ -42,7 +44,7 @@ export interface CreatePageInput {
 export function createSeries(input: CreateSeriesInput): string {
   const db = getDatabase()
   const now = Date.now()
-  const id = nanoid()
+  const id = input.id ?? nanoid()
 
   db.insert(series)
     .values({
@@ -62,7 +64,7 @@ export function createSeries(input: CreateSeriesInput): string {
 export function createChapter(input: CreateChapterInput): string {
   const db = getDatabase()
   const now = Date.now()
-  const id = nanoid()
+  const id = input.id ?? nanoid()
 
   db.insert(chapters)
     .values({

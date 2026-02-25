@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { DEMO_SERIES_ID, primeStorage } from './helpers'
+import { primeStorage, resolveDemoSeriesId } from './helpers'
 
 async function expectTheme(page: Page, theme: string) {
   await expect
@@ -17,7 +17,8 @@ test('theme preference persists across route transitions', async ({ page }) => {
   await page.goto('/')
   await expectTheme(page, 'dark')
 
-  await page.goto(`/series/${DEMO_SERIES_ID}`)
+  const demoSeriesId = await resolveDemoSeriesId(page)
+  await page.goto(`/series/${demoSeriesId}`)
   await expectTheme(page, 'dark')
 
   await page
@@ -37,8 +38,10 @@ test('theme remains stable while switching routes quickly', async ({
   await page.goto('/')
   await expectTheme(page, 'paper')
 
+  const demoSeriesId = await resolveDemoSeriesId(page)
+
   for (let index = 0; index < 4; index += 1) {
-    await page.goto(`/series/${DEMO_SERIES_ID}`)
+    await page.goto(`/series/${demoSeriesId}`)
     await expectTheme(page, 'paper')
     await page.waitForTimeout(80)
     await expectTheme(page, 'paper')

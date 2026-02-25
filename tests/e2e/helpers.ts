@@ -1,7 +1,12 @@
 import { expect, type Page } from '@playwright/test'
 
-export const DEMO_SERIES_ID = 'Li8ezNK4gAuHoCPzk3yuA'
 export type ThemeMode = 'light' | 'dark' | 'paper'
+
+interface LibrarySeriesRecord {
+  id: string
+  source: string
+  title: string
+}
 
 export async function primeStorage(page: Page, theme?: ThemeMode) {
   await page.addInitScript(
@@ -17,13 +22,37 @@ export async function primeStorage(page: Page, theme?: ThemeMode) {
   )
 }
 
-export async function openLocalReader(page: Page) {
-  await page.goto('/')
-  await page.goto(`/series/${DEMO_SERIES_ID}`)
+export async function resolveDemoSeriesId(page: Page): Promise<string> {
+  const librarySeries = await page.evaluate(async () => {
+    const response = await fetch('/api/series')
+    if (!response.ok) {
+      throw new Error(`Failed to fetch /api/series (${response.status})`)
+    }
 
-  await expect(
-    page.getByRole('heading', { name: 'Suki Demo Anthology' }),
-  ).toBeVisible()
+    return (await response.json()) as LibrarySeriesRecord[]
+  })
+
+  const demoSeries = librarySeries.find((entry) => entry.source === 'demo')
+  if (!demoSeries?.id) {
+    throw new Error('Could not resolve demo series id from /api/series')
+  }
+
+  return demoSeries.id
+}
+
+export async function openDemoSeries(page: Page): Promise<string> {
+  await page.goto('/')
+  const demoSeriesId = await resolveDemoSeriesId(page)
+  await page.goto(`/series/${demoSeriesId}`)
+
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+  await expect(page.getByRole('link', { name: /Chapter/i }).first()).toBeVisible()
+
+  return demoSeriesId
+}
+
+export async function openLocalReader(page: Page) {
+  await openDemoSeries(page)
   await page
     .getByRole('link', { name: /Chapter/i })
     .first()

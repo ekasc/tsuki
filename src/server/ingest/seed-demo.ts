@@ -25,13 +25,17 @@ interface DemoPageSpec {
 }
 
 interface DemoChapterSpec {
+  id: string
   title: string
   chapterNumber: number
   pages: DemoPageSpec[]
 }
 
+const DEMO_SERIES_ID = 'Li8ezNK4gAuHoCPzk3yuA'
+
 const DEMO_CHAPTERS: DemoChapterSpec[] = [
   {
+    id: 'SQW_DloYbKHRLibsR0-wV',
     title: 'Chapter 1 - Welcome Grid',
     chapterNumber: 1,
     pages: [
@@ -43,6 +47,7 @@ const DEMO_CHAPTERS: DemoChapterSpec[] = [
     ],
   },
   {
+    id: '3uGXSAKdwDP7pcym0iZ4x',
     title: 'Chapter 2 - Split Candidate',
     chapterNumber: 2,
     pages: [
@@ -92,6 +97,7 @@ export async function ensureDemoSeed() {
   }
 
   const seriesId = createSeries({
+    id: DEMO_SERIES_ID,
     title: 'Suki Demo Anthology',
     description:
       'Built-in legal demo pages to validate reader modes, spread detection, and progress sync.',
@@ -100,6 +106,7 @@ export async function ensureDemoSeed() {
 
   for (const chapterSpec of DEMO_CHAPTERS) {
     const chapterId = createChapter({
+      id: chapterSpec.id,
       seriesId,
       title: chapterSpec.title,
       chapterNumber: chapterSpec.chapterNumber,
