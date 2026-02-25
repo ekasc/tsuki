@@ -1,47 +1,15 @@
-# Suki Reader (TanStack Start)
+# Tsuki Reader
 
-Local-first manga/comic reader built with TanStack Start + React + TypeScript.
+Tsuki is a web manga reader focused on fast reading, RTL-first navigation, and a clean cross-device experience.
 
-## Scope
+## Core Features
 
-This project intentionally ships only:
+- RTL manga reading with `single`, `double`, and `scroll` modes.
+- Desktop reader controls with keyboard shortcuts, zoom modes, and magnifier.
+- Reading progress + history persistence per chapter.
+- Content ingestion from local archives (`.cbz` / `.zip`) and remote chapter flows.
 
-1. Local CBZ/ZIP import (plus local folder-backed demo seed).
-2. Legal in-repo demo connector/data.
-3. Connector interface + `CustomConnectorStub` with explicit permission warning.
-
-No site-specific scraping connectors are implemented.
-
-## Features
-
-- Library -> series -> chapter -> reader flow.
-- Reader modes:
-  - Single-page paging
-  - Two-page paging
-  - Continuous scroll (virtualized)
-- Drag-and-drop archive import.
-- Reading history panel on Library (localStorage-backed).
-- LTR keyboard navigation:
-  - `ArrowRight` next
-  - `ArrowLeft` previous
-- Two-page safety invariant: never renders 3 pages at once.
-- Spread detection is automatic from page width (no manual spread/single marking UI).
-- Progress persistence per chapter (mode, direction, zoom, page/step).
-- Secure ingest path:
-  - ZIP/CBZ file validation and size limits
-  - Rate-limited ingestion endpoint
-  - Safe storage path handling
-  - Thumbnail generation and dimension extraction with retry/backoff
-- Image proxy endpoint with cache headers + optional resize cache.
-
-## Assumptions
-
-- Single local profile (`profileId = local`) for progress.
-- Local storage root is `./data`.
-- Default spread threshold is `width >= medianSingleWidth * 1.35`.
-- Uploading an archive creates a new series and chapter by default.
-
-## How To Run
+## Quick Start
 
 ```bash
 pnpm install
@@ -50,38 +18,34 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-## How To Test
+## Testing
+
+Run the full local ship gate:
 
 ```bash
-pnpm lint
-pnpm test
-pnpm playwright test
+pnpm test:ci
 ```
 
-## Key Architecture
+Run the PWA/performance audit:
 
-- App routes/UI: `src/routes/`
-- Reader core and pairing logic: `src/lib/reader/pairing.ts`
-- Reader components: `src/components/reader/`
-- Server bootstrap + APIs: `src/server/bootstrap.ts`, `src/routes/api.*.ts`
-- Ingest pipeline: `src/server/ingest/import-archive.ts`
-- Demo seed data generation: `src/server/ingest/seed-demo.ts`
-- Image proxy/caching: `src/server/image-service.ts`
-- SQLite + Drizzle schema: `src/server/db/schema.ts`, `drizzle/0000_initial_schema.sql`
-- Connectors: `src/connectors/`
+```bash
+pnpm test:lighthouse
+```
 
-## Pairing Algorithm + Tuning
+If you intentionally changed reader visuals, update snapshots in a dedicated PR:
 
-- Core module: `src/lib/reader/pairing.ts`
-- Behavior:
-  - Spread at `i` -> render alone (or split into exactly two halves if split enabled)
-  - Non-spread at `i` pairs with `i+1` only when `i+1` exists and is not spread
-  - Consequence: max 2 render units in two-page mode
-- Tuning knobs:
-  - `DEFAULT_SPREAD_CONFIG.widthMultiplier` (default `1.35`)
+```bash
+pnpm exec playwright test tests/e2e/visual-reader.spec.ts --update-snapshots
+```
 
-## Additional Docs
+## Contributing
 
-- Connector interface details: `docs/connectors.md`
-- Architecture decision record: `docs/adrs/0001-local-first-reader-architecture.md`
-- Threat model: `docs/threat-model.md`
+1. Create a focused branch for one change set.
+2. Install dependencies with `pnpm install` and run locally with `pnpm dev`.
+3. Keep changes scoped and avoid unrelated refactors in the same PR.
+4. Run `pnpm test:ci` before opening a PR.
+5. Include a clear PR description:
+   - what changed
+   - why it changed
+   - test evidence (and screenshots for UI changes)
+6. For visual updates, call out snapshot changes explicitly in the PR.

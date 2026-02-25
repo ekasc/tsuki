@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  type PointerEvent as ReactPointerEvent,
   useRef,
   useState,
   type MouseEvent,
@@ -29,14 +30,18 @@ import type {
   ZoomPreset,
 } from '#/lib/contracts'
 import { fetchJson } from '#/lib/http-client'
+import { isLocalSessionChapterAllowed } from '#/lib/local-upload-session'
 import { upsertReadingHistory } from '#/lib/reading-history'
 import {
   buildTwoPageSteps,
   findStepIndexByPageIndex,
+  inferAutoSpreadFlags,
   type PairingPage,
   type PairingStep,
+  type RenderUnit,
 } from '#/lib/reader/pairing'
 import { useImagePrefetch } from '#/hooks/use-image-prefetch'
+import { useTouchDevice, useTouchPortrait } from '#/hooks/use-touch-portrait'
 
 export const Route = createAnyFileRoute('/reader/$chapterId')({
   component: ReaderPage,
@@ -120,7 +125,7 @@ function loadReaderSeriesPreset(seriesId: string): ReaderSeriesPreset | null {
       zoomPreset:
         preset.zoomPreset === 'fit-width' || preset.zoomPreset === 'actual'
           ? preset.zoomPreset
-          : 'fit-height',
+          : 'fit-width',
       doublePageOffset: Boolean(preset.doublePageOffset),
       magnifierEnabled: Boolean(preset.magnifierEnabled),
       focusMode: Boolean(preset.focusMode),
@@ -183,7 +188,7 @@ function loadReaderUiPrefs(
       zoomPreset:
         parsed.zoomPreset === 'fit-width' || parsed.zoomPreset === 'actual'
           ? parsed.zoomPreset
-          : 'fit-height',
+          : 'fit-width',
       sidebarOpen: Boolean(parsed.sidebarOpen),
       doublePageOffset: Boolean(parsed.doublePageOffset),
       preloadAhead:
@@ -261,6 +266,137 @@ function buildDoublePageStepsWithOffset(
   ]
 }
 
+function expandStepsForPortraitSingle(
+  steps: PairingStep[],
+  pages: ChapterPageManifest[],
+): PairingStep[] {
+  if (steps.length === 0) {
+    return []
+  }
+
+  const inferredFlags = inferAutoSpreadFlags(
+    pages.map((page) => ({
+      width: page.width,
+      height: page.height,
+    })),
+  )
+  const inferredByPageIndex = new Map<number, boolean>()
+  pages.forEach((page, index) => {
+    inferredByPageIndex.set(page.pageIndex, Boolean(inferredFlags[index]))
+  })
+
+  return steps.flatMap((step) => {
+    return step.units.flatMap((unit) => {
+      if (unit.type === 'page') {
+        const page = pages.find((entry) => entry.pageIndex === unit.pageIndex)
+        const isSpread = page
+          ? page.autoIsSpread ||
+            page.splitSpread === true ||
+            page.aspect >= 0.95 ||
+            inferredByPageIndex.get(unit.pageIndex) === true
+          : inferredByPageIndex.get(unit.pageIndex) === true
+
+        if (isSpread) {
+          // Split spread into two CSS-cropped halves
+          return [
+            {
+              kind: 'single' as const,
+              anchorPageIndex: unit.pageIndex,
+              units: [
+                {
+                  type: 'page' as const,
+                  pageIndex: unit.pageIndex,
+                  crop: 'right' as const,
+                },
+              ],
+            },
+            {
+              kind: 'single' as const,
+              anchorPageIndex: unit.pageIndex,
+              units: [
+                {
+                  type: 'page' as const,
+                  pageIndex: unit.pageIndex,
+                  crop: 'left' as const,
+                },
+              ],
+            },
+          ]
+        }
+      }
+
+      return [
+        {
+          kind: 'single' as const,
+          anchorPageIndex: unit.pageIndex,
+          units: [unit],
+        },
+      ]
+    })
+  })
+}
+
+function buildSinglePageSteps(
+  pages: ChapterPageManifest[],
+  splitSpreads: boolean,
+): PairingStep[] {
+  if (pages.length === 0) {
+    return []
+  }
+
+  if (!splitSpreads) {
+    return pages.map((page) => ({
+      kind: 'single',
+      anchorPageIndex: page.pageIndex,
+      units: [{ type: 'page', pageIndex: page.pageIndex }],
+    }))
+  }
+
+  const inferredFlags = inferAutoSpreadFlags(
+    pages.map((page) => ({
+      width: page.width,
+      height: page.height,
+    })),
+  )
+
+  const steps: PairingStep[] = []
+
+  pages.forEach((page, index) => {
+    const isSpread =
+      page.autoIsSpread ||
+      page.splitSpread === true ||
+      page.aspect >= 0.95 ||
+      inferredFlags[index] === true
+
+    if (!isSpread) {
+      steps.push({
+        kind: 'single',
+        anchorPageIndex: page.pageIndex,
+        units: [{ type: 'page', pageIndex: page.pageIndex }],
+      })
+      return
+    }
+
+    // Split spread into two CSS-cropped halves (right half shown first in RTL)
+    steps.push({
+      kind: 'single',
+      anchorPageIndex: page.pageIndex,
+      units: [
+        { type: 'page', pageIndex: page.pageIndex, crop: 'right' as const },
+      ],
+    })
+    steps.push({
+      kind: 'single',
+      anchorPageIndex: page.pageIndex,
+      units: [
+        { type: 'page', pageIndex: page.pageIndex, crop: 'left' as const },
+      ],
+    })
+  })
+
+  return steps
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
@@ -294,17 +430,23 @@ function asPairingPage(page: ChapterPageManifest): PairingPage {
 }
 
 function resolveAdjacentChapterIds(series: SeriesDetail, chapterId: string) {
-  const chapterIndex = series.chapters.findIndex(
-    (chapter) => chapter.id === chapterId,
-  )
+  const current = series.chapters.find((c) => c.id === chapterId)
+  if (!current) {
+    return { previousChapterId: null, nextChapterId: null }
+  }
+
+  const sorted = [...series.chapters].sort((a, b) => {
+    if (a.chapterNumber !== b.chapterNumber) {
+      return a.chapterNumber - b.chapterNumber
+    }
+    return a.sortIndex - b.sortIndex
+  })
+
+  const index = sorted.findIndex((c) => c.id === chapterId)
 
   return {
-    previousChapterId:
-      chapterIndex >= 0
-        ? (series.chapters[chapterIndex + 1]?.id ?? null)
-        : null,
-    nextChapterId:
-      chapterIndex > 0 ? (series.chapters[chapterIndex - 1]?.id ?? null) : null,
+    previousChapterId: index > 0 ? (sorted[index - 1]?.id ?? null) : null,
+    nextChapterId: index >= 0 ? (sorted[index + 1]?.id ?? null) : null,
   }
 }
 
@@ -337,7 +479,7 @@ function ReaderPage() {
       loadReaderUiPrefs(
         LOCAL_READER_UI_PREFS_KEY,
         LEGACY_LOCAL_READER_UI_PREFS_KEY,
-      )?.zoomPreset ?? 'fit-height',
+      )?.zoomPreset ?? 'fit-width',
   )
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(
     () =>
@@ -354,6 +496,7 @@ function ReaderPage() {
       )?.doublePageOffset ?? false,
   )
   const [settingsTab, setSettingsTab] = useState<'basic' | 'advanced'>('basic')
+  const [mobileSettingsMinimized, setMobileSettingsMinimized] = useState(false)
   const [preloadAhead, setPreloadAhead] = useState<number>(
     () =>
       loadReaderUiPrefs(
@@ -428,12 +571,15 @@ function ReaderPage() {
 
   const [currentPageIndex, setCurrentPageIndex] = useState(0)
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
+  const [currentSingleStepIndex, setCurrentSingleStepIndex] = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [inlineFullscreen, setInlineFullscreen] = useState(false)
   const [showPageHud, setShowPageHud] = useState(false)
   const [pendingBoundaryDirection, setPendingBoundaryDirection] = useState<
     'next' | 'prev' | null
   >(null)
   const [boundaryNotice, setBoundaryNotice] = useState<string | null>(null)
+  const [pageMotion, setPageMotion] = useState<'next' | 'prev' | null>(null)
 
   const viewportRef = useRef<HTMLDivElement>(null)
   const readerStageRef = useRef<HTMLElement>(null)
@@ -441,6 +587,7 @@ function ReaderPage() {
   const pageHudTimeoutRef = useRef<number | null>(null)
   const readerUiTimeoutRef = useRef<number | null>(null)
   const boundaryNoticeTimeoutRef = useRef<number | null>(null)
+  const pageMotionTimeoutRef = useRef<number | null>(null)
   const dragStateRef = useRef<{
     active: boolean
     startX: number
@@ -448,6 +595,21 @@ function ReaderPage() {
     scrollLeft: number
     scrollTop: number
   } | null>(null)
+  const touchGestureRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    startTime: number
+    lock: 'x' | 'y' | null
+  } | null>(null)
+  const suppressTapRef = useRef(false)
+  const swipeCommitTimeoutRef = useRef<number | null>(null)
+  const swipeTrackRef = useRef<HTMLDivElement>(null)
+  const swipeOffsetRef = useRef(0)
+  const swipeDraggingRef = useRef(false)
+  const pagerSettleTimeoutRef = useRef<number | null>(null)
+  const isTouchDevice = useTouchDevice()
+  const isTouchPortrait = useTouchPortrait()
 
   const pages = chapterPayload?.manifest.pages ?? []
   const chapterId = chapterPayload?.manifest.chapterId ?? params.chapterId
@@ -460,18 +622,35 @@ function ReaderPage() {
       ),
     [doublePageOffset, pages],
   )
+  const portraitSingleSteps = useMemo(
+    () => expandStepsForPortraitSingle(twoPageSteps, pages),
+    [pages, twoPageSteps],
+  )
+  const singlePageSteps = useMemo(
+    () => buildSinglePageSteps(pages, isTouchPortrait),
+    [isTouchPortrait, pages],
+  )
+  const activeDoubleSteps = isTouchPortrait ? portraitSingleSteps : twoPageSteps
+  const isSinglePageTouchView =
+    isTouchDevice && isTouchPortrait && (mode === 'single' || mode === 'double')
+  const fullscreenActive = isFullscreen || inlineFullscreen
 
   const maxPageIndex = Math.max(pages.length - 1, 0)
-  const maxStepIndex = Math.max(twoPageSteps.length - 1, 0)
+  const maxStepIndex = Math.max(activeDoubleSteps.length - 1, 0)
+  const maxSingleStepIndex = Math.max(singlePageSteps.length - 1, 0)
 
   const currentTargetPageIndex =
     mode === 'double'
-      ? (twoPageSteps[currentStepIndex]?.anchorPageIndex ?? currentPageIndex)
-      : currentPageIndex
+      ? (activeDoubleSteps[currentStepIndex]?.anchorPageIndex ??
+        currentPageIndex)
+      : mode === 'single'
+        ? (singlePageSteps[currentSingleStepIndex]?.anchorPageIndex ??
+          currentPageIndex)
+        : currentPageIndex
   const scrubberMax = Math.max(0, pages.length - 1)
   const scrubberValue = currentTargetPageIndex
 
-  const activeStep = twoPageSteps[currentStepIndex] ?? null
+  const activeStep = activeDoubleSteps[currentStepIndex] ?? null
   const stepUnits = activeStep?.units ?? []
   const normalizedStepUnits =
     stepUnits.length > 2 ? stepUnits.slice(0, 2) : stepUnits
@@ -481,7 +660,12 @@ function ReaderPage() {
       : normalizedStepUnits
 
   const displayUnits = useMemo(() => {
-    if (mode !== 'double' || renderedUnits.length <= 1) {
+    if (
+      mode !== 'double' ||
+      renderedUnits.length <= 1 ||
+      isTouchPortrait ||
+      activeStep?.kind === 'split-spread'
+    ) {
       return renderedUnits
     }
 
@@ -495,11 +679,30 @@ function ReaderPage() {
     })
 
     return spreadUnit ? [spreadUnit] : renderedUnits
-  }, [mode, pages, renderedUnits])
+  }, [activeStep?.kind, isTouchPortrait, mode, pages, renderedUnits])
+
+  const currentRenderUnits = useMemo(
+    () =>
+      mode === 'single'
+        ? (singlePageSteps[currentSingleStepIndex]?.units ??
+          ([{ type: 'page', pageIndex: currentPageIndex }] as const))
+        : displayUnits,
+    [
+      currentPageIndex,
+      currentSingleStepIndex,
+      displayUnits,
+      mode,
+      singlePageSteps,
+    ],
+  )
 
   const hudPageLabel = useMemo(() => {
     if (pages.length === 0) {
       return 'Page 0 / 0'
+    }
+
+    if (mode === 'single') {
+      return `Page ${currentSingleStepIndex + 1} / ${Math.max(singlePageSteps.length, 1)}`
     }
 
     if (mode !== 'double') {
@@ -518,7 +721,14 @@ function ReaderPage() {
     const first = visibleIndexes[0]!
     const last = visibleIndexes[visibleIndexes.length - 1]!
     return `Pages ${first + 1}-${last + 1} / ${pages.length}`
-  }, [currentTargetPageIndex, displayUnits, mode, pages.length])
+  }, [
+    currentSingleStepIndex,
+    currentTargetPageIndex,
+    displayUnits,
+    mode,
+    pages.length,
+    singlePageSteps.length,
+  ])
 
   const rtlSpreadNumbers = useMemo(() => {
     const currentNumber = currentTargetPageIndex + 1
@@ -643,6 +853,16 @@ function ReaderPage() {
   ])
 
   const loadChapter = useCallback(async () => {
+    if (
+      typeof window !== 'undefined' &&
+      !isLocalSessionChapterAllowed(params.chapterId)
+    ) {
+      setIsLoading(false)
+      setChapterPayload(null)
+      setError('Session expired. Please upload the file again from Home.')
+      return
+    }
+
     const cachedPayload = prefetchedLocalChapterPayloads.get(params.chapterId)
     if (cachedPayload) {
       prefetchedLocalChapterPayloads.delete(params.chapterId)
@@ -675,6 +895,12 @@ function ReaderPage() {
           nextPage,
         ),
       )
+      setCurrentSingleStepIndex(
+        findStepIndexByPageIndex(
+          buildSinglePageSteps(payload.manifest.pages, false),
+          nextPage,
+        ),
+      )
     }
 
     if (cachedPayload) {
@@ -683,6 +909,7 @@ function ReaderPage() {
       setChapterPayload(null)
       setCurrentPageIndex(0)
       setCurrentStepIndex(0)
+      setCurrentSingleStepIndex(0)
     }
 
     chapterTransitionRef.current = false
@@ -738,21 +965,6 @@ function ReaderPage() {
       setIsLoading(false)
     }
   }, [params.chapterId])
-
-  useEffect(() => {
-    if (mode !== 'double') {
-      return
-    }
-
-    const nextStepIndex = findStepIndexByPageIndex(
-      twoPageSteps,
-      currentTargetPageIndex,
-    )
-
-    setCurrentStepIndex((current) =>
-      current === nextStepIndex ? current : nextStepIndex,
-    )
-  }, [currentTargetPageIndex, mode, twoPageSteps])
 
   useEffect(() => {
     void loadChapter()
@@ -841,15 +1053,20 @@ function ReaderPage() {
 
       if (next === 'double') {
         setCurrentStepIndex(
-          findStepIndexByPageIndex(twoPageSteps, currentTargetPageIndex),
+          findStepIndexByPageIndex(activeDoubleSteps, currentTargetPageIndex),
         )
+      } else if (next === 'single') {
+        setCurrentSingleStepIndex(
+          findStepIndexByPageIndex(singlePageSteps, currentTargetPageIndex),
+        )
+        setCurrentPageIndex(currentTargetPageIndex)
       } else {
         setCurrentPageIndex(currentTargetPageIndex)
       }
 
       return next
     })
-  }, [currentTargetPageIndex, twoPageSteps])
+  }, [activeDoubleSteps, currentTargetPageIndex, singlePageSteps])
 
   useEffect(() => {
     if (!chapterPayload) {
@@ -909,9 +1126,14 @@ function ReaderPage() {
     (nextPageIndex: number) => {
       const safeIndex = clamp(nextPageIndex, 0, maxPageIndex)
       setCurrentPageIndex(safeIndex)
-      setCurrentStepIndex(findStepIndexByPageIndex(twoPageSteps, safeIndex))
+      setCurrentStepIndex(
+        findStepIndexByPageIndex(activeDoubleSteps, safeIndex),
+      )
+      setCurrentSingleStepIndex(
+        findStepIndexByPageIndex(singlePageSteps, safeIndex),
+      )
     },
-    [maxPageIndex, twoPageSteps],
+    [activeDoubleSteps, maxPageIndex, singlePageSteps],
   )
 
   const persistProgressNow = useCallback(
@@ -959,7 +1181,7 @@ function ReaderPage() {
   )
 
   const showPageHudForMoment = useCallback(() => {
-    if (!isFullscreen) {
+    if (!fullscreenActive) {
       return
     }
 
@@ -972,10 +1194,10 @@ function ReaderPage() {
       setShowPageHud(false)
       pageHudTimeoutRef.current = null
     }, 900)
-  }, [isFullscreen])
+  }, [fullscreenActive])
 
   const revealReaderUi = useCallback(() => {
-    if (focusMode) {
+    if (focusMode || isTouchDevice) {
       setShowReaderChrome(false)
       return
     }
@@ -995,7 +1217,20 @@ function ReaderPage() {
       setShowReaderChrome(false)
       readerUiTimeoutRef.current = null
     }, uiAutoHideMs)
-  }, [focusMode, sidebarOpen, uiAutoHideMs])
+  }, [focusMode, isTouchDevice, sidebarOpen, uiAutoHideMs])
+
+  const triggerPageMotion = useCallback((direction: 'next' | 'prev') => {
+    setPageMotion(direction)
+
+    if (pageMotionTimeoutRef.current !== null) {
+      window.clearTimeout(pageMotionTimeoutRef.current)
+    }
+
+    pageMotionTimeoutRef.current = window.setTimeout(() => {
+      setPageMotion(null)
+      pageMotionTimeoutRef.current = null
+    }, 180)
+  }, [])
 
   const updateMagnifierFrame = useCallback(
     (event: MouseEvent<HTMLElement>) => {
@@ -1084,18 +1319,36 @@ function ReaderPage() {
   ])
 
   const toggleFullscreen = useCallback(async () => {
+    if (inlineFullscreen) {
+      setInlineFullscreen(false)
+      return
+    }
+
     const targetElement = readerStageRef.current
     if (!targetElement) {
       return
     }
 
-    if (document.fullscreenElement) {
-      await document.exitFullscreen()
+    const supportsFullscreen =
+      typeof document !== 'undefined' &&
+      typeof targetElement.requestFullscreen === 'function'
+
+    if (!supportsFullscreen) {
+      setInlineFullscreen(true)
       return
     }
 
-    await targetElement.requestFullscreen()
-  }, [])
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen()
+        return
+      }
+
+      await targetElement.requestFullscreen()
+    } catch {
+      setInlineFullscreen(true)
+    }
+  }, [inlineFullscreen])
 
   const goNext = useCallback(() => {
     const armBoundaryNotice = (direction: 'next' | 'prev') => {
@@ -1138,11 +1391,37 @@ function ReaderPage() {
         return
       }
 
-      const next = clamp(currentStepIndex + 1, 0, maxStepIndex)
-      setCurrentStepIndex(next)
-      setCurrentPageIndex(
-        twoPageSteps[next]?.anchorPageIndex ?? currentPageIndex,
-      )
+      triggerPageMotion('next')
+      setCurrentStepIndex((prev) => {
+        const next = Math.min(prev + 1, maxStepIndex)
+        setCurrentPageIndex(
+          activeDoubleSteps[next]?.anchorPageIndex ?? currentPageIndex,
+        )
+        return next
+      })
+      setPendingBoundaryDirection(null)
+      setBoundaryNotice(null)
+      return
+    }
+
+    if (mode === 'single') {
+      if (currentSingleStepIndex >= maxSingleStepIndex) {
+        if (pendingBoundaryDirection === 'next' && nextChapterId) {
+          goToNextChapter()
+        } else {
+          armBoundaryNotice('next')
+        }
+        return
+      }
+
+      triggerPageMotion('next')
+      setCurrentSingleStepIndex((prev) => {
+        const next = Math.min(prev + 1, maxSingleStepIndex)
+        setCurrentPageIndex(
+          singlePageSteps[next]?.anchorPageIndex ?? currentPageIndex,
+        )
+        return next
+      })
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
       return
@@ -1159,19 +1438,24 @@ function ReaderPage() {
 
     setPendingBoundaryDirection(null)
     setBoundaryNotice(null)
+    triggerPageMotion('next')
     goToPage(currentPageIndex + 1)
   }, [
     currentPageIndex,
     currentStepIndex,
+    currentSingleStepIndex,
     goToNextChapter,
     goToPage,
     maxPageIndex,
+    maxSingleStepIndex,
     maxStepIndex,
     mode,
     nextChapterId,
     pendingBoundaryDirection,
     previousChapterId,
-    twoPageSteps,
+    activeDoubleSteps,
+    singlePageSteps,
+    triggerPageMotion,
   ])
 
   const goPrevious = useCallback(() => {
@@ -1215,11 +1499,37 @@ function ReaderPage() {
         return
       }
 
-      const previous = clamp(currentStepIndex - 1, 0, maxStepIndex)
-      setCurrentStepIndex(previous)
-      setCurrentPageIndex(
-        twoPageSteps[previous]?.anchorPageIndex ?? currentPageIndex,
-      )
+      triggerPageMotion('prev')
+      setCurrentStepIndex((prev) => {
+        const next = Math.max(prev - 1, 0)
+        setCurrentPageIndex(
+          activeDoubleSteps[next]?.anchorPageIndex ?? currentPageIndex,
+        )
+        return next
+      })
+      setPendingBoundaryDirection(null)
+      setBoundaryNotice(null)
+      return
+    }
+
+    if (mode === 'single') {
+      if (currentSingleStepIndex <= 0) {
+        if (pendingBoundaryDirection === 'prev' && previousChapterId) {
+          goToPreviousChapter()
+        } else {
+          armBoundaryNotice('prev')
+        }
+        return
+      }
+
+      triggerPageMotion('prev')
+      setCurrentSingleStepIndex((prev) => {
+        const next = Math.max(prev - 1, 0)
+        setCurrentPageIndex(
+          singlePageSteps[next]?.anchorPageIndex ?? currentPageIndex,
+        )
+        return next
+      })
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
       return
@@ -1236,19 +1546,281 @@ function ReaderPage() {
 
     setPendingBoundaryDirection(null)
     setBoundaryNotice(null)
+    triggerPageMotion('prev')
     goToPage(currentPageIndex - 1)
   }, [
     currentPageIndex,
     currentStepIndex,
+    currentSingleStepIndex,
     goToPage,
     goToPreviousChapter,
+    maxSingleStepIndex,
     maxStepIndex,
     mode,
     nextChapterId,
     pendingBoundaryDirection,
     previousChapterId,
-    twoPageSteps,
+    activeDoubleSteps,
+    singlePageSteps,
+    triggerPageMotion,
   ])
+
+  const handleReaderTouchStart = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      if (!isTouchDevice || event.pointerType !== 'touch') {
+        return
+      }
+
+      touchGestureRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        startTime: Date.now(),
+        lock: null,
+      }
+
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId)
+      } catch {
+        // Ignore unsupported pointer capture on some browsers.
+      }
+
+      swipeDraggingRef.current = false
+      swipeOffsetRef.current = 0
+
+      // Cancel any pending commit from a previous swipe so fast-swipes work
+      if (swipeCommitTimeoutRef.current !== null) {
+        window.clearTimeout(swipeCommitTimeoutRef.current)
+        swipeCommitTimeoutRef.current = null
+      }
+
+      if (swipeTrackRef.current) {
+        swipeTrackRef.current.style.transition = 'none'
+        swipeTrackRef.current.style.transform = 'translate3d(0px, 0, 0)'
+      }
+    },
+    [isTouchDevice],
+  )
+
+  const handleReaderTouchMove = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      if (!isTouchDevice || event.pointerType !== 'touch') {
+        return
+      }
+
+      if (mode === 'scroll') {
+        return
+      }
+
+      const gesture = touchGestureRef.current
+      if (!gesture || gesture.pointerId !== event.pointerId) {
+        return
+      }
+
+      const deltaX = event.clientX - gesture.startX
+      const deltaY = event.clientY - gesture.startY
+      const absX = Math.abs(deltaX)
+      const absY = Math.abs(deltaY)
+
+      if (!gesture.lock) {
+        if (absX < 8 && absY < 8) {
+          return
+        }
+
+        gesture.lock = absX > absY ? 'x' : 'y'
+      }
+
+      if (gesture.lock !== 'x') {
+        return
+      }
+
+      const maxDrag =
+        (viewportRef.current?.clientWidth ?? window.innerWidth) * 0.9
+      suppressTapRef.current = absX > 10
+      swipeDraggingRef.current = true
+      swipeOffsetRef.current = clamp(deltaX, -maxDrag, maxDrag)
+
+      if (swipeTrackRef.current) {
+        swipeTrackRef.current.style.transition = 'none'
+        swipeTrackRef.current.style.transform = `translate3d(${swipeOffsetRef.current}px, 0, 0)`
+      }
+    },
+    [isTouchDevice, mode],
+  )
+
+  const handleReaderTouchEnd = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      if (!isTouchDevice || event.pointerType !== 'touch') {
+        return
+      }
+
+      const gesture = touchGestureRef.current
+      touchGestureRef.current = null
+
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      } catch {
+        // Ignore unsupported pointer capture release.
+      }
+
+      if (!gesture || gesture.pointerId !== event.pointerId) {
+        return
+      }
+
+      if (mode === 'scroll') {
+        return
+      }
+
+      // Non-swipe-track path: simple swipe detection without visual drag
+      if (!swipeDraggingRef.current) {
+        const deltaX = event.clientX - gesture.startX
+        const deltaY = event.clientY - gesture.startY
+        const absX = Math.abs(deltaX)
+        const absY = Math.abs(deltaY)
+        if (absX < 26 || absX <= absY) {
+          return
+        }
+        suppressTapRef.current = true
+        if (deltaX > 0) {
+          goNext()
+        } else {
+          goPrevious()
+        }
+        return
+      }
+
+      if (gesture.lock !== 'x') {
+        swipeDraggingRef.current = false
+        swipeOffsetRef.current = 0
+        if (swipeTrackRef.current) {
+          swipeTrackRef.current.style.transition =
+            'transform 180ms cubic-bezier(0.22, 0.78, 0.16, 1)'
+          swipeTrackRef.current.style.transform = 'translate3d(0px, 0, 0)'
+        }
+        return
+      }
+
+      const width = viewportRef.current?.clientWidth ?? window.innerWidth
+      const elapsed = Math.max(1, Date.now() - gesture.startTime)
+      const velocity = Math.abs(swipeOffsetRef.current) / elapsed // px/ms
+      const distanceThreshold = Math.max(30, width * 0.1)
+      const velocityThreshold = 0.4 // px/ms — a quick flick
+      const meetsThreshold =
+        Math.abs(swipeOffsetRef.current) > distanceThreshold ||
+        velocity > velocityThreshold
+      const commit = meetsThreshold
+        ? swipeOffsetRef.current > 0
+          ? 'next'
+          : 'prev'
+        : null
+
+      swipeDraggingRef.current = false
+
+      if (!commit) {
+        swipeOffsetRef.current = 0
+        if (swipeTrackRef.current) {
+          swipeTrackRef.current.style.transition =
+            'transform 180ms cubic-bezier(0.22, 0.78, 0.16, 1)'
+          swipeTrackRef.current.style.transform = 'translate3d(0px, 0, 0)'
+        }
+        return
+      }
+
+      swipeOffsetRef.current = commit === 'next' ? width : -width
+      if (swipeTrackRef.current) {
+        swipeTrackRef.current.style.transition =
+          'transform 160ms cubic-bezier(0.22, 0.78, 0.16, 1)'
+        swipeTrackRef.current.style.transform = `translate3d(${swipeOffsetRef.current}px, 0, 0)`
+      }
+
+      // Navigate immediately — the re-centering effect will reset the transform.
+      // No timeout delay so rapid swipes aren't blocked.
+      if (commit === 'next') {
+        goNext()
+      } else {
+        goPrevious()
+      }
+    },
+    [goNext, goPrevious, isTouchDevice, mode],
+  )
+
+  const handleReaderTouchCancel = useCallback(() => {
+    touchGestureRef.current = null
+    swipeDraggingRef.current = false
+    swipeOffsetRef.current = 0
+    if (swipeTrackRef.current) {
+      swipeTrackRef.current.style.transition =
+        'transform 180ms cubic-bezier(0.22, 0.78, 0.16, 1)'
+      swipeTrackRef.current.style.transform = 'translate3d(0px, 0, 0)'
+    }
+  }, [])
+
+  const renderUnitsForPaging = useCallback(
+    (units: ReadonlyArray<RenderUnit>, keyPrefix: string) =>
+      units.map((unit, slotIndex) => {
+        const page = pages.find((entry) => entry.pageIndex === unit.pageIndex)
+        if (!page) {
+          return null
+        }
+
+        return (
+          <PagePane
+            key={`${keyPrefix}-${slotIndex}-${unit.type === 'half' ? unit.half : unit.type === 'page' && 'crop' in unit ? unit.crop : 'page'}-${unit.pageIndex}`}
+            chapterId={chapterId}
+            unit={unit}
+            page={page}
+            zoomPreset={zoomPreset}
+            loading="eager"
+            testId="reader-page-container"
+            forceFullWidth={isSinglePageTouchView}
+          />
+        )
+      }),
+    [chapterId, isSinglePageTouchView, pages, zoomPreset],
+  )
+
+  useEffect(() => {
+    swipeDraggingRef.current = false
+    swipeOffsetRef.current = 0
+
+    if (swipeTrackRef.current) {
+      swipeTrackRef.current.style.transition = 'none'
+      swipeTrackRef.current.style.transform = 'translate3d(0px, 0, 0)'
+    }
+
+    if (pagerSettleTimeoutRef.current !== null) {
+      window.clearTimeout(pagerSettleTimeoutRef.current)
+      pagerSettleTimeoutRef.current = null
+    }
+  }, [currentPageIndex, currentSingleStepIndex, currentStepIndex, mode])
+
+  const handleTouchTapNavigate = useCallback(
+    (event: MouseEvent<HTMLElement>) => {
+      if (!isTouchDevice || mode === 'scroll') {
+        return
+      }
+
+      if (suppressTapRef.current) {
+        suppressTapRef.current = false
+        return
+      }
+
+      if (swipeDraggingRef.current || Math.abs(swipeOffsetRef.current) > 2) {
+        return
+      }
+
+      const rect = event.currentTarget.getBoundingClientRect()
+      const tapX = event.clientX - rect.left
+
+      if (tapX < rect.width / 2) {
+        goNext()
+        return
+      }
+
+      goPrevious()
+    },
+    [goNext, goPrevious, isTouchDevice, mode],
+  )
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -1345,7 +1917,7 @@ function ReaderPage() {
       if (event.code === 'Digit0') {
         event.preventDefault()
         blurReaderFocusTarget()
-        setZoomPreset('fit-height')
+        setZoomPreset('fit-width')
         return
       }
 
@@ -1393,7 +1965,11 @@ function ReaderPage() {
 
   useEffect(() => {
     const onFullscreenChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement))
+      const active = Boolean(document.fullscreenElement)
+      setIsFullscreen(active)
+      if (active) {
+        setInlineFullscreen(false)
+      }
     }
 
     document.addEventListener('fullscreenchange', onFullscreenChange)
@@ -1404,7 +1980,7 @@ function ReaderPage() {
   }, [])
 
   useEffect(() => {
-    if (!isFullscreen) {
+    if (!fullscreenActive) {
       setShowPageHud(false)
       if (pageHudTimeoutRef.current !== null) {
         window.clearTimeout(pageHudTimeoutRef.current)
@@ -1414,7 +1990,7 @@ function ReaderPage() {
     }
 
     showPageHudForMoment()
-  }, [isFullscreen, showPageHudForMoment])
+  }, [fullscreenActive, showPageHudForMoment])
 
   useEffect(() => {
     if (sidebarOpen && !focusMode) {
@@ -1442,9 +2018,27 @@ function ReaderPage() {
       if (boundaryNoticeTimeoutRef.current !== null) {
         window.clearTimeout(boundaryNoticeTimeoutRef.current)
       }
+
+      if (pageMotionTimeoutRef.current !== null) {
+        window.clearTimeout(pageMotionTimeoutRef.current)
+      }
+
+      if (swipeCommitTimeoutRef.current !== null) {
+        window.clearTimeout(swipeCommitTimeoutRef.current)
+      }
+
+      if (pagerSettleTimeoutRef.current !== null) {
+        window.clearTimeout(pagerSettleTimeoutRef.current)
+      }
     },
     [],
   )
+
+  useEffect(() => {
+    if (isTouchDevice && magnifierEnabled) {
+      setMagnifierEnabled(false)
+    }
+  }, [isTouchDevice, magnifierEnabled])
 
   useEffect(() => {
     setPendingBoundaryDirection(null)
@@ -1452,13 +2046,13 @@ function ReaderPage() {
   }, [params.chapterId])
 
   useEffect(() => {
-    if (isFullscreen) {
+    if (fullscreenActive) {
       showPageHudForMoment()
     }
   }, [
     currentStepIndex,
     currentTargetPageIndex,
-    isFullscreen,
+    fullscreenActive,
     showPageHudForMoment,
   ])
 
@@ -1503,7 +2097,7 @@ function ReaderPage() {
     )
   }
 
-  if (error || !chapterPayload) {
+  if (error) {
     return (
       <div className="border-2 border-destructive/30 bg-destructive/10 p-6 text-destructive">
         We could not open this chapter. Please go back and try another one.
@@ -1511,23 +2105,36 @@ function ReaderPage() {
     )
   }
 
+  if (!chapterPayload) {
+    return (
+      <div className="flex h-[100dvh] flex-col items-center justify-center gap-4 bg-black">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white/70" />
+          <p className="text-sm text-white/60">Loading chapter…</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       className={
-        isFullscreen
-          ? ''
-          : `relative h-[100dvh] overflow-hidden bg-black ${focusMode ? 'reader-focus-mode' : ''}`
+        fullscreenActive
+          ? 'fixed inset-0 z-[120] h-[100dvh] overflow-hidden bg-black'
+          : isTouchDevice
+            ? `relative min-h-[100dvh] overflow-x-hidden overflow-y-auto bg-black ${focusMode ? 'reader-focus-mode' : ''} reader-touch-root`
+            : `relative h-[100dvh] overflow-hidden bg-black ${focusMode ? 'reader-focus-mode' : ''}`
       }
-      onMouseMove={handleReaderMouseMove}
+      onMouseMove={isTouchDevice ? undefined : handleReaderMouseMove}
       onMouseLeave={() => {
         setMagnifierFrame(null)
       }}
     >
-      {!isFullscreen ? (
+      {!fullscreenActive ? (
         <Button
           variant="ghost"
           size="icon"
-          className={`reader-shell-toggle absolute top-4 z-50 size-12 transition-transform duration-200 md:size-10 ${sidebarOpen ? 'left-[calc(min(88vw,360px)+12px)]' : 'left-3'} ${showReaderChrome || sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+          className={`reader-shell-toggle absolute ui-left-safe-offset ui-top-safe-offset z-50 size-12 transition-transform duration-200 md:size-10 ${showReaderChrome || sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'} ${isTouchDevice ? 'hidden' : ''} ${sidebarOpen ? 'md:left-[calc(min(88vw,360px)+12px)]' : ''}`}
           onClick={() => setSidebarOpen((current) => !current)}
           type="button"
         >
@@ -1535,409 +2142,627 @@ function ReaderPage() {
         </Button>
       ) : null}
 
-      {!isFullscreen ? (
-        <aside
-          className={`reader-shell-panel animate-enter absolute inset-y-0 left-0 z-40 w-[min(88vw,360px)] overflow-y-auto p-3 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] max-md:inset-x-0 max-md:inset-y-auto max-md:bottom-0 max-md:top-auto max-md:h-[72dvh] max-md:w-full ${sidebarOpen ? 'translate-x-0 max-md:translate-y-0' : '-translate-x-full max-md:translate-y-full'}`}
-          style={{ animationDelay: '20ms' }}
+      {fullscreenActive && isTouchDevice ? (
+        <Button
+          type="button"
+          variant="soft"
+          size="sm"
+          className="absolute ui-right-safe-offset ui-top-safe-offset z-40 h-8 px-2 text-xs"
+          onClick={() => {
+            void toggleFullscreen()
+          }}
         >
-          <div className="space-y-2 text-xs text-muted-foreground">
-            <Link
-              to="/series/$seriesId"
-              params={{ seriesId: chapterPayload.manifest.seriesId }}
-              className="inline-flex border border-border bg-surface-soft px-2 py-1 hover:bg-surface"
-            >
-              Back to series
-            </Link>
-            <Link
-              to="/series/$seriesId"
-              params={{ seriesId: chapterPayload.manifest.seriesId }}
-              className="block truncate text-sm font-semibold leading-snug text-foreground underline-offset-2 hover:underline"
-            >
-              {prefetchedLocalSeriesDetails.get(
-                chapterPayload.manifest.seriesId,
-              )?.title ?? 'Open series page'}
-            </Link>
-            <p>
-              Ch {chapterPayload.manifest.chapterNumber} ·{' '}
-              {chapterPayload.manifest.pageCount}p
-            </p>
-            <p className="text-[11px]">
-              Tip: click left/right side of the page to move.
-            </p>
-          </div>
+          Exit
+        </Button>
+      ) : null}
 
-          <div className="mt-3 flex gap-2">
-            <Button
-              type="button"
-              variant={settingsTab === 'basic' ? 'default' : 'soft'}
-              className="h-8 w-full"
-              onClick={() => setSettingsTab('basic')}
-            >
-              Reading
-            </Button>
-            <Button
-              type="button"
-              variant={settingsTab === 'advanced' ? 'default' : 'soft'}
-              className="h-8 w-full"
-              onClick={() => setSettingsTab('advanced')}
-            >
-              More settings
-            </Button>
-          </div>
-
-          {settingsTab === 'basic' ? (
-            <div className="mt-3 grid gap-2">
-              <SelectField
-                value={mode}
-                onChange={(event) => {
-                  const nextMode = event.target.value as ReaderMode
-                  setMode(nextMode)
-
-                  if (nextMode === 'double') {
-                    setCurrentStepIndex(
-                      findStepIndexByPageIndex(
-                        twoPageSteps,
-                        currentTargetPageIndex,
-                      ),
-                    )
-                  } else {
-                    setCurrentPageIndex(currentTargetPageIndex)
-                  }
-                }}
-                options={[
-                  { value: 'single', label: 'Single page' },
-                  { value: 'double', label: 'Two-page spread' },
-                  { value: 'scroll', label: 'Continuous scroll' },
-                ]}
-              />
-
+      {!fullscreenActive ? (
+        <aside
+          className={
+            isTouchDevice
+              ? `reader-shell-panel animate-enter relative z-30 w-full overflow-visible ${isTouchPortrait ? 'p-3' : 'px-3 py-1.5'}`
+              : `reader-shell-panel animate-enter absolute inset-y-0 left-0 z-40 w-[min(88vw,360px)] overflow-y-auto p-3 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`
+          }
+          style={{
+            animationDelay: '20ms',
+            paddingTop: isTouchDevice
+              ? 'max(0.75rem, calc(var(--safe-top) + 0.5rem))'
+              : undefined,
+          }}
+        >
+          {isTouchDevice && isTouchPortrait ? (
+            <div className="mb-2 flex items-center justify-between border border-border bg-surface-soft px-2 py-1.5">
+              <span className="text-xs font-semibold text-foreground">
+                Settings
+              </span>
               <Button
                 type="button"
-                variant={doublePageOffset ? 'default' : 'soft'}
-                className="h-9 justify-between px-3"
-                onClick={() => setDoublePageOffset((value) => !value)}
-              >
-                <span>Book start alignment</span>
-                <span>{doublePageOffset ? 'On' : 'Off'}</span>
-              </Button>
-
-              <Button
-                type="button"
-                variant={magnifierEnabled ? 'default' : 'soft'}
-                className="h-9 justify-between px-3"
-                onClick={() => setMagnifierEnabled((value) => !value)}
-              >
-                <span>Magnifier</span>
-                <span>{magnifierEnabled ? 'On' : 'Off'}</span>
-              </Button>
-
-              <Button
-                type="button"
-                variant={focusMode ? 'default' : 'soft'}
-                className="h-9 justify-between px-3"
-                onClick={() => setFocusMode((value) => !value)}
-              >
-                <span>Distraction-free mode</span>
-                <span>{focusMode ? 'On' : 'Off'}</span>
-              </Button>
-
-              <SelectField
-                value={zoomPreset}
-                onChange={(event) =>
-                  setZoomPreset(event.target.value as ZoomPreset)
+                variant="soft"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() =>
+                  setMobileSettingsMinimized((current) => !current)
                 }
-                className="h-9"
-                data-testid="zoom-select"
-                options={[
-                  { value: 'fit-height', label: 'Fit to screen' },
-                  { value: 'fit-width', label: 'Fit to width' },
-                  { value: 'actual', label: 'Actual size' },
-                ]}
-              />
+              >
+                {mobileSettingsMinimized ? 'Show' : 'Minimize'}
+              </Button>
+            </div>
+          ) : null}
 
-              {seriesChapters.length > 0 ? (
-                <>
-                  <Input
-                    value={chapterFilter}
-                    onChange={(event) => setChapterFilter(event.target.value)}
-                    className="h-9"
-                    placeholder="Type chapter number..."
-                  />
-                  {filteredSeriesChapters.length > 0 ? (
-                    <SelectField
-                      value={chapterPayload.manifest.chapterId}
-                      onChange={(event) => {
-                        const nextId = event.target.value
-                        if (nextId === chapterPayload.manifest.chapterId) {
-                          return
-                        }
-                        persistProgressNow(
-                          currentTargetPageIndex,
-                          currentStepIndex,
-                        )
-                        void navigate({
-                          to: '/reader/$chapterId',
-                          params: { chapterId: nextId },
-                        })
-                      }}
-                      className="h-9"
-                      options={filteredSeriesChapters.map((chapter) => ({
-                        value: chapter.id,
-                        label: `Chapter ${chapter.chapterNumber}`,
-                      }))}
-                    />
-                  ) : (
-                    <p className="px-1 text-xs text-muted-foreground">
-                      No chapter found. Try a different number.
-                    </p>
-                  )}
-                </>
-              ) : null}
-
+          {/* Landscape touch: single compact toolbar row */}
+          {isTouchDevice && !isTouchPortrait ? (
+            <div className="flex items-center gap-1.5 overflow-x-auto text-[11px]">
               <Link
                 to="/series/$seriesId"
                 params={{ seriesId: chapterPayload.manifest.seriesId }}
-                className="inline-flex h-9 items-center justify-center border border-border bg-surface-soft text-xs text-muted-foreground hover:text-foreground"
+                className="shrink-0 border border-border bg-surface-soft px-1.5 py-0.5 text-muted-foreground hover:bg-surface"
               >
-                Open series page
+                Series
               </Link>
-
-              <label className="text-xs text-muted-foreground">
-                {currentTargetPageIndex + 1} / {pages.length}
-                <RangeSlider
-                  min={0}
-                  max={scrubberMax}
-                  value={scrubberValue}
-                  onChange={(event) =>
-                    goToPage(Number.parseInt(event.target.value, 10))
-                  }
-                  className="mt-3 w-full accent-primary"
-                  style={{ transform: 'scaleX(-1)' }}
-                  data-testid="page-scrubber"
-                />
-              </label>
+              <div className="flex shrink-0 gap-0.5">
+                <Button
+                  type="button"
+                  variant={mode === 'single' ? 'default' : 'soft'}
+                  className="h-6 px-1.5 text-[11px]"
+                  onClick={() => {
+                    setMode('single')
+                    setCurrentSingleStepIndex(
+                      findStepIndexByPageIndex(
+                        singlePageSteps,
+                        currentTargetPageIndex,
+                      ),
+                    )
+                    setCurrentPageIndex(currentTargetPageIndex)
+                  }}
+                >
+                  1
+                </Button>
+                <Button
+                  type="button"
+                  variant={mode === 'double' ? 'default' : 'soft'}
+                  className="h-6 px-1.5 text-[11px]"
+                  onClick={() => {
+                    setMode('double')
+                    setCurrentStepIndex(
+                      findStepIndexByPageIndex(
+                        activeDoubleSteps,
+                        currentTargetPageIndex,
+                      ),
+                    )
+                  }}
+                >
+                  2
+                </Button>
+                <Button
+                  type="button"
+                  variant={mode === 'scroll' ? 'default' : 'soft'}
+                  className="h-6 px-1.5 text-[11px]"
+                  onClick={() => {
+                    setMode('scroll')
+                    setCurrentPageIndex(currentTargetPageIndex)
+                  }}
+                >
+                  ∞
+                </Button>
+              </div>
+              <span className="shrink-0 text-muted-foreground">
+                {currentTargetPageIndex + 1}/{pages.length}
+              </span>
+              <RangeSlider
+                min={0}
+                max={scrubberMax}
+                value={scrubberValue}
+                onChange={(event) =>
+                  goToPage(Number.parseInt(event.target.value, 10))
+                }
+                className="min-w-[80px] flex-1 accent-primary"
+                style={{ transform: 'scaleX(-1)' }}
+                data-testid="page-scrubber-landscape"
+              />
+              <Button
+                type="button"
+                variant="soft"
+                className="h-6 shrink-0 px-1.5 text-[11px]"
+                onClick={() => void toggleFullscreen()}
+              >
+                ⛶
+              </Button>
             </div>
-          ) : (
-            <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
-              <label>
-                Preload ahead pages
-                <Input
-                  type="number"
-                  min={1}
-                  max={24}
-                  value={preloadAhead}
-                  onChange={(event) =>
-                    setPreloadAhead(
-                      clampNumber(
-                        Number.parseInt(event.target.value, 10),
-                        1,
-                        24,
-                      ),
-                    )
-                  }
-                  className="mt-1 h-8"
-                />
-              </label>
-              <label>
-                Preload behind pages
-                <Input
-                  type="number"
-                  min={0}
-                  max={12}
-                  value={preloadBehind}
-                  onChange={(event) =>
-                    setPreloadBehind(
-                      clampNumber(
-                        Number.parseInt(event.target.value, 10),
-                        0,
-                        12,
-                      ),
-                    )
-                  }
-                  className="mt-1 h-8"
-                />
-              </label>
-              <label>
-                Parallel preloads
-                <Input
-                  type="number"
-                  min={1}
-                  max={8}
-                  value={prefetchConcurrency}
-                  onChange={(event) =>
-                    setPrefetchConcurrency(
-                      clampNumber(
-                        Number.parseInt(event.target.value, 10),
-                        1,
-                        8,
-                      ),
-                    )
-                  }
-                  className="mt-1 h-8"
-                />
-              </label>
-              <label>
-                Next chapter prefetch trigger (remaining pages)
-                <Input
-                  type="number"
-                  min={1}
-                  max={24}
-                  value={nextChapterPrefetchThreshold}
-                  onChange={(event) =>
-                    setNextChapterPrefetchThreshold(
-                      clampNumber(
-                        Number.parseInt(event.target.value, 10),
-                        1,
-                        24,
-                      ),
-                    )
-                  }
-                  className="mt-1 h-8"
-                />
-              </label>
-              <label>
-                Next chapter warm pages
-                <Input
-                  type="number"
-                  min={1}
-                  max={16}
-                  value={nextChapterWarmPages}
-                  onChange={(event) =>
-                    setNextChapterWarmPages(
-                      clampNumber(
-                        Number.parseInt(event.target.value, 10),
-                        1,
-                        16,
-                      ),
-                    )
-                  }
-                  className="mt-1 h-8"
-                />
-              </label>
-              <label>
-                UI hide delay (ms)
-                <Input
-                  type="number"
-                  min={400}
-                  max={5000}
-                  step={100}
-                  value={uiAutoHideMs}
-                  onChange={(event) =>
-                    setUiAutoHideMs(
-                      clampNumber(
-                        Number.parseInt(event.target.value, 10),
-                        400,
-                        5000,
-                      ),
-                    )
-                  }
-                  className="mt-1 h-8"
-                />
-              </label>
-              <label>
-                Magnifier size (px)
-                <Input
-                  type="number"
-                  min={120}
-                  max={420}
-                  value={magnifierSize}
-                  onChange={(event) =>
-                    setMagnifierSize(
-                      clampNumber(
-                        Number.parseInt(event.target.value, 10),
-                        120,
-                        420,
-                      ),
-                    )
-                  }
-                  className="mt-1 h-8"
-                />
-              </label>
-              <label>
-                Magnifier zoom
-                <Input
-                  type="number"
-                  min={2}
-                  max={5}
-                  step={0.1}
-                  value={magnifierZoom}
-                  onChange={(event) =>
-                    setMagnifierZoom(
-                      clampNumber(Number.parseFloat(event.target.value), 2, 5),
-                    )
-                  }
-                  className="mt-1 h-8"
-                />
-              </label>
-            </div>
-          )}
+          ) : null}
 
-          <div className="mt-3 flex items-center justify-between gap-2">
-            <Button
-              variant="soft"
-              className="w-full"
-              onClick={goPrevious}
-              data-testid="nav-prev"
+          {/* Portrait touch / desktop: full settings */}
+          {!(isTouchDevice && !isTouchPortrait) ? (
+            <div
+              className={
+                isTouchDevice && mobileSettingsMinimized ? 'hidden' : ''
+              }
             >
-              Previous page
-            </Button>
-            <Button
-              variant="soft"
-              className="w-full"
-              onClick={goNext}
-              data-testid="nav-next"
-            >
-              Next page
-            </Button>
-          </div>
-          <div className="mt-2 flex items-center gap-2">
-            <Button
-              variant="ghost"
-              className="w-full border border-border"
-              onClick={goToPreviousChapter}
-              disabled={!previousChapterId}
-            >
-              Previous chapter
-            </Button>
-            <Button
-              variant="ghost"
-              className="w-full border border-border"
-              onClick={goToNextChapter}
-              disabled={!nextChapterId}
-            >
-              Next chapter
-            </Button>
-          </div>
-          <p
-            className="mt-3 text-sm text-muted-foreground"
-            data-testid="position-label"
-          >
-            {mode === 'double'
-              ? `Spread ${currentStepIndex + 1} / ${Math.max(twoPageSteps.length, 1)}`
-              : `Page ${currentTargetPageIndex + 1} / ${Math.max(pages.length, 1)}`}
-          </p>
-          <Button
-            type="button"
-            variant="ghost"
-            className="mt-2 h-8 border border-border text-xs"
-            onClick={() => setShowShortcutHelp((value) => !value)}
-          >
-            {showShortcutHelp
-              ? 'Hide keyboard shortcuts'
-              : 'Show keyboard shortcuts'}
-          </Button>
-          {showShortcutHelp ? (
-            <div className="reader-shortcut-sheet mt-2 text-xs">
-              <p>Nav: A/D or arrows, Space, [ ]</p>
-              <p>View: Q mode, 0 reset zoom, F fullscreen</p>
-              <p>UI: S sidebar, X focus, Z magnifier</p>
+              <div className="space-y-2 text-xs text-muted-foreground">
+                <Link
+                  to="/series/$seriesId"
+                  params={{ seriesId: chapterPayload.manifest.seriesId }}
+                  className="inline-flex border border-border bg-surface-soft px-2 py-1 hover:bg-surface"
+                >
+                  Back to series
+                </Link>
+                <Link
+                  to="/series/$seriesId"
+                  params={{ seriesId: chapterPayload.manifest.seriesId }}
+                  className="block truncate text-sm font-semibold leading-snug text-foreground underline-offset-2 hover:underline"
+                >
+                  {prefetchedLocalSeriesDetails.get(
+                    chapterPayload.manifest.seriesId,
+                  )?.title ?? 'Open series page'}
+                </Link>
+                <p>
+                  Ch {chapterPayload.manifest.chapterNumber} ·{' '}
+                  {chapterPayload.manifest.pageCount}p
+                </p>
+                <p className="text-[11px]">
+                  Tip: click left/right side of the page to move.
+                </p>
+              </div>
+
+              <div className="mt-3 flex gap-2">
+                <Button
+                  type="button"
+                  variant={settingsTab === 'basic' ? 'default' : 'soft'}
+                  className="h-8 w-full"
+                  onClick={() => setSettingsTab('basic')}
+                >
+                  Reading
+                </Button>
+                <Button
+                  type="button"
+                  variant={settingsTab === 'advanced' ? 'default' : 'soft'}
+                  className="h-8 w-full"
+                  onClick={() => setSettingsTab('advanced')}
+                >
+                  More settings
+                </Button>
+              </div>
+
+              {settingsTab === 'basic' ? (
+                <div
+                  className={
+                    isTouchDevice
+                      ? 'mt-3 grid grid-cols-2 gap-2'
+                      : 'mt-3 grid gap-2'
+                  }
+                >
+                  {isTouchDevice ? (
+                    <div className="col-span-2 grid grid-cols-3 gap-2">
+                      <Button
+                        type="button"
+                        variant={mode === 'single' ? 'default' : 'soft'}
+                        className="h-9"
+                        onClick={() => {
+                          setMode('single')
+                          setCurrentSingleStepIndex(
+                            findStepIndexByPageIndex(
+                              singlePageSteps,
+                              currentTargetPageIndex,
+                            ),
+                          )
+                          setCurrentPageIndex(currentTargetPageIndex)
+                        }}
+                      >
+                        Single
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={mode === 'double' ? 'default' : 'soft'}
+                        className="h-9"
+                        onClick={() => {
+                          setMode('double')
+                          setCurrentStepIndex(
+                            findStepIndexByPageIndex(
+                              activeDoubleSteps,
+                              currentTargetPageIndex,
+                            ),
+                          )
+                        }}
+                      >
+                        Double
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={mode === 'scroll' ? 'default' : 'soft'}
+                        className="h-9"
+                        onClick={() => {
+                          setMode('scroll')
+                          setCurrentPageIndex(currentTargetPageIndex)
+                        }}
+                      >
+                        Scroll
+                      </Button>
+                    </div>
+                  ) : (
+                    <SelectField
+                      value={mode}
+                      onChange={(event) => {
+                        const nextMode = event.target.value as ReaderMode
+                        setMode(nextMode)
+
+                        if (nextMode === 'double') {
+                          setCurrentStepIndex(
+                            findStepIndexByPageIndex(
+                              activeDoubleSteps,
+                              currentTargetPageIndex,
+                            ),
+                          )
+                        } else if (nextMode === 'single') {
+                          setCurrentSingleStepIndex(
+                            findStepIndexByPageIndex(
+                              singlePageSteps,
+                              currentTargetPageIndex,
+                            ),
+                          )
+                          setCurrentPageIndex(currentTargetPageIndex)
+                        } else {
+                          setCurrentPageIndex(currentTargetPageIndex)
+                        }
+                      }}
+                      options={[
+                        { value: 'single', label: 'Single page' },
+                        { value: 'double', label: 'Two-page spread' },
+                        { value: 'scroll', label: 'Continuous scroll' },
+                      ]}
+                    />
+                  )}
+                  {mode === 'double' && isTouchPortrait ? (
+                    <p className="col-span-2 px-1 text-xs text-muted-foreground">
+                      Portrait on touch screens uses one page at a time.
+                    </p>
+                  ) : null}
+
+                  <Button
+                    type="button"
+                    variant={doublePageOffset ? 'default' : 'soft'}
+                    className="h-9 justify-between px-3"
+                    onClick={() => setDoublePageOffset((value) => !value)}
+                  >
+                    <span>Offset</span>
+                    <span>{doublePageOffset ? 'On' : 'Off'}</span>
+                  </Button>
+
+                  {!isTouchDevice ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant={magnifierEnabled ? 'default' : 'soft'}
+                        className="h-9 justify-between px-3"
+                        onClick={() => setMagnifierEnabled((value) => !value)}
+                      >
+                        <span>Magnifier</span>
+                        <span>{magnifierEnabled ? 'On' : 'Off'}</span>
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant={focusMode ? 'default' : 'soft'}
+                        className="h-9 justify-between px-3"
+                        onClick={() => setFocusMode((value) => !value)}
+                      >
+                        <span>Distraction-free mode</span>
+                        <span>{focusMode ? 'On' : 'Off'}</span>
+                      </Button>
+                    </>
+                  ) : null}
+
+                  <SelectField
+                    value={zoomPreset}
+                    onChange={(event) =>
+                      setZoomPreset(event.target.value as ZoomPreset)
+                    }
+                    className="h-9"
+                    data-testid="zoom-select"
+                    options={[
+                      { value: 'fit-height', label: 'Fit to screen' },
+                      { value: 'fit-width', label: 'Fit to width' },
+                      { value: 'actual', label: 'Actual size' },
+                    ]}
+                  />
+
+                  {seriesChapters.length > 0 ? (
+                    <>
+                      <Input
+                        value={chapterFilter}
+                        onChange={(event) =>
+                          setChapterFilter(event.target.value)
+                        }
+                        className="h-9 min-w-0"
+                        placeholder="Type chapter number..."
+                      />
+                      {filteredSeriesChapters.length > 0 ? (
+                        <SelectField
+                          value={chapterPayload.manifest.chapterId}
+                          onChange={(event) => {
+                            const nextId = event.target.value
+                            if (nextId === chapterPayload.manifest.chapterId) {
+                              return
+                            }
+                            persistProgressNow(
+                              currentTargetPageIndex,
+                              currentStepIndex,
+                            )
+                            void navigate({
+                              to: '/reader/$chapterId',
+                              params: { chapterId: nextId },
+                            })
+                          }}
+                          className="h-9 min-w-0"
+                          options={filteredSeriesChapters.map((chapter) => ({
+                            value: chapter.id,
+                            label: `Chapter ${chapter.chapterNumber}`,
+                          }))}
+                        />
+                      ) : (
+                        <p className="col-span-2 px-1 text-xs text-muted-foreground">
+                          No chapter found. Try a different number.
+                        </p>
+                      )}
+                    </>
+                  ) : null}
+
+                  <Link
+                    to="/series/$seriesId"
+                    params={{ seriesId: chapterPayload.manifest.seriesId }}
+                    className={`inline-flex h-9 items-center justify-center border border-border bg-surface-soft text-xs text-muted-foreground hover:text-foreground ${isTouchDevice ? 'col-span-2' : ''}`}
+                  >
+                    Open series page
+                  </Link>
+
+                  <label
+                    className={`text-xs text-muted-foreground ${isTouchDevice ? 'col-span-2' : ''}`}
+                  >
+                    {currentTargetPageIndex + 1} / {pages.length}
+                    <RangeSlider
+                      min={0}
+                      max={scrubberMax}
+                      value={scrubberValue}
+                      onChange={(event) =>
+                        goToPage(Number.parseInt(event.target.value, 10))
+                      }
+                      className="mt-3 w-full accent-primary"
+                      style={{ transform: 'scaleX(-1)' }}
+                      data-testid="page-scrubber"
+                    />
+                  </label>
+                </div>
+              ) : (
+                <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
+                  <label>
+                    Preload ahead pages
+                    <Input
+                      type="number"
+                      min={1}
+                      max={24}
+                      value={preloadAhead}
+                      onChange={(event) =>
+                        setPreloadAhead(
+                          clampNumber(
+                            Number.parseInt(event.target.value, 10),
+                            1,
+                            24,
+                          ),
+                        )
+                      }
+                      className="mt-1 h-8"
+                    />
+                  </label>
+                  <label>
+                    Preload behind pages
+                    <Input
+                      type="number"
+                      min={0}
+                      max={12}
+                      value={preloadBehind}
+                      onChange={(event) =>
+                        setPreloadBehind(
+                          clampNumber(
+                            Number.parseInt(event.target.value, 10),
+                            0,
+                            12,
+                          ),
+                        )
+                      }
+                      className="mt-1 h-8"
+                    />
+                  </label>
+                  <label>
+                    Parallel preloads
+                    <Input
+                      type="number"
+                      min={1}
+                      max={8}
+                      value={prefetchConcurrency}
+                      onChange={(event) =>
+                        setPrefetchConcurrency(
+                          clampNumber(
+                            Number.parseInt(event.target.value, 10),
+                            1,
+                            8,
+                          ),
+                        )
+                      }
+                      className="mt-1 h-8"
+                    />
+                  </label>
+                  <label>
+                    Next chapter prefetch trigger (remaining pages)
+                    <Input
+                      type="number"
+                      min={1}
+                      max={24}
+                      value={nextChapterPrefetchThreshold}
+                      onChange={(event) =>
+                        setNextChapterPrefetchThreshold(
+                          clampNumber(
+                            Number.parseInt(event.target.value, 10),
+                            1,
+                            24,
+                          ),
+                        )
+                      }
+                      className="mt-1 h-8"
+                    />
+                  </label>
+                  <label>
+                    Next chapter warm pages
+                    <Input
+                      type="number"
+                      min={1}
+                      max={16}
+                      value={nextChapterWarmPages}
+                      onChange={(event) =>
+                        setNextChapterWarmPages(
+                          clampNumber(
+                            Number.parseInt(event.target.value, 10),
+                            1,
+                            16,
+                          ),
+                        )
+                      }
+                      className="mt-1 h-8"
+                    />
+                  </label>
+                  <label>
+                    UI hide delay (ms)
+                    <Input
+                      type="number"
+                      min={400}
+                      max={5000}
+                      step={100}
+                      value={uiAutoHideMs}
+                      onChange={(event) =>
+                        setUiAutoHideMs(
+                          clampNumber(
+                            Number.parseInt(event.target.value, 10),
+                            400,
+                            5000,
+                          ),
+                        )
+                      }
+                      className="mt-1 h-8"
+                    />
+                  </label>
+                  <label>
+                    Magnifier size (px)
+                    <Input
+                      type="number"
+                      min={120}
+                      max={420}
+                      value={magnifierSize}
+                      onChange={(event) =>
+                        setMagnifierSize(
+                          clampNumber(
+                            Number.parseInt(event.target.value, 10),
+                            120,
+                            420,
+                          ),
+                        )
+                      }
+                      className="mt-1 h-8"
+                    />
+                  </label>
+                  <label>
+                    Magnifier zoom
+                    <Input
+                      type="number"
+                      min={2}
+                      max={5}
+                      step={0.1}
+                      value={magnifierZoom}
+                      onChange={(event) =>
+                        setMagnifierZoom(
+                          clampNumber(
+                            Number.parseFloat(event.target.value),
+                            2,
+                            5,
+                          ),
+                        )
+                      }
+                      className="mt-1 h-8"
+                    />
+                  </label>
+                </div>
+              )}
+
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <Button
+                  variant="soft"
+                  className="w-full"
+                  onClick={goNext}
+                  data-testid="nav-next"
+                >
+                  Next page
+                </Button>
+                <Button
+                  variant="soft"
+                  className="w-full"
+                  onClick={goPrevious}
+                  data-testid="nav-prev"
+                >
+                  Previous page
+                </Button>
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  className="w-full border border-border"
+                  onClick={goToNextChapter}
+                  disabled={!nextChapterId}
+                >
+                  Next chapter
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full border border-border"
+                  onClick={goToPreviousChapter}
+                  disabled={!previousChapterId}
+                >
+                  Previous chapter
+                </Button>
+              </div>
+              <p
+                className="mt-3 text-sm text-muted-foreground"
+                data-testid="position-label"
+              >
+                {mode === 'double'
+                  ? `Spread ${currentStepIndex + 1} / ${Math.max(activeDoubleSteps.length, 1)}`
+                  : mode === 'single'
+                    ? `Page ${currentSingleStepIndex + 1} / ${Math.max(singlePageSteps.length, 1)}`
+                    : `Page ${currentTargetPageIndex + 1} / ${Math.max(pages.length, 1)}`}
+              </p>
+              {!isTouchDevice ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="mt-2 h-8 border border-border text-xs"
+                    onClick={() => setShowShortcutHelp((value) => !value)}
+                  >
+                    {showShortcutHelp
+                      ? 'Hide keyboard shortcuts'
+                      : 'Show keyboard shortcuts'}
+                  </Button>
+                  {showShortcutHelp ? (
+                    <div className="reader-shortcut-sheet mt-2 text-xs">
+                      <p>Nav: A/D or arrows, Space, [ ]</p>
+                      <p>View: Q mode, 0 reset zoom, F fullscreen</p>
+                      <p>UI: S sidebar, X focus, Z magnifier</p>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
             </div>
           ) : null}
         </aside>
       ) : null}
 
-      {!isFullscreen && !focusMode && showReaderChrome ? (
-        <div className="reader-quick-strip absolute right-3 top-3 z-30 flex flex-wrap gap-2">
+      {!fullscreenActive && !focusMode && showReaderChrome && !isTouchDevice ? (
+        <div className="reader-quick-strip absolute right-3 top-3 z-30 hidden flex-wrap gap-2 md:flex">
           <Button
             type="button"
             variant="soft"
@@ -1959,17 +2784,10 @@ function ReaderPage() {
         </div>
       ) : null}
 
-      {!isFullscreen && (showReaderChrome || sidebarOpen) ? (
+      {!fullscreenActive &&
+      (showReaderChrome || sidebarOpen) &&
+      !isTouchDevice ? (
         <div className="reader-chapter-jump absolute bottom-4 right-3 z-30 hidden items-center gap-2 md:flex">
-          <Button
-            type="button"
-            variant="soft"
-            className="h-11 px-3 text-xs"
-            onClick={goToPreviousChapter}
-            disabled={!previousChapterId}
-          >
-            Prev chapter
-          </Button>
           <Button
             type="button"
             variant="soft"
@@ -1979,100 +2797,116 @@ function ReaderPage() {
           >
             Next chapter
           </Button>
-        </div>
-      ) : null}
-
-      {!isFullscreen && !focusMode ? (
-        <div className="reader-mobile-nav fixed inset-x-2 bottom-2 z-30 flex items-center gap-2 border border-border bg-surface-soft/95 p-1 backdrop-blur-sm md:hidden">
           <Button
             type="button"
             variant="soft"
-            className="h-9 px-2 text-xs"
-            onClick={goPrevious}
+            className="h-11 px-3 text-xs"
+            onClick={goToPreviousChapter}
+            disabled={!previousChapterId}
           >
-            Prev
-          </Button>
-          <div className="min-w-0 flex-1 text-center text-[11px] text-muted-foreground">
-            {currentTargetPageIndex + 1} / {Math.max(pages.length, 1)}
-          </div>
-          <Button
-            type="button"
-            variant="soft"
-            className="h-9 px-2 text-xs"
-            onClick={goNext}
-          >
-            Next
+            Prev chapter
           </Button>
         </div>
       ) : null}
 
-      {!isFullscreen && !focusMode && showReaderChrome ? (
+      {!fullscreenActive && !focusMode && showReaderChrome && !isTouchDevice ? (
         <div className="reader-key-hints absolute bottom-4 left-1/2 z-20 -translate-x-1/2 text-xs">
           Tip: click/tap left or right side to move pages.
         </div>
       ) : null}
 
       {pages.length > 0 ? (
-        mode === 'double' ? (
+        mode === 'double' && !isTouchPortrait ? (
           <>
-            <div className="pointer-events-none absolute bottom-2 left-3 z-20 text-[10px] font-medium text-white/55">
+            <div className="pointer-events-none absolute ui-bottom-safe-offset ui-left-safe-offset z-20 text-[10px] font-medium text-white/55">
               {rtlSpreadNumbers.left ?? ''}
             </div>
             {rtlSpreadNumbers.right ? (
-              <div className="pointer-events-none absolute bottom-2 right-3 z-20 text-[10px] font-medium text-white/55">
+              <div className="pointer-events-none absolute ui-bottom-safe-offset ui-right-safe-offset z-20 text-[10px] font-medium text-white/55">
                 {rtlSpreadNumbers.right}
               </div>
             ) : null}
           </>
         ) : (
-          <div className="pointer-events-none absolute bottom-2 right-3 z-20 text-[10px] font-medium text-white/55">
+          <div className="pointer-events-none absolute ui-bottom-safe-offset ui-right-safe-offset z-20 text-[10px] font-medium text-white/55">
             {currentTargetPageIndex + 1} / {pages.length}
           </div>
         )
       ) : null}
 
       {boundaryNotice ? (
-        <div className="reader-hud pointer-events-none absolute bottom-20 left-1/2 z-30 -translate-x-1/2 px-3 py-1 text-xs">
-          {boundaryNotice}
+        <div className="pointer-events-none absolute ui-bottom-safe-stack left-4 right-4 z-30 flex items-center justify-center gap-2 rounded-sm border border-white/20 bg-black/85 px-4 py-3 text-center text-sm text-white/90 shadow-lg backdrop-blur-sm md:bottom-20 md:left-1/2 md:right-auto md:-translate-x-1/2 md:px-6">
+          <span>{boundaryNotice}</span>
         </div>
       ) : null}
 
-      {!isFullscreen && focusMode ? (
+      {mode !== 'scroll' ? (
+        <div className="pointer-events-none absolute ui-bottom-safe-progress left-0 right-0 z-20 h-[3px] bg-white/10">
+          <div
+            className="h-full bg-white/40 transition-[width] duration-200 ease-out"
+            style={{
+              width: `${pages.length > 1 ? (currentTargetPageIndex / (pages.length - 1)) * 100 : 100}%`,
+            }}
+          />
+        </div>
+      ) : null}
+
+      {!fullscreenActive && focusMode ? (
         <Button
           type="button"
           variant="soft"
-          className="absolute right-3 top-3 z-30 h-10 px-3 text-xs"
+          className="absolute ui-right-safe-offset ui-top-safe-offset z-30 h-10 px-3 text-xs"
           onClick={() => setFocusMode(false)}
         >
           Exit distraction-free mode
         </Button>
       ) : null}
 
-      <section className={isFullscreen ? '' : 'h-full'} ref={readerStageRef}>
+      <section
+        className={
+          fullscreenActive ? '' : isTouchDevice ? 'min-h-[100dvh]' : 'h-full'
+        }
+        ref={readerStageRef}
+      >
         {mode === 'scroll' ? (
-          <div className="relative" onMouseMove={handleReaderMouseMove}>
+          <div
+            className="relative"
+            onMouseMove={isTouchDevice ? undefined : handleReaderMouseMove}
+            onPointerDown={handleReaderTouchStart}
+            onPointerUp={handleReaderTouchEnd}
+            onPointerCancel={() => {
+              touchGestureRef.current = null
+            }}
+          >
             <ContinuousScroll
               chapterId={chapterId}
               pages={pages}
               zoomPreset={zoomPreset}
-              isFullscreen={isFullscreen}
+              isFullscreen={fullscreenActive}
               onVisiblePageChange={(pageIndex) =>
                 setCurrentPageIndex(pageIndex)
               }
             />
-            {isFullscreen && showPageHud ? (
-              <div className="reader-hud pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 text-sm">
+            {fullscreenActive && showPageHud ? (
+              <div className="reader-hud pointer-events-none absolute ui-bottom-safe-hud left-1/2 -translate-x-1/2 px-3 py-1 text-sm">
                 {hudPageLabel}
               </div>
             ) : null}
           </div>
         ) : (
           <div
-            className={`relative h-[100dvh] bg-black ${focusMode ? 'reader-focus-mode' : ''}`}
+            className={`relative ${!fullscreenActive && isTouchDevice ? 'h-[100dvh]' : 'h-full'} bg-black ${focusMode ? 'reader-focus-mode' : ''}`}
             ref={viewportRef}
-            onMouseMove={handleReaderMouseMove}
+            onMouseMove={isTouchDevice ? undefined : handleReaderMouseMove}
+            onClick={handleTouchTapNavigate}
             onPointerDown={(event) => {
-              if (zoomPreset !== 'actual' || !viewportRef.current) {
+              handleReaderTouchStart(event)
+
+              if (
+                event.pointerType !== 'mouse' ||
+                zoomPreset !== 'actual' ||
+                !viewportRef.current
+              ) {
                 return
               }
 
@@ -2086,61 +2920,42 @@ function ReaderPage() {
 
               viewportRef.current.style.cursor = 'grabbing'
             }}
+            onPointerUp={handleReaderTouchEnd}
+            onPointerMove={handleReaderTouchMove}
+            onPointerCancel={handleReaderTouchCancel}
             style={{
               cursor: zoomPreset === 'actual' ? 'grab' : 'default',
               overflow: zoomPreset === 'actual' ? 'auto' : 'hidden',
+              touchAction: isTouchDevice ? 'pan-y' : 'auto',
+              overscrollBehavior: isTouchDevice ? 'contain' : undefined,
             }}
           >
             <div
-              className="flex h-full items-center justify-center gap-0"
+              ref={swipeTrackRef}
+              className={`flex h-full items-center justify-center gap-0 overflow-hidden ${isSinglePageTouchView ? 'px-4' : ''} ${pageMotion ? `reader-page-motion-${pageMotion}` : ''}`}
               data-testid="reader-paging-container"
             >
-              {(mode === 'single'
-                ? [
-                    {
-                      type: 'page' as const,
-                      pageIndex: currentPageIndex,
-                    },
-                  ]
-                : displayUnits
-              ).map((unit, slotIndex) => {
-                const page = pages.find(
-                  (entry) => entry.pageIndex === unit.pageIndex,
-                )
-
-                if (!page) {
-                  return null
-                }
-
-                const paneKey =
-                  mode === 'single'
-                    ? 'pane-single'
-                    : `pane-${slotIndex}-${unit.type === 'half' ? unit.half : 'page'}`
-
-                return (
-                  <PagePane
-                    key={paneKey}
-                    chapterId={chapterId}
-                    unit={unit}
-                    page={page}
-                    zoomPreset={zoomPreset}
-                    loading="eager"
-                    testId="reader-page-container"
-                  />
-                )
-              })}
+              {renderUnitsForPaging(currentRenderUnits, 'current')}
             </div>
 
-            <ReaderTapZone side="left" onActivate={goNext} />
-            <ReaderTapZone side="right" onActivate={goPrevious} />
-            {!isFullscreen && showReaderChrome ? (
+            {!isTouchDevice &&
+            !magnifierEnabled &&
+            zoomPreset !== 'actual' ? (
+              <ReaderTapZone side="left" onActivate={goNext} />
+            ) : null}
+            {!isTouchDevice &&
+            !magnifierEnabled &&
+            zoomPreset !== 'actual' ? (
+              <ReaderTapZone side="right" onActivate={goPrevious} />
+            ) : null}
+            {!fullscreenActive && showReaderChrome && !isTouchDevice ? (
               <>
                 <ReaderEdgeArrowButton side="left" onActivate={goNext} />
                 <ReaderEdgeArrowButton side="right" onActivate={goPrevious} />
               </>
             ) : null}
-            {isFullscreen && showPageHud ? (
-              <div className="reader-hud pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 text-sm">
+            {fullscreenActive && showPageHud ? (
+              <div className="reader-hud pointer-events-none absolute ui-bottom-safe-hud left-1/2 -translate-x-1/2 px-3 py-1 text-sm">
                 {hudPageLabel}
               </div>
             ) : null}

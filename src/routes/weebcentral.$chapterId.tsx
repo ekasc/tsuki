@@ -4,11 +4,14 @@ const createAnyFileRoute = createFileRoute as any
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  type PointerEvent as ReactPointerEvent,
   useRef,
   useState,
   type MouseEvent,
 } from 'react'
+import { flushSync } from 'react-dom'
 
 import { ContinuousScroll } from '#/components/reader/continuous-scroll'
 import { PagePane } from '#/components/reader/page-pane'
@@ -32,9 +35,12 @@ import { upsertReadingHistory } from '#/lib/reading-history'
 import {
   buildTwoPageSteps,
   findStepIndexByPageIndex,
+  inferAutoSpreadFlags,
   type PairingPage,
   type PairingStep,
+  type RenderUnit,
 } from '#/lib/reader/pairing'
+import { useTouchDevice, useTouchPortrait } from '#/hooks/use-touch-portrait'
 
 export const Route = createAnyFileRoute('/weebcentral/$chapterId')({
   component: WeebcentralReaderPage,
@@ -57,6 +63,8 @@ const LEGACY_REMOTE_READER_UI_PREFS_KEY = 'suki-remote-reader-ui.v1'
 const REMOTE_READER_SERIES_PRESETS_KEY = 'tsuki-remote-reader-series-presets.v1'
 const LEGACY_REMOTE_READER_SERIES_PRESETS_KEY =
   'suki-remote-reader-series-presets.v1'
+const useIsomorphicLayoutEffect =
+  typeof window === 'undefined' ? useEffect : useLayoutEffect
 
 function readStorageWithLegacy(key: string, legacyKey: string): string | null {
   const value = window.localStorage.getItem(key)
@@ -133,7 +141,7 @@ function loadReaderSeriesPreset(seriesId: string): ReaderSeriesPreset | null {
       zoomPreset:
         preset.zoomPreset === 'fit-width' || preset.zoomPreset === 'actual'
           ? preset.zoomPreset
-          : 'fit-height',
+          : 'fit-width',
       doublePageOffset: Boolean(preset.doublePageOffset),
       magnifierEnabled: Boolean(preset.magnifierEnabled),
       focusMode: Boolean(preset.focusMode),
@@ -196,7 +204,7 @@ function loadReaderUiPrefs(
       zoomPreset:
         parsed.zoomPreset === 'fit-width' || parsed.zoomPreset === 'actual'
           ? parsed.zoomPreset
-          : 'fit-height',
+          : 'fit-width',
       sidebarOpen: Boolean(parsed.sidebarOpen),
       doublePageOffset: Boolean(parsed.doublePageOffset),
       preloadAhead:
@@ -272,6 +280,172 @@ function buildDoublePageStepsWithOffset(
     },
     ...restSteps,
   ]
+}
+
+function expandStepsForPortraitSingle(
+  steps: PairingStep[],
+  pages: ChapterPageManifest[],
+): PairingStep[] {
+  if (steps.length === 0) {
+    return []
+  }
+
+  const inferredFlags = inferAutoSpreadFlags(
+    pages.map((page) => ({
+      width: page.width,
+      height: page.height,
+    })),
+  )
+  const inferredByPageIndex = new Map<number, boolean>()
+  pages.forEach((page, index) => {
+    inferredByPageIndex.set(page.pageIndex, Boolean(inferredFlags[index]))
+  })
+
+  return steps.flatMap((step) => {
+    return step.units.flatMap((unit) => {
+      if (unit.type === 'page') {
+        const page = pages.find((entry) => entry.pageIndex === unit.pageIndex)
+        const isSpread = page
+          ? page.autoIsSpread ||
+            page.splitSpread === true ||
+            page.aspect >= 0.95 ||
+            inferredByPageIndex.get(unit.pageIndex) === true
+          : inferredByPageIndex.get(unit.pageIndex) === true
+
+        if (isSpread) {
+          return [
+            {
+              kind: 'single' as const,
+              anchorPageIndex: unit.pageIndex,
+              units: [
+                {
+                  type: 'page' as const,
+                  pageIndex: unit.pageIndex,
+                  crop: 'right' as const,
+                },
+              ],
+            },
+            {
+              kind: 'single' as const,
+              anchorPageIndex: unit.pageIndex,
+              units: [
+                {
+                  type: 'page' as const,
+                  pageIndex: unit.pageIndex,
+                  crop: 'left' as const,
+                },
+              ],
+            },
+          ]
+        }
+      }
+
+      return [
+        {
+          kind: 'single' as const,
+          anchorPageIndex: unit.pageIndex,
+          units: [unit],
+        },
+      ]
+    })
+  })
+}
+
+function buildSinglePageSteps(
+  pages: ChapterPageManifest[],
+  splitSpreads: boolean,
+): PairingStep[] {
+  if (pages.length === 0) {
+    return []
+  }
+
+  if (!splitSpreads) {
+    return pages.map((page) => ({
+      kind: 'single',
+      anchorPageIndex: page.pageIndex,
+      units: [{ type: 'page', pageIndex: page.pageIndex }],
+    }))
+  }
+
+  const inferredFlags = inferAutoSpreadFlags(
+    pages.map((page) => ({
+      width: page.width,
+      height: page.height,
+    })),
+  )
+
+  const steps: PairingStep[] = []
+
+  pages.forEach((page, index) => {
+    const isSpread =
+      page.autoIsSpread ||
+      page.splitSpread === true ||
+      page.aspect >= 0.95 ||
+      inferredFlags[index] === true
+
+    if (!isSpread) {
+      steps.push({
+        kind: 'single',
+        anchorPageIndex: page.pageIndex,
+        units: [{ type: 'page', pageIndex: page.pageIndex }],
+      })
+      return
+    }
+
+    // Split spread into two CSS-cropped halves (right half shown first in RTL)
+    steps.push({
+      kind: 'single',
+      anchorPageIndex: page.pageIndex,
+      units: [
+        { type: 'page', pageIndex: page.pageIndex, crop: 'right' as const },
+      ],
+    })
+    steps.push({
+      kind: 'single',
+      anchorPageIndex: page.pageIndex,
+      units: [
+        { type: 'page', pageIndex: page.pageIndex, crop: 'left' as const },
+      ],
+    })
+  })
+
+  return steps
+}
+
+function getDisplayUnitsForStep(
+  step: PairingStep | null,
+  pages: ChapterPageManifest[],
+  isTouchPortrait: boolean,
+) {
+  if (!step) {
+    return [] as PairingStep['units']
+  }
+
+  const normalizedUnits =
+    step.units.length > 2 ? step.units.slice(0, 2) : step.units
+  const renderedUnits =
+    normalizedUnits.length === 2
+      ? [...normalizedUnits].reverse()
+      : normalizedUnits
+
+  if (
+    renderedUnits.length <= 1 ||
+    isTouchPortrait ||
+    step.kind === 'split-spread'
+  ) {
+    return renderedUnits
+  }
+
+  const spreadUnit = renderedUnits.find((unit) => {
+    const page = pages.find((entry) => entry.pageIndex === unit.pageIndex)
+    if (!page) {
+      return false
+    }
+
+    return page.autoIsSpread || page.aspect >= 0.95
+  })
+
+  return spreadUnit ? [spreadUnit] : renderedUnits
 }
 
 async function fetchJsonWith429Retry<T>(
@@ -420,7 +594,7 @@ function WeebcentralReaderPage() {
       loadReaderUiPrefs(
         REMOTE_READER_UI_PREFS_KEY,
         LEGACY_REMOTE_READER_UI_PREFS_KEY,
-      )?.zoomPreset ?? 'fit-height',
+      )?.zoomPreset ?? 'fit-width',
   )
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(
     () =>
@@ -437,6 +611,7 @@ function WeebcentralReaderPage() {
       )?.doublePageOffset ?? false,
   )
   const [settingsTab, setSettingsTab] = useState<'basic' | 'advanced'>('basic')
+  const [mobileSettingsMinimized, setMobileSettingsMinimized] = useState(false)
   const [preloadAhead, setPreloadAhead] = useState<number>(
     () =>
       loadReaderUiPrefs(
@@ -513,18 +688,22 @@ function WeebcentralReaderPage() {
   >({})
   const [currentPageIndex, setCurrentPageIndex] = useState(0)
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
+  const [currentSingleStepIndex, setCurrentSingleStepIndex] = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [inlineFullscreen, setInlineFullscreen] = useState(false)
   const [showPageHud, setShowPageHud] = useState(false)
   const [pendingBoundaryDirection, setPendingBoundaryDirection] = useState<
     'next' | 'prev' | null
   >(null)
   const [boundaryNotice, setBoundaryNotice] = useState<string | null>(null)
+  const [pageMotion, setPageMotion] = useState<'next' | 'prev' | null>(null)
 
   const viewportRef = useRef<HTMLDivElement>(null)
   const readerStageRef = useRef<HTMLElement>(null)
   const pageHudTimeoutRef = useRef<number | null>(null)
   const readerUiTimeoutRef = useRef<number | null>(null)
   const boundaryNoticeTimeoutRef = useRef<number | null>(null)
+  const pageMotionTimeoutRef = useRef<number | null>(null)
   const dragStateRef = useRef<{
     active: boolean
     startX: number
@@ -532,6 +711,25 @@ function WeebcentralReaderPage() {
     scrollLeft: number
     scrollTop: number
   } | null>(null)
+  const touchGestureRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    lock: 'x' | 'y' | null
+  } | null>(null)
+  const suppressTapRef = useRef(false)
+  const swipeCommitTimeoutRef = useRef<number | null>(null)
+  const swipeTrackRef = useRef<HTMLDivElement>(null)
+  const swipeOffsetRef = useRef(0)
+  const swipeDraggingRef = useRef(false)
+  const nativePagerRef = useRef<HTMLDivElement>(null)
+  const pagerSettleTimeoutRef = useRef<number | null>(null)
+  const nativePagerCenterRafRef = useRef<number | null>(null)
+  const nativePagerInitRafRef = useRef<number | null>(null)
+  const nativePagerReadyRef = useRef(false)
+  const nativePagerCenteringRef = useRef(false)
+  const isTouchDevice = useTouchDevice()
+  const isTouchPortrait = useTouchPortrait()
 
   const pages = useMemo(
     () => (chapter ? createPlaceholderPages(chapter, pageDimensions) : []),
@@ -581,13 +779,33 @@ function WeebcentralReaderPage() {
       ),
     [doublePageOffset, pages],
   )
+  const portraitSingleSteps = useMemo(
+    () => expandStepsForPortraitSingle(twoPageSteps, pages),
+    [pages, twoPageSteps],
+  )
+  const singlePageSteps = useMemo(
+    () => buildSinglePageSteps(pages, isTouchPortrait),
+    [isTouchPortrait, pages],
+  )
+  const activeDoubleSteps = isTouchPortrait ? portraitSingleSteps : twoPageSteps
+  const isSinglePageTouchView =
+    isTouchDevice &&
+    (mode === 'single' || (mode === 'double' && isTouchPortrait))
+  const gallerySwipeEnabled =
+    isTouchDevice && mode !== 'scroll' && zoomPreset !== 'actual'
+  const fullscreenActive = isFullscreen || inlineFullscreen
 
   const maxPageIndex = Math.max(pages.length - 1, 0)
-  const maxStepIndex = Math.max(twoPageSteps.length - 1, 0)
+  const maxStepIndex = Math.max(activeDoubleSteps.length - 1, 0)
+  const maxSingleStepIndex = Math.max(singlePageSteps.length - 1, 0)
   const currentTargetPageIndex =
     mode === 'double'
-      ? (twoPageSteps[currentStepIndex]?.anchorPageIndex ?? currentPageIndex)
-      : currentPageIndex
+      ? (activeDoubleSteps[currentStepIndex]?.anchorPageIndex ??
+        currentPageIndex)
+      : mode === 'single'
+        ? (singlePageSteps[currentSingleStepIndex]?.anchorPageIndex ??
+          currentPageIndex)
+        : currentPageIndex
   const scrubberMax = Math.max(0, pages.length - 1)
   const scrubberValue = currentTargetPageIndex
 
@@ -628,7 +846,7 @@ function WeebcentralReaderPage() {
       ? (series?.chapters[currentChapterIndex - 1]?.id ?? null)
       : null
 
-  const activeStep = twoPageSteps[currentStepIndex] ?? null
+  const activeStep = activeDoubleSteps[currentStepIndex] ?? null
   const stepUnits = activeStep?.units ?? []
   const normalizedStepUnits =
     stepUnits.length > 2 ? stepUnits.slice(0, 2) : stepUnits
@@ -638,7 +856,12 @@ function WeebcentralReaderPage() {
       : normalizedStepUnits
 
   const displayUnits = useMemo(() => {
-    if (mode !== 'double' || renderedUnits.length <= 1) {
+    if (
+      mode !== 'double' ||
+      renderedUnits.length <= 1 ||
+      isTouchPortrait ||
+      activeStep?.kind === 'split-spread'
+    ) {
       return renderedUnits
     }
 
@@ -652,11 +875,143 @@ function WeebcentralReaderPage() {
     })
 
     return spreadUnit ? [spreadUnit] : renderedUnits
-  }, [mode, pages, renderedUnits])
+  }, [activeStep?.kind, isTouchPortrait, mode, pages, renderedUnits])
+
+  const currentRenderUnits = useMemo(
+    () =>
+      mode === 'single'
+        ? (singlePageSteps[currentSingleStepIndex]?.units ??
+          ([{ type: 'page', pageIndex: currentPageIndex }] as const))
+        : displayUnits,
+    [
+      currentPageIndex,
+      currentSingleStepIndex,
+      displayUnits,
+      mode,
+      singlePageSteps,
+    ],
+  )
+
+  const nextRenderUnits = useMemo(() => {
+    if (mode === 'single') {
+      if (currentSingleStepIndex >= maxSingleStepIndex) {
+        return [] as typeof displayUnits
+      }
+
+      return singlePageSteps[currentSingleStepIndex + 1]?.units ?? []
+    }
+
+    return getDisplayUnitsForStep(
+      activeDoubleSteps[currentStepIndex + 1] ?? null,
+      pages,
+      isTouchPortrait,
+    )
+  }, [
+    activeDoubleSteps,
+    currentSingleStepIndex,
+    currentStepIndex,
+    isTouchPortrait,
+    maxSingleStepIndex,
+    mode,
+    pages,
+    singlePageSteps,
+  ])
+
+  const previousRenderUnits = useMemo(() => {
+    if (mode === 'single') {
+      if (currentSingleStepIndex <= 0) {
+        return [] as typeof displayUnits
+      }
+
+      return singlePageSteps[currentSingleStepIndex - 1]?.units ?? []
+    }
+
+    return getDisplayUnitsForStep(
+      activeDoubleSteps[currentStepIndex - 1] ?? null,
+      pages,
+      isTouchPortrait,
+    )
+  }, [
+    activeDoubleSteps,
+    currentSingleStepIndex,
+    currentStepIndex,
+    isTouchPortrait,
+    mode,
+    pages,
+    singlePageSteps,
+  ])
+  const leftRenderUnits =
+    nextRenderUnits.length > 0 ? nextRenderUnits : currentRenderUnits
+  const rightRenderUnits =
+    previousRenderUnits.length > 0 ? previousRenderUnits : currentRenderUnits
+
+  const recenterNativePager = useCallback(
+    (options?: { attempts?: number; markReady?: boolean }) => {
+      const attempts = Math.max(options?.attempts ?? 2, 0)
+      const markReady = options?.markReady ?? true
+      const pager = nativePagerRef.current
+      if (!pager) {
+        return false
+      }
+
+      const width = pager.clientWidth
+      if (width <= 0) {
+        return false
+      }
+
+      if (nativePagerCenterRafRef.current !== null) {
+        window.cancelAnimationFrame(nativePagerCenterRafRef.current)
+        nativePagerCenterRafRef.current = null
+      }
+
+      let remainingAttempts = attempts
+      nativePagerCenteringRef.current = true
+      pager.style.scrollSnapType = 'none'
+      pager.scrollLeft = width
+
+      const settle = () => {
+        const currentPager = nativePagerRef.current
+        if (!currentPager) {
+          nativePagerCenteringRef.current = false
+          nativePagerCenterRafRef.current = null
+          return
+        }
+
+        const currentWidth = currentPager.clientWidth
+        if (currentWidth > 0) {
+          const target = currentWidth
+          if (Math.abs(currentPager.scrollLeft - target) > 1) {
+            currentPager.scrollLeft = target
+          }
+        }
+
+        if (remainingAttempts > 0) {
+          remainingAttempts -= 1
+          nativePagerCenterRafRef.current = window.requestAnimationFrame(settle)
+          return
+        }
+
+        currentPager.style.scrollSnapType = ''
+        nativePagerCenteringRef.current = false
+        nativePagerCenterRafRef.current = null
+        if (markReady) {
+          nativePagerReadyRef.current = true
+        }
+      }
+
+      nativePagerCenterRafRef.current = window.requestAnimationFrame(settle)
+      return true
+    },
+    [],
+  )
 
   const hudPageLabel = useMemo(() => {
     if (pages.length === 0) {
       return 'Page 0 / 0'
+    }
+
+    if (mode === 'single') {
+      return `Page ${currentSingleStepIndex + 1} / ${Math.max(singlePageSteps.length, 1)}`
     }
 
     if (mode !== 'double') {
@@ -675,7 +1030,14 @@ function WeebcentralReaderPage() {
     const first = visibleIndexes[0]!
     const last = visibleIndexes[visibleIndexes.length - 1]!
     return `Pages ${first + 1}-${last + 1} / ${pages.length}`
-  }, [currentTargetPageIndex, displayUnits, mode, pages.length])
+  }, [
+    currentSingleStepIndex,
+    currentTargetPageIndex,
+    displayUnits,
+    mode,
+    pages.length,
+    singlePageSteps.length,
+  ])
 
   const rtlSpreadNumbers = useMemo(() => {
     const currentNumber = currentTargetPageIndex + 1
@@ -693,7 +1055,7 @@ function WeebcentralReaderPage() {
   }, [currentTargetPageIndex, pages.length])
 
   const showPageHudForMoment = useCallback(() => {
-    if (!isFullscreen) {
+    if (!fullscreenActive) {
       return
     }
 
@@ -707,10 +1069,10 @@ function WeebcentralReaderPage() {
       setShowPageHud(false)
       pageHudTimeoutRef.current = null
     }, 900)
-  }, [isFullscreen])
+  }, [fullscreenActive])
 
   const revealReaderUi = useCallback(() => {
-    if (focusMode) {
+    if (focusMode || isTouchDevice) {
       setShowReaderChrome(false)
       return
     }
@@ -730,7 +1092,20 @@ function WeebcentralReaderPage() {
       setShowReaderChrome(false)
       readerUiTimeoutRef.current = null
     }, uiAutoHideMs)
-  }, [focusMode, sidebarOpen, uiAutoHideMs])
+  }, [focusMode, isTouchDevice, sidebarOpen, uiAutoHideMs])
+
+  const triggerPageMotion = useCallback((direction: 'next' | 'prev') => {
+    setPageMotion(direction)
+
+    if (pageMotionTimeoutRef.current !== null) {
+      window.clearTimeout(pageMotionTimeoutRef.current)
+    }
+
+    pageMotionTimeoutRef.current = window.setTimeout(() => {
+      setPageMotion(null)
+      pageMotionTimeoutRef.current = null
+    }, 180)
+  }, [])
 
   const updateMagnifierFrame = useCallback(
     (event: MouseEvent<HTMLElement>) => {
@@ -856,6 +1231,7 @@ function WeebcentralReaderPage() {
     setPageDimensions({})
     setCurrentPageIndex(0)
     setCurrentStepIndex(0)
+    setCurrentSingleStepIndex(0)
 
     const applyChapterState = (chapterPayload: WeebcentralChapterDTO) => {
       setChapter(chapterPayload)
@@ -882,6 +1258,12 @@ function WeebcentralReaderPage() {
             chapterPages.map(asPairingPage),
             doublePageOffset,
           ),
+          initialPageIndex,
+        ),
+      )
+      setCurrentSingleStepIndex(
+        findStepIndexByPageIndex(
+          buildSinglePageSteps(chapterPages, false),
           initialPageIndex,
         ),
       )
@@ -931,21 +1313,6 @@ function WeebcentralReaderPage() {
       setIsLoading(false)
     }
   }, [params.chapterId, search.seriesId])
-
-  useEffect(() => {
-    if (mode !== 'double') {
-      return
-    }
-
-    const nextStepIndex = findStepIndexByPageIndex(
-      twoPageSteps,
-      currentTargetPageIndex,
-    )
-
-    setCurrentStepIndex((current) =>
-      current === nextStepIndex ? current : nextStepIndex,
-    )
-  }, [currentTargetPageIndex, mode, twoPageSteps])
 
   useEffect(() => {
     void loadRemoteChapter()
@@ -1034,15 +1401,20 @@ function WeebcentralReaderPage() {
 
       if (next === 'double') {
         setCurrentStepIndex(
-          findStepIndexByPageIndex(twoPageSteps, currentTargetPageIndex),
+          findStepIndexByPageIndex(activeDoubleSteps, currentTargetPageIndex),
         )
+      } else if (next === 'single') {
+        setCurrentSingleStepIndex(
+          findStepIndexByPageIndex(singlePageSteps, currentTargetPageIndex),
+        )
+        setCurrentPageIndex(currentTargetPageIndex)
       } else {
         setCurrentPageIndex(currentTargetPageIndex)
       }
 
       return next
     })
-  }, [currentTargetPageIndex, twoPageSteps])
+  }, [activeDoubleSteps, currentTargetPageIndex, singlePageSteps])
 
   useEffect(() => {
     if (!chapter) {
@@ -1220,7 +1592,11 @@ function WeebcentralReaderPage() {
 
   useEffect(() => {
     const onFullscreenChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement))
+      const active = Boolean(document.fullscreenElement)
+      setIsFullscreen(active)
+      if (active) {
+        setInlineFullscreen(false)
+      }
     }
 
     document.addEventListener('fullscreenchange', onFullscreenChange)
@@ -1240,7 +1616,7 @@ function WeebcentralReaderPage() {
   }, [focusMode])
 
   useEffect(() => {
-    if (!isFullscreen) {
+    if (!fullscreenActive) {
       setShowPageHud(false)
       if (pageHudTimeoutRef.current !== null) {
         window.clearTimeout(pageHudTimeoutRef.current)
@@ -1250,7 +1626,7 @@ function WeebcentralReaderPage() {
     }
 
     showPageHudForMoment()
-  }, [isFullscreen, showPageHudForMoment])
+  }, [fullscreenActive, showPageHudForMoment])
 
   useEffect(() => {
     if (sidebarOpen && !focusMode) {
@@ -1278,9 +1654,35 @@ function WeebcentralReaderPage() {
       if (boundaryNoticeTimeoutRef.current !== null) {
         window.clearTimeout(boundaryNoticeTimeoutRef.current)
       }
+
+      if (pageMotionTimeoutRef.current !== null) {
+        window.clearTimeout(pageMotionTimeoutRef.current)
+      }
+
+      if (swipeCommitTimeoutRef.current !== null) {
+        window.clearTimeout(swipeCommitTimeoutRef.current)
+      }
+
+      if (pagerSettleTimeoutRef.current !== null) {
+        window.clearTimeout(pagerSettleTimeoutRef.current)
+      }
+
+      if (nativePagerInitRafRef.current !== null) {
+        window.cancelAnimationFrame(nativePagerInitRafRef.current)
+      }
+
+      if (nativePagerCenterRafRef.current !== null) {
+        window.cancelAnimationFrame(nativePagerCenterRafRef.current)
+      }
     },
     [],
   )
+
+  useEffect(() => {
+    if (isTouchDevice && magnifierEnabled) {
+      setMagnifierEnabled(false)
+    }
+  }, [isTouchDevice, magnifierEnabled])
 
   useEffect(() => {
     setPendingBoundaryDirection(null)
@@ -1324,24 +1726,47 @@ function WeebcentralReaderPage() {
     (nextPageIndex: number) => {
       const safeIndex = clamp(nextPageIndex, 0, maxPageIndex)
       setCurrentPageIndex(safeIndex)
-      setCurrentStepIndex(findStepIndexByPageIndex(twoPageSteps, safeIndex))
+      setCurrentStepIndex(
+        findStepIndexByPageIndex(activeDoubleSteps, safeIndex),
+      )
+      setCurrentSingleStepIndex(
+        findStepIndexByPageIndex(singlePageSteps, safeIndex),
+      )
     },
-    [maxPageIndex, twoPageSteps],
+    [activeDoubleSteps, maxPageIndex, singlePageSteps],
   )
 
   const toggleFullscreen = useCallback(async () => {
+    if (inlineFullscreen) {
+      setInlineFullscreen(false)
+      return
+    }
+
     const targetElement = readerStageRef.current
     if (!targetElement) {
       return
     }
 
-    if (document.fullscreenElement) {
-      await document.exitFullscreen()
+    const supportsFullscreen =
+      typeof document !== 'undefined' &&
+      typeof targetElement.requestFullscreen === 'function'
+
+    if (!supportsFullscreen) {
+      setInlineFullscreen(true)
       return
     }
 
-    await targetElement.requestFullscreen()
-  }, [])
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen()
+        return
+      }
+
+      await targetElement.requestFullscreen()
+    } catch {
+      setInlineFullscreen(true)
+    }
+  }, [inlineFullscreen])
 
   const goNext = useCallback(() => {
     const armBoundaryNotice = (direction: 'next' | 'prev') => {
@@ -1385,9 +1810,35 @@ function WeebcentralReaderPage() {
       }
 
       const next = clamp(currentStepIndex + 1, 0, maxStepIndex)
+      triggerPageMotion('next')
       setCurrentStepIndex(next)
       setCurrentPageIndex(
-        twoPageSteps[next]?.anchorPageIndex ?? currentPageIndex,
+        activeDoubleSteps[next]?.anchorPageIndex ?? currentPageIndex,
+      )
+      setPendingBoundaryDirection(null)
+      setBoundaryNotice(null)
+      return
+    }
+
+    if (mode === 'single') {
+      if (currentSingleStepIndex >= maxSingleStepIndex) {
+        if (pendingBoundaryDirection === 'next' && nextChapterId) {
+          goToChapter(nextChapterId)
+        } else {
+          armBoundaryNotice('next')
+        }
+        return
+      }
+
+      const nextSingle = clamp(
+        currentSingleStepIndex + 1,
+        0,
+        maxSingleStepIndex,
+      )
+      triggerPageMotion('next')
+      setCurrentSingleStepIndex(nextSingle)
+      setCurrentPageIndex(
+        singlePageSteps[nextSingle]?.anchorPageIndex ?? currentPageIndex,
       )
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
@@ -1405,19 +1856,24 @@ function WeebcentralReaderPage() {
 
     setPendingBoundaryDirection(null)
     setBoundaryNotice(null)
+    triggerPageMotion('next')
     goToPage(currentPageIndex + 1)
   }, [
     currentPageIndex,
     currentStepIndex,
+    currentSingleStepIndex,
     goToChapter,
     goToPage,
     maxPageIndex,
+    maxSingleStepIndex,
     maxStepIndex,
     mode,
     nextChapterId,
     pendingBoundaryDirection,
     previousChapterId,
-    twoPageSteps,
+    activeDoubleSteps,
+    singlePageSteps,
+    triggerPageMotion,
   ])
 
   const goPrevious = useCallback(() => {
@@ -1462,9 +1918,35 @@ function WeebcentralReaderPage() {
       }
 
       const previous = clamp(currentStepIndex - 1, 0, maxStepIndex)
+      triggerPageMotion('prev')
       setCurrentStepIndex(previous)
       setCurrentPageIndex(
-        twoPageSteps[previous]?.anchorPageIndex ?? currentPageIndex,
+        activeDoubleSteps[previous]?.anchorPageIndex ?? currentPageIndex,
+      )
+      setPendingBoundaryDirection(null)
+      setBoundaryNotice(null)
+      return
+    }
+
+    if (mode === 'single') {
+      if (currentSingleStepIndex <= 0) {
+        if (pendingBoundaryDirection === 'prev' && previousChapterId) {
+          goToChapter(previousChapterId)
+        } else {
+          armBoundaryNotice('prev')
+        }
+        return
+      }
+
+      const previousSingle = clamp(
+        currentSingleStepIndex - 1,
+        0,
+        maxSingleStepIndex,
+      )
+      triggerPageMotion('prev')
+      setCurrentSingleStepIndex(previousSingle)
+      setCurrentPageIndex(
+        singlePageSteps[previousSingle]?.anchorPageIndex ?? currentPageIndex,
       )
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
@@ -1482,19 +1964,468 @@ function WeebcentralReaderPage() {
 
     setPendingBoundaryDirection(null)
     setBoundaryNotice(null)
+    triggerPageMotion('prev')
     goToPage(currentPageIndex - 1)
   }, [
     currentPageIndex,
     currentStepIndex,
+    currentSingleStepIndex,
     goToChapter,
     goToPage,
+    maxSingleStepIndex,
     maxStepIndex,
     mode,
     nextChapterId,
     pendingBoundaryDirection,
     previousChapterId,
-    twoPageSteps,
+    activeDoubleSteps,
+    singlePageSteps,
+    triggerPageMotion,
   ])
+
+  const navigatingRef = useRef(false)
+
+  const handleNativePagerScroll = useCallback(() => {
+    if (
+      !gallerySwipeEnabled ||
+      !nativePagerReadyRef.current ||
+      nativePagerCenteringRef.current
+    ) {
+      return
+    }
+
+    if (pagerSettleTimeoutRef.current !== null) {
+      window.clearTimeout(pagerSettleTimeoutRef.current)
+    }
+
+    pagerSettleTimeoutRef.current = window.setTimeout(() => {
+      if (
+        navigatingRef.current ||
+        !nativePagerReadyRef.current ||
+        nativePagerCenteringRef.current
+      ) {
+        return
+      }
+
+      const pager = nativePagerRef.current
+      if (!pager) {
+        return
+      }
+
+      const width = pager.clientWidth
+      if (width <= 0) {
+        return
+      }
+
+      const index = Math.round(pager.scrollLeft / width)
+
+      if (index <= 0) {
+        if (nextRenderUnits.length > 0) {
+          suppressTapRef.current = true
+          navigatingRef.current = true
+          flushSync(() => {
+            goNext()
+          })
+          recenterNativePager({ attempts: 1 })
+          requestAnimationFrame(() => {
+            navigatingRef.current = false
+          })
+        }
+        return
+      }
+
+      if (index >= 2) {
+        if (previousRenderUnits.length > 0) {
+          suppressTapRef.current = true
+          navigatingRef.current = true
+          flushSync(() => {
+            goPrevious()
+          })
+          recenterNativePager({ attempts: 1 })
+          requestAnimationFrame(() => {
+            navigatingRef.current = false
+          })
+        }
+        return
+      }
+
+      recenterNativePager({ attempts: 1 })
+    }, 100)
+  }, [
+    gallerySwipeEnabled,
+    goNext,
+    goPrevious,
+    nextRenderUnits.length,
+    previousRenderUnits.length,
+    recenterNativePager,
+  ])
+
+  const handleReaderTouchStart = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      if (!isTouchDevice || event.pointerType !== 'touch') {
+        return
+      }
+
+      touchGestureRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        lock: null,
+      }
+
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId)
+      } catch {
+        // Ignore unsupported pointer capture on some browsers.
+      }
+
+      swipeDraggingRef.current = false
+      swipeOffsetRef.current = 0
+
+      if (swipeTrackRef.current) {
+        swipeTrackRef.current.style.transition = 'none'
+        swipeTrackRef.current.style.transform = 'translate3d(0px, 0, 0)'
+      }
+    },
+    [isTouchDevice],
+  )
+
+  const handleReaderTouchMove = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      if (!gallerySwipeEnabled || event.pointerType !== 'touch') {
+        return
+      }
+
+      const gesture = touchGestureRef.current
+      if (!gesture || gesture.pointerId !== event.pointerId) {
+        return
+      }
+
+      const deltaX = event.clientX - gesture.startX
+      const deltaY = event.clientY - gesture.startY
+      const absX = Math.abs(deltaX)
+      const absY = Math.abs(deltaY)
+
+      if (!gesture.lock) {
+        if (absX < 8 && absY < 8) {
+          return
+        }
+
+        gesture.lock = absX > absY ? 'x' : 'y'
+      }
+
+      if (gesture.lock !== 'x') {
+        return
+      }
+
+      const maxDrag =
+        (viewportRef.current?.clientWidth ?? window.innerWidth) * 0.9
+      suppressTapRef.current = absX > 10
+      swipeDraggingRef.current = true
+      swipeOffsetRef.current = clamp(deltaX, -maxDrag, maxDrag)
+
+      if (swipeTrackRef.current) {
+        swipeTrackRef.current.style.transition = 'none'
+        swipeTrackRef.current.style.transform = `translate3d(${swipeOffsetRef.current}px, 0, 0)`
+      }
+    },
+    [gallerySwipeEnabled],
+  )
+
+  const handleReaderTouchEnd = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      if (!isTouchDevice || event.pointerType !== 'touch') {
+        return
+      }
+
+      const gesture = touchGestureRef.current
+      touchGestureRef.current = null
+
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      } catch {
+        // Ignore unsupported pointer capture release.
+      }
+
+      if (!gesture || gesture.pointerId !== event.pointerId) {
+        return
+      }
+
+      const deltaX = event.clientX - gesture.startX
+      const deltaY = event.clientY - gesture.startY
+      const absX = Math.abs(deltaX)
+      const absY = Math.abs(deltaY)
+
+      if (!gallerySwipeEnabled) {
+        if (mode === 'scroll') {
+          return
+        }
+
+        if (absX < 26 || absX <= absY) {
+          return
+        }
+
+        suppressTapRef.current = true
+
+        if (deltaX > 0) {
+          goNext()
+        } else {
+          goPrevious()
+        }
+
+        return
+      }
+
+      if (gesture.lock !== 'x') {
+        swipeDraggingRef.current = false
+        swipeOffsetRef.current = 0
+        if (swipeTrackRef.current) {
+          swipeTrackRef.current.style.transition =
+            'transform 180ms cubic-bezier(0.22, 0.78, 0.16, 1)'
+          swipeTrackRef.current.style.transform = 'translate3d(0px, 0, 0)'
+        }
+        return
+      }
+
+      const width = viewportRef.current?.clientWidth ?? window.innerWidth
+      const threshold = Math.max(48, width * 0.16)
+      const commit =
+        Math.abs(swipeOffsetRef.current) > threshold
+          ? swipeOffsetRef.current > 0
+            ? 'next'
+            : 'prev'
+          : null
+
+      swipeDraggingRef.current = false
+
+      if (!commit) {
+        swipeOffsetRef.current = 0
+        if (swipeTrackRef.current) {
+          swipeTrackRef.current.style.transition =
+            'transform 180ms cubic-bezier(0.22, 0.78, 0.16, 1)'
+          swipeTrackRef.current.style.transform = 'translate3d(0px, 0, 0)'
+        }
+        return
+      }
+
+      swipeOffsetRef.current = commit === 'next' ? width : -width
+      if (swipeTrackRef.current) {
+        swipeTrackRef.current.style.transition =
+          'transform 160ms cubic-bezier(0.22, 0.78, 0.16, 1)'
+        swipeTrackRef.current.style.transform = `translate3d(${swipeOffsetRef.current}px, 0, 0)`
+      }
+
+      if (swipeCommitTimeoutRef.current !== null) {
+        window.clearTimeout(swipeCommitTimeoutRef.current)
+      }
+
+      swipeCommitTimeoutRef.current = window.setTimeout(() => {
+        if (commit === 'next') {
+          goNext()
+        } else {
+          goPrevious()
+        }
+
+        swipeOffsetRef.current = 0
+        if (swipeTrackRef.current) {
+          swipeTrackRef.current.style.transition = 'none'
+          swipeTrackRef.current.style.transform = 'translate3d(0px, 0, 0)'
+        }
+        swipeCommitTimeoutRef.current = null
+      }, 160)
+    },
+    [gallerySwipeEnabled, goNext, goPrevious, isTouchDevice, mode],
+  )
+
+  const handleReaderTouchCancel = useCallback(() => {
+    touchGestureRef.current = null
+    swipeDraggingRef.current = false
+    swipeOffsetRef.current = 0
+    if (swipeTrackRef.current) {
+      swipeTrackRef.current.style.transition =
+        'transform 180ms cubic-bezier(0.22, 0.78, 0.16, 1)'
+      swipeTrackRef.current.style.transform = 'translate3d(0px, 0, 0)'
+    }
+  }, [])
+
+  const renderUnitsForPaging = useCallback(
+    (units: ReadonlyArray<RenderUnit>, keyPrefix: string) =>
+      units.map((unit, slotIndex) => {
+        const page = pages.find((entry) => entry.pageIndex === unit.pageIndex)
+        if (!page) {
+          return null
+        }
+
+        return (
+          <PagePane
+            key={`${keyPrefix}-${slotIndex}-${unit.type === 'half' ? unit.half : unit.type === 'page' && 'crop' in unit ? unit.crop : 'page'}-${unit.pageIndex}`}
+            chapterId={chapter?.chapterId ?? params.chapterId}
+            unit={unit}
+            page={page}
+            imageUrl={pageUrlMap.get(page.pageIndex)}
+            zoomPreset={zoomPreset}
+            loading="eager"
+            testId="reader-page-container"
+            onImageMeasure={rememberPageDimension}
+            forceFullWidth={isSinglePageTouchView}
+          />
+        )
+      }),
+    [
+      chapter?.chapterId,
+      isSinglePageTouchView,
+      pageUrlMap,
+      pages,
+      params.chapterId,
+      rememberPageDimension,
+      zoomPreset,
+    ],
+  )
+
+  useIsomorphicLayoutEffect(() => {
+    swipeDraggingRef.current = false
+    swipeOffsetRef.current = 0
+
+    if (swipeTrackRef.current) {
+      swipeTrackRef.current.style.transition = 'none'
+      swipeTrackRef.current.style.transform = 'translate3d(0px, 0, 0)'
+    }
+
+    if (pagerSettleTimeoutRef.current !== null) {
+      window.clearTimeout(pagerSettleTimeoutRef.current)
+      pagerSettleTimeoutRef.current = null
+    }
+
+    if (!gallerySwipeEnabled || !nativePagerRef.current) {
+      nativePagerReadyRef.current = false
+      nativePagerCenteringRef.current = false
+      return
+    }
+
+    const pager = nativePagerRef.current
+    const initializePager = (attempt = 0) => {
+      const currentPager = nativePagerRef.current
+      if (!currentPager) {
+        return
+      }
+
+      if (currentPager.clientWidth <= 0) {
+        if (attempt < 8) {
+          nativePagerInitRafRef.current = window.requestAnimationFrame(() => {
+            initializePager(attempt + 1)
+          })
+        }
+        return
+      }
+
+      currentPager.style.overflowX = 'hidden'
+      const centered = recenterNativePager({ attempts: 4, markReady: false })
+      if (!centered) {
+        if (attempt < 8) {
+          nativePagerInitRafRef.current = window.requestAnimationFrame(() => {
+            initializePager(attempt + 1)
+          })
+        }
+        return
+      }
+
+      nativePagerInitRafRef.current = window.requestAnimationFrame(() => {
+        const latestPager = nativePagerRef.current
+        if (!latestPager) {
+          return
+        }
+
+        if (
+          latestPager.clientWidth > 0 &&
+          Math.abs(latestPager.scrollLeft - latestPager.clientWidth) > 1
+        ) {
+          recenterNativePager({ attempts: 2, markReady: false })
+        }
+
+        latestPager.style.overflowX = ''
+        nativePagerReadyRef.current = true
+      })
+    }
+
+    nativePagerReadyRef.current = false
+    initializePager()
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry || entry.contentRect.width <= 0 || navigatingRef.current) {
+        return
+      }
+
+      recenterNativePager({
+        attempts: 2,
+        markReady: nativePagerReadyRef.current,
+      })
+    })
+    resizeObserver.observe(pager)
+
+    return () => {
+      resizeObserver.disconnect()
+      if (nativePagerInitRafRef.current !== null) {
+        window.cancelAnimationFrame(nativePagerInitRafRef.current)
+        nativePagerInitRafRef.current = null
+      }
+      if (nativePagerCenterRafRef.current !== null) {
+        window.cancelAnimationFrame(nativePagerCenterRafRef.current)
+        nativePagerCenterRafRef.current = null
+      }
+      pager.style.overflowX = ''
+      pager.style.scrollSnapType = ''
+      nativePagerReadyRef.current = false
+      nativePagerCenteringRef.current = false
+    }
+  }, [chapter?.chapterId, gallerySwipeEnabled, isLoading, recenterNativePager])
+
+  useEffect(() => {
+    if (
+      !gallerySwipeEnabled ||
+      !nativePagerReadyRef.current ||
+      navigatingRef.current
+    ) {
+      return
+    }
+
+    recenterNativePager({ attempts: 1 })
+  }, [
+    currentPageIndex,
+    currentSingleStepIndex,
+    currentStepIndex,
+    gallerySwipeEnabled,
+    mode,
+    recenterNativePager,
+  ])
+
+  const handleTouchTapNavigate = useCallback(
+    (event: MouseEvent<HTMLElement>) => {
+      if (!isTouchDevice || mode === 'scroll') {
+        return
+      }
+
+      if (suppressTapRef.current) {
+        suppressTapRef.current = false
+        return
+      }
+
+      if (swipeDraggingRef.current || Math.abs(swipeOffsetRef.current) > 2) {
+        return
+      }
+
+      const rect = event.currentTarget.getBoundingClientRect()
+      const tapX = event.clientX - rect.left
+
+      if (tapX < rect.width / 2) {
+        goNext()
+        return
+      }
+
+      goPrevious()
+    },
+    [goNext, goPrevious, isTouchDevice, mode],
+  )
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -1591,7 +2522,7 @@ function WeebcentralReaderPage() {
       if (event.code === 'Digit0') {
         event.preventDefault()
         blurReaderFocusTarget()
-        setZoomPreset('fit-height')
+        setZoomPreset('fit-width')
         return
       }
 
@@ -1653,20 +2584,22 @@ function WeebcentralReaderPage() {
   return (
     <div
       className={
-        isFullscreen
-          ? ''
-          : `relative h-[100dvh] overflow-hidden bg-black ${focusMode ? 'reader-focus-mode' : ''}`
+        fullscreenActive
+          ? 'fixed inset-0 z-[120] h-[100dvh] overflow-hidden bg-black'
+          : isTouchDevice
+            ? `relative min-h-[100dvh] overflow-x-hidden overflow-y-auto bg-black ${focusMode ? 'reader-focus-mode' : ''} reader-touch-root`
+            : `relative h-[100dvh] overflow-hidden bg-black ${focusMode ? 'reader-focus-mode' : ''}`
       }
-      onMouseMove={handleReaderMouseMove}
+      onMouseMove={isTouchDevice ? undefined : handleReaderMouseMove}
       onMouseLeave={() => {
         setMagnifierFrame(null)
       }}
     >
-      {!isFullscreen ? (
+      {!fullscreenActive ? (
         <Button
           variant="ghost"
           size="icon"
-          className={`reader-shell-toggle absolute top-4 z-50 size-12 transition-transform duration-200 md:size-10 ${sidebarOpen ? 'left-[calc(min(88vw,360px)+12px)]' : 'left-3'} ${showReaderChrome || sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+          className={`reader-shell-toggle absolute ui-left-safe-offset ui-top-safe-offset z-50 size-12 transition-transform duration-200 md:size-10 ${showReaderChrome || sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'} ${isTouchDevice ? 'hidden' : ''} ${sidebarOpen ? 'md:left-[calc(min(88vw,360px)+12px)]' : ''}`}
           onClick={() => setSidebarOpen((current) => !current)}
           type="button"
         >
@@ -1674,373 +2607,501 @@ function WeebcentralReaderPage() {
         </Button>
       ) : null}
 
-      {!isFullscreen ? (
-        <aside
-          className={`reader-shell-panel animate-enter absolute inset-y-0 left-0 z-40 w-[min(88vw,360px)] overflow-y-auto p-3 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] max-md:inset-x-0 max-md:inset-y-auto max-md:bottom-0 max-md:top-auto max-md:h-[72dvh] max-md:w-full ${sidebarOpen ? 'translate-x-0 max-md:translate-y-0' : '-translate-x-full max-md:translate-y-full'}`}
-          style={{ animationDelay: '20ms' }}
+      {fullscreenActive && isTouchDevice ? (
+        <Button
+          type="button"
+          variant="soft"
+          size="sm"
+          className="absolute ui-right-safe-offset ui-top-safe-offset z-40 h-8 px-2 text-xs"
+          onClick={() => {
+            void toggleFullscreen()
+          }}
         >
-          <div className="space-y-2 text-xs text-muted-foreground">
-            <Link
-              to="/"
-              className="inline-flex border border-border bg-surface-soft px-2 py-1 hover:bg-surface"
-            >
-              Back to home
-            </Link>
-            <Link
-              to="/weebcentral-series/$seriesId"
-              params={{ seriesId: remoteSeriesIdForLink }}
-              className="block truncate text-sm font-semibold leading-snug text-foreground underline-offset-2 hover:underline"
-            >
-              {remoteSeriesTitle}
-            </Link>
-            <p>
-              {activeChapterMetadata
-                ? `Ch ${activeChapterMetadata.number}`
-                : `Ch ${chapter.chapterId}`}
-            </p>
-            <p className="text-[11px]">
-              Tip: click left/right side of the page to move.
-            </p>
-          </div>
+          Exit
+        </Button>
+      ) : null}
 
-          <div className="mt-3 flex gap-2">
-            <Button
-              type="button"
-              variant={settingsTab === 'basic' ? 'default' : 'soft'}
-              className="h-8 w-full"
-              onClick={() => setSettingsTab('basic')}
-            >
-              Reading
-            </Button>
-            <Button
-              type="button"
-              variant={settingsTab === 'advanced' ? 'default' : 'soft'}
-              className="h-8 w-full"
-              onClick={() => setSettingsTab('advanced')}
-            >
-              More settings
-            </Button>
-          </div>
-
-          {settingsTab === 'basic' ? (
-            <div className="mt-3 grid gap-2">
-              <SelectField
-                value={mode}
-                onChange={(event) => {
-                  const nextMode = event.target.value as ReaderMode
-                  setMode(nextMode)
-
-                  if (nextMode === 'double') {
-                    setCurrentStepIndex(
-                      findStepIndexByPageIndex(
-                        twoPageSteps,
-                        currentTargetPageIndex,
-                      ),
-                    )
-                  } else {
-                    setCurrentPageIndex(currentTargetPageIndex)
-                  }
-                }}
-                options={[
-                  { value: 'single', label: 'Single page' },
-                  { value: 'double', label: 'Two-page spread' },
-                  { value: 'scroll', label: 'Continuous scroll' },
-                ]}
-              />
-
+      {!fullscreenActive ? (
+        <aside
+          className={
+            isTouchDevice
+              ? 'reader-shell-panel animate-enter relative z-30 w-full overflow-visible p-3'
+              : `reader-shell-panel animate-enter absolute inset-y-0 left-0 z-40 w-[min(88vw,360px)] overflow-y-auto p-3 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`
+          }
+          style={{
+            animationDelay: '20ms',
+            paddingTop: isTouchDevice
+              ? 'max(0.75rem, calc(var(--safe-top) + 0.5rem))'
+              : undefined,
+          }}
+        >
+          {isTouchDevice ? (
+            <div className="mb-2 flex items-center justify-between border border-border bg-surface-soft px-2 py-1.5">
+              <span className="text-xs font-semibold text-foreground">
+                Settings
+              </span>
               <Button
                 type="button"
-                variant={doublePageOffset ? 'default' : 'soft'}
-                className="h-9 justify-between px-3"
-                onClick={() => setDoublePageOffset((value) => !value)}
-              >
-                <span>Book start alignment</span>
-                <span>{doublePageOffset ? 'On' : 'Off'}</span>
-              </Button>
-
-              <Button
-                type="button"
-                variant={magnifierEnabled ? 'default' : 'soft'}
-                className="h-9 justify-between px-3"
-                onClick={() => setMagnifierEnabled((value) => !value)}
-              >
-                <span>Magnifier</span>
-                <span>{magnifierEnabled ? 'On' : 'Off'}</span>
-              </Button>
-
-              <Button
-                type="button"
-                variant={focusMode ? 'default' : 'soft'}
-                className="h-9 justify-between px-3"
-                onClick={() => setFocusMode((value) => !value)}
-              >
-                <span>Distraction-free mode</span>
-                <span>{focusMode ? 'On' : 'Off'}</span>
-              </Button>
-
-              <SelectField
-                value={zoomPreset}
-                onChange={(event) =>
-                  setZoomPreset(event.target.value as ZoomPreset)
+                variant="soft"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() =>
+                  setMobileSettingsMinimized((current) => !current)
                 }
-                className="h-9"
-                options={[
-                  { value: 'fit-height', label: 'Fit to screen' },
-                  { value: 'fit-width', label: 'Fit to width' },
-                  { value: 'actual', label: 'Actual size' },
-                ]}
-              />
-
-              {orderedSeriesChapters.length ? (
-                <>
-                  <Input
-                    value={chapterFilter}
-                    onChange={(event) => setChapterFilter(event.target.value)}
-                    className="h-9"
-                    placeholder="Type chapter number..."
-                  />
-                  {filteredSeriesChapters.length > 0 ? (
-                    <SelectField
-                      value={chapter.chapterId}
-                      onChange={(event) => {
-                        const nextId = event.target.value
-                        if (nextId === chapter.chapterId) {
-                          return
-                        }
-                        goToChapter(nextId)
-                      }}
-                      className="h-9"
-                      options={filteredSeriesChapters.map((entry) => ({
-                        value: entry.id,
-                        label: `Chapter ${entry.number}`,
-                      }))}
-                    />
-                  ) : (
-                    <p className="px-1 text-xs text-muted-foreground">
-                      No chapter found. Try a different number.
-                    </p>
-                  )}
-                </>
-              ) : null}
-
-              <label className="text-xs text-muted-foreground">
-                {currentTargetPageIndex + 1} / {pages.length}
-                <RangeSlider
-                  min={0}
-                  max={scrubberMax}
-                  value={scrubberValue}
-                  onChange={(event) =>
-                    goToPage(Number.parseInt(event.target.value, 10))
-                  }
-                  className="mt-3 w-full accent-primary"
-                  style={{ transform: 'scaleX(-1)' }}
-                />
-              </label>
-            </div>
-          ) : (
-            <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
-              <label>
-                Preload ahead pages
-                <Input
-                  type="number"
-                  min={1}
-                  max={24}
-                  value={preloadAhead}
-                  onChange={(event) =>
-                    setPreloadAhead(
-                      clampNumber(
-                        Number.parseInt(event.target.value, 10),
-                        1,
-                        24,
-                      ),
-                    )
-                  }
-                  className="mt-1 h-8"
-                />
-              </label>
-              <label>
-                Preload behind pages
-                <Input
-                  type="number"
-                  min={0}
-                  max={12}
-                  value={preloadBehind}
-                  onChange={(event) =>
-                    setPreloadBehind(
-                      clampNumber(
-                        Number.parseInt(event.target.value, 10),
-                        0,
-                        12,
-                      ),
-                    )
-                  }
-                  className="mt-1 h-8"
-                />
-              </label>
-              <label>
-                Parallel preloads
-                <Input
-                  type="number"
-                  min={1}
-                  max={8}
-                  value={prefetchConcurrency}
-                  onChange={(event) =>
-                    setPrefetchConcurrency(
-                      clampNumber(
-                        Number.parseInt(event.target.value, 10),
-                        1,
-                        8,
-                      ),
-                    )
-                  }
-                  className="mt-1 h-8"
-                />
-              </label>
-              <label>
-                Next chapter prefetch trigger (remaining pages)
-                <Input
-                  type="number"
-                  min={1}
-                  max={24}
-                  value={nextChapterPrefetchThreshold}
-                  onChange={(event) =>
-                    setNextChapterPrefetchThreshold(
-                      clampNumber(
-                        Number.parseInt(event.target.value, 10),
-                        1,
-                        24,
-                      ),
-                    )
-                  }
-                  className="mt-1 h-8"
-                />
-              </label>
-              <label>
-                Next chapter warm pages
-                <Input
-                  type="number"
-                  min={1}
-                  max={16}
-                  value={nextChapterWarmPages}
-                  onChange={(event) =>
-                    setNextChapterWarmPages(
-                      clampNumber(
-                        Number.parseInt(event.target.value, 10),
-                        1,
-                        16,
-                      ),
-                    )
-                  }
-                  className="mt-1 h-8"
-                />
-              </label>
-              <label>
-                UI hide delay (ms)
-                <Input
-                  type="number"
-                  min={400}
-                  max={5000}
-                  step={100}
-                  value={uiAutoHideMs}
-                  onChange={(event) =>
-                    setUiAutoHideMs(
-                      clampNumber(
-                        Number.parseInt(event.target.value, 10),
-                        400,
-                        5000,
-                      ),
-                    )
-                  }
-                  className="mt-1 h-8"
-                />
-              </label>
-              <label>
-                Magnifier size (px)
-                <Input
-                  type="number"
-                  min={120}
-                  max={420}
-                  value={magnifierSize}
-                  onChange={(event) =>
-                    setMagnifierSize(
-                      clampNumber(
-                        Number.parseInt(event.target.value, 10),
-                        120,
-                        420,
-                      ),
-                    )
-                  }
-                  className="mt-1 h-8"
-                />
-              </label>
-              <label>
-                Magnifier zoom
-                <Input
-                  type="number"
-                  min={2}
-                  max={5}
-                  step={0.1}
-                  value={magnifierZoom}
-                  onChange={(event) =>
-                    setMagnifierZoom(
-                      clampNumber(Number.parseFloat(event.target.value), 2, 5),
-                    )
-                  }
-                  className="mt-1 h-8"
-                />
-              </label>
-            </div>
-          )}
-
-          <div className="mt-3 flex items-center gap-2">
-            <Button variant="soft" className="w-full" onClick={goPrevious}>
-              Previous page
-            </Button>
-            <Button variant="soft" className="w-full" onClick={goNext}>
-              Next page
-            </Button>
-          </div>
-          <p className="mt-2 text-xs text-muted-foreground">{hudPageLabel}</p>
-          <div className="mt-2 flex items-center gap-2">
-            <Button
-              variant="ghost"
-              className="w-full border border-border"
-              onClick={() => goToChapter(previousChapterId)}
-              disabled={!previousChapterId}
-            >
-              Previous chapter
-            </Button>
-            <Button
-              variant="ghost"
-              className="w-full border border-border"
-              onClick={() => goToChapter(nextChapterId)}
-              disabled={!nextChapterId}
-            >
-              Next chapter
-            </Button>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            className="mt-2 h-8 border border-border text-xs"
-            onClick={() => setShowShortcutHelp((value) => !value)}
-          >
-            {showShortcutHelp
-              ? 'Hide keyboard shortcuts'
-              : 'Show keyboard shortcuts'}
-          </Button>
-          {showShortcutHelp ? (
-            <div className="reader-shortcut-sheet mt-2 text-xs">
-              <p>Nav: A/D or arrows, Space, [ ]</p>
-              <p>View: Q mode, 0 reset zoom, F fullscreen</p>
-              <p>UI: S sidebar, X focus, Z magnifier</p>
+              >
+                {mobileSettingsMinimized ? 'Show' : 'Minimize'}
+              </Button>
             </div>
           ) : null}
+
+          <div
+            className={isTouchDevice && mobileSettingsMinimized ? 'hidden' : ''}
+          >
+            <div className="space-y-2 text-xs text-muted-foreground">
+              <Link
+                to="/"
+                className="inline-flex border border-border bg-surface-soft px-2 py-1 hover:bg-surface"
+              >
+                Back to home
+              </Link>
+              <Link
+                to="/weebcentral-series/$seriesId"
+                params={{ seriesId: remoteSeriesIdForLink }}
+                className="block truncate text-sm font-semibold leading-snug text-foreground underline-offset-2 hover:underline"
+              >
+                {remoteSeriesTitle}
+              </Link>
+              <p>
+                {activeChapterMetadata
+                  ? `Ch ${activeChapterMetadata.number}`
+                  : `Ch ${chapter.chapterId}`}
+              </p>
+              <p className="text-[11px]">
+                Tip: click left/right side of the page to move.
+              </p>
+            </div>
+
+            <div className="mt-3 flex gap-2">
+              <Button
+                type="button"
+                variant={settingsTab === 'basic' ? 'default' : 'soft'}
+                className="h-8 w-full"
+                onClick={() => setSettingsTab('basic')}
+              >
+                Reading
+              </Button>
+              <Button
+                type="button"
+                variant={settingsTab === 'advanced' ? 'default' : 'soft'}
+                className="h-8 w-full"
+                onClick={() => setSettingsTab('advanced')}
+              >
+                More settings
+              </Button>
+            </div>
+
+            {settingsTab === 'basic' ? (
+              <div
+                className={
+                  isTouchDevice
+                    ? 'mt-3 grid grid-cols-2 gap-2'
+                    : 'mt-3 grid gap-2'
+                }
+              >
+                {isTouchDevice ? (
+                  <div className="col-span-2 grid grid-cols-3 gap-2">
+                    <Button
+                      type="button"
+                      variant={mode === 'single' ? 'default' : 'soft'}
+                      className="h-9"
+                      onClick={() => {
+                        setMode('single')
+                        setCurrentSingleStepIndex(
+                          findStepIndexByPageIndex(
+                            singlePageSteps,
+                            currentTargetPageIndex,
+                          ),
+                        )
+                        setCurrentPageIndex(currentTargetPageIndex)
+                      }}
+                    >
+                      Single
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={mode === 'double' ? 'default' : 'soft'}
+                      className="h-9"
+                      onClick={() => {
+                        setMode('double')
+                        setCurrentStepIndex(
+                          findStepIndexByPageIndex(
+                            activeDoubleSteps,
+                            currentTargetPageIndex,
+                          ),
+                        )
+                      }}
+                    >
+                      Double
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={mode === 'scroll' ? 'default' : 'soft'}
+                      className="h-9"
+                      onClick={() => {
+                        setMode('scroll')
+                        setCurrentPageIndex(currentTargetPageIndex)
+                      }}
+                    >
+                      Scroll
+                    </Button>
+                  </div>
+                ) : (
+                  <SelectField
+                    value={mode}
+                    onChange={(event) => {
+                      const nextMode = event.target.value as ReaderMode
+                      setMode(nextMode)
+
+                      if (nextMode === 'double') {
+                        setCurrentStepIndex(
+                          findStepIndexByPageIndex(
+                            activeDoubleSteps,
+                            currentTargetPageIndex,
+                          ),
+                        )
+                      } else if (nextMode === 'single') {
+                        setCurrentSingleStepIndex(
+                          findStepIndexByPageIndex(
+                            singlePageSteps,
+                            currentTargetPageIndex,
+                          ),
+                        )
+                        setCurrentPageIndex(currentTargetPageIndex)
+                      } else {
+                        setCurrentPageIndex(currentTargetPageIndex)
+                      }
+                    }}
+                    options={[
+                      { value: 'single', label: 'Single page' },
+                      { value: 'double', label: 'Two-page spread' },
+                      { value: 'scroll', label: 'Continuous scroll' },
+                    ]}
+                  />
+                )}
+                {mode === 'double' && isTouchPortrait ? (
+                  <p className="col-span-2 px-1 text-xs text-muted-foreground">
+                    Portrait on touch screens uses one page at a time.
+                  </p>
+                ) : null}
+
+                <Button
+                  type="button"
+                  variant={doublePageOffset ? 'default' : 'soft'}
+                  className="h-9 justify-between px-3"
+                  onClick={() => setDoublePageOffset((value) => !value)}
+                >
+                  <span>Offset</span>
+                  <span>{doublePageOffset ? 'On' : 'Off'}</span>
+                </Button>
+
+                {!isTouchDevice ? (
+                  <>
+                    <Button
+                      type="button"
+                      variant={magnifierEnabled ? 'default' : 'soft'}
+                      className="h-9 justify-between px-3"
+                      onClick={() => setMagnifierEnabled((value) => !value)}
+                    >
+                      <span>Magnifier</span>
+                      <span>{magnifierEnabled ? 'On' : 'Off'}</span>
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant={focusMode ? 'default' : 'soft'}
+                      className="h-9 justify-between px-3"
+                      onClick={() => setFocusMode((value) => !value)}
+                    >
+                      <span>Distraction-free mode</span>
+                      <span>{focusMode ? 'On' : 'Off'}</span>
+                    </Button>
+                  </>
+                ) : null}
+
+                <SelectField
+                  value={zoomPreset}
+                  onChange={(event) =>
+                    setZoomPreset(event.target.value as ZoomPreset)
+                  }
+                  className="h-9"
+                  options={[
+                    { value: 'fit-height', label: 'Fit to screen' },
+                    { value: 'fit-width', label: 'Fit to width' },
+                    { value: 'actual', label: 'Actual size' },
+                  ]}
+                />
+
+                {orderedSeriesChapters.length ? (
+                  <>
+                    <Input
+                      value={chapterFilter}
+                      onChange={(event) => setChapterFilter(event.target.value)}
+                      className="h-9 min-w-0"
+                      placeholder="Type chapter number..."
+                    />
+                    {filteredSeriesChapters.length > 0 ? (
+                      <SelectField
+                        value={chapter.chapterId}
+                        onChange={(event) => {
+                          const nextId = event.target.value
+                          if (nextId === chapter.chapterId) {
+                            return
+                          }
+                          goToChapter(nextId)
+                        }}
+                        className="h-9 min-w-0"
+                        options={filteredSeriesChapters.map((entry) => ({
+                          value: entry.id,
+                          label: `Chapter ${entry.number}`,
+                        }))}
+                      />
+                    ) : (
+                      <p className="col-span-2 px-1 text-xs text-muted-foreground">
+                        No chapter found. Try a different number.
+                      </p>
+                    )}
+                  </>
+                ) : null}
+
+                <label
+                  className={`text-xs text-muted-foreground ${isTouchDevice ? 'col-span-2' : ''}`}
+                >
+                  {currentTargetPageIndex + 1} / {pages.length}
+                  <RangeSlider
+                    min={0}
+                    max={scrubberMax}
+                    value={scrubberValue}
+                    onChange={(event) =>
+                      goToPage(Number.parseInt(event.target.value, 10))
+                    }
+                    className="mt-3 w-full accent-primary"
+                    style={{ transform: 'scaleX(-1)' }}
+                  />
+                </label>
+              </div>
+            ) : (
+              <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
+                <label>
+                  Preload ahead pages
+                  <Input
+                    type="number"
+                    min={1}
+                    max={24}
+                    value={preloadAhead}
+                    onChange={(event) =>
+                      setPreloadAhead(
+                        clampNumber(
+                          Number.parseInt(event.target.value, 10),
+                          1,
+                          24,
+                        ),
+                      )
+                    }
+                    className="mt-1 h-8"
+                  />
+                </label>
+                <label>
+                  Preload behind pages
+                  <Input
+                    type="number"
+                    min={0}
+                    max={12}
+                    value={preloadBehind}
+                    onChange={(event) =>
+                      setPreloadBehind(
+                        clampNumber(
+                          Number.parseInt(event.target.value, 10),
+                          0,
+                          12,
+                        ),
+                      )
+                    }
+                    className="mt-1 h-8"
+                  />
+                </label>
+                <label>
+                  Parallel preloads
+                  <Input
+                    type="number"
+                    min={1}
+                    max={8}
+                    value={prefetchConcurrency}
+                    onChange={(event) =>
+                      setPrefetchConcurrency(
+                        clampNumber(
+                          Number.parseInt(event.target.value, 10),
+                          1,
+                          8,
+                        ),
+                      )
+                    }
+                    className="mt-1 h-8"
+                  />
+                </label>
+                <label>
+                  Next chapter prefetch trigger (remaining pages)
+                  <Input
+                    type="number"
+                    min={1}
+                    max={24}
+                    value={nextChapterPrefetchThreshold}
+                    onChange={(event) =>
+                      setNextChapterPrefetchThreshold(
+                        clampNumber(
+                          Number.parseInt(event.target.value, 10),
+                          1,
+                          24,
+                        ),
+                      )
+                    }
+                    className="mt-1 h-8"
+                  />
+                </label>
+                <label>
+                  Next chapter warm pages
+                  <Input
+                    type="number"
+                    min={1}
+                    max={16}
+                    value={nextChapterWarmPages}
+                    onChange={(event) =>
+                      setNextChapterWarmPages(
+                        clampNumber(
+                          Number.parseInt(event.target.value, 10),
+                          1,
+                          16,
+                        ),
+                      )
+                    }
+                    className="mt-1 h-8"
+                  />
+                </label>
+                <label>
+                  UI hide delay (ms)
+                  <Input
+                    type="number"
+                    min={400}
+                    max={5000}
+                    step={100}
+                    value={uiAutoHideMs}
+                    onChange={(event) =>
+                      setUiAutoHideMs(
+                        clampNumber(
+                          Number.parseInt(event.target.value, 10),
+                          400,
+                          5000,
+                        ),
+                      )
+                    }
+                    className="mt-1 h-8"
+                  />
+                </label>
+                <label>
+                  Magnifier size (px)
+                  <Input
+                    type="number"
+                    min={120}
+                    max={420}
+                    value={magnifierSize}
+                    onChange={(event) =>
+                      setMagnifierSize(
+                        clampNumber(
+                          Number.parseInt(event.target.value, 10),
+                          120,
+                          420,
+                        ),
+                      )
+                    }
+                    className="mt-1 h-8"
+                  />
+                </label>
+                <label>
+                  Magnifier zoom
+                  <Input
+                    type="number"
+                    min={2}
+                    max={5}
+                    step={0.1}
+                    value={magnifierZoom}
+                    onChange={(event) =>
+                      setMagnifierZoom(
+                        clampNumber(
+                          Number.parseFloat(event.target.value),
+                          2,
+                          5,
+                        ),
+                      )
+                    }
+                    className="mt-1 h-8"
+                  />
+                </label>
+              </div>
+            )}
+
+            <div className="mt-3 flex items-center gap-2">
+              <Button variant="soft" className="w-full" onClick={goNext}>
+                Next page
+              </Button>
+              <Button variant="soft" className="w-full" onClick={goPrevious}>
+                Previous page
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">{hudPageLabel}</p>
+            <div className="mt-2 flex items-center gap-2">
+              <Button
+                variant="ghost"
+                className="w-full border border-border"
+                onClick={() => goToChapter(nextChapterId)}
+                disabled={!nextChapterId}
+              >
+                Next chapter
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full border border-border"
+                onClick={() => goToChapter(previousChapterId)}
+                disabled={!previousChapterId}
+              >
+                Previous chapter
+              </Button>
+            </div>
+            {!isTouchDevice ? (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="mt-2 h-8 border border-border text-xs"
+                  onClick={() => setShowShortcutHelp((value) => !value)}
+                >
+                  {showShortcutHelp
+                    ? 'Hide keyboard shortcuts'
+                    : 'Show keyboard shortcuts'}
+                </Button>
+                {showShortcutHelp ? (
+                  <div className="reader-shortcut-sheet mt-2 text-xs">
+                    <p>Nav: A/D or arrows, Space, [ ]</p>
+                    <p>View: Q mode, 0 reset zoom, F fullscreen</p>
+                    <p>UI: S sidebar, X focus, Z magnifier</p>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+          </div>
         </aside>
       ) : null}
 
-      {!isFullscreen && !focusMode && showReaderChrome ? (
-        <div className="reader-quick-strip absolute right-3 top-3 z-30 flex flex-wrap gap-2">
+      {!fullscreenActive && !focusMode && showReaderChrome && !isTouchDevice ? (
+        <div className="reader-quick-strip absolute right-3 top-3 z-30 hidden flex-wrap gap-2 md:flex">
           <Button
             type="button"
             variant="soft"
@@ -2062,17 +3123,10 @@ function WeebcentralReaderPage() {
         </div>
       ) : null}
 
-      {!isFullscreen && (showReaderChrome || sidebarOpen) ? (
+      {!fullscreenActive &&
+      (showReaderChrome || sidebarOpen) &&
+      !isTouchDevice ? (
         <div className="reader-chapter-jump absolute bottom-4 right-3 z-30 hidden items-center gap-2 md:flex">
-          <Button
-            type="button"
-            variant="soft"
-            className="h-11 px-3 text-xs"
-            onClick={() => goToChapter(previousChapterId)}
-            disabled={!previousChapterId}
-          >
-            Prev chapter
-          </Button>
           <Button
             type="button"
             variant="soft"
@@ -2082,101 +3136,108 @@ function WeebcentralReaderPage() {
           >
             Next chapter
           </Button>
-        </div>
-      ) : null}
-
-      {!isFullscreen && !focusMode ? (
-        <div className="reader-mobile-nav fixed inset-x-2 bottom-2 z-30 flex items-center gap-2 border border-border bg-surface-soft/95 p-1 backdrop-blur-sm md:hidden">
           <Button
             type="button"
             variant="soft"
-            className="h-9 px-2 text-xs"
-            onClick={goPrevious}
+            className="h-11 px-3 text-xs"
+            onClick={() => goToChapter(previousChapterId)}
+            disabled={!previousChapterId}
           >
-            Prev
-          </Button>
-          <div className="min-w-0 flex-1 text-center text-[11px] text-muted-foreground">
-            {currentTargetPageIndex + 1} / {Math.max(pages.length, 1)}
-          </div>
-          <Button
-            type="button"
-            variant="soft"
-            className="h-9 px-2 text-xs"
-            onClick={goNext}
-          >
-            Next
+            Prev chapter
           </Button>
         </div>
       ) : null}
 
-      {!isFullscreen && !focusMode && showReaderChrome ? (
+      {!fullscreenActive && !focusMode && showReaderChrome && !isTouchDevice ? (
         <div className="reader-key-hints absolute bottom-4 left-1/2 z-20 -translate-x-1/2 text-xs">
           Tip: click/tap left or right side to move pages.
         </div>
       ) : null}
 
       {pages.length > 0 ? (
-        mode === 'double' ? (
+        mode === 'double' && !isTouchPortrait ? (
           <>
-            <div className="pointer-events-none absolute bottom-2 left-3 z-20 text-[10px] font-medium text-white/55">
+            <div className="pointer-events-none absolute ui-bottom-safe-offset ui-left-safe-offset z-20 text-[10px] font-medium text-white/55">
               {rtlSpreadNumbers.left ?? ''}
             </div>
             {rtlSpreadNumbers.right ? (
-              <div className="pointer-events-none absolute bottom-2 right-3 z-20 text-[10px] font-medium text-white/55">
+              <div className="pointer-events-none absolute ui-bottom-safe-offset ui-right-safe-offset z-20 text-[10px] font-medium text-white/55">
                 {rtlSpreadNumbers.right}
               </div>
             ) : null}
           </>
         ) : (
-          <div className="pointer-events-none absolute bottom-2 right-3 z-20 text-[10px] font-medium text-white/55">
+          <div className="pointer-events-none absolute ui-bottom-safe-offset ui-right-safe-offset z-20 text-[10px] font-medium text-white/55">
             {currentTargetPageIndex + 1} / {pages.length}
           </div>
         )
       ) : null}
 
       {boundaryNotice ? (
-        <div className="reader-hud pointer-events-none absolute bottom-20 left-1/2 z-30 -translate-x-1/2 px-3 py-1 text-xs">
+        <div className="reader-hud pointer-events-none absolute ui-bottom-safe-stack left-1/2 z-30 -translate-x-1/2 px-3 py-1 text-xs">
           {boundaryNotice}
         </div>
       ) : null}
 
-      {!isFullscreen && focusMode ? (
+      {!fullscreenActive && focusMode ? (
         <Button
           type="button"
           variant="soft"
-          className="absolute right-3 top-3 z-30 h-10 px-3 text-xs"
+          className="absolute ui-right-safe-offset ui-top-safe-offset z-30 h-10 px-3 text-xs"
           onClick={() => setFocusMode(false)}
         >
           Exit distraction-free mode
         </Button>
       ) : null}
 
-      <section className={isFullscreen ? '' : 'h-full'} ref={readerStageRef}>
+      <section
+        className={
+          fullscreenActive ? '' : isTouchDevice ? 'min-h-[100dvh]' : 'h-full'
+        }
+        ref={readerStageRef}
+      >
         {mode === 'scroll' ? (
-          <div className="relative" onMouseMove={handleReaderMouseMove}>
+          <div
+            className="relative"
+            onMouseMove={isTouchDevice ? undefined : handleReaderMouseMove}
+            onPointerDown={handleReaderTouchStart}
+            onPointerUp={handleReaderTouchEnd}
+            onPointerCancel={() => {
+              touchGestureRef.current = null
+            }}
+          >
             <ContinuousScroll
               chapterId={chapter.chapterId}
               pages={pages}
               zoomPreset={zoomPreset}
-              isFullscreen={isFullscreen}
+              isFullscreen={fullscreenActive}
               resolveImageUrl={(page) => pageUrlMap.get(page.pageIndex)}
               onVisiblePageChange={(pageIndex) =>
                 setCurrentPageIndex(pageIndex)
               }
             />
-            {isFullscreen && showPageHud ? (
-              <div className="reader-hud pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 text-sm">
+            {fullscreenActive && showPageHud ? (
+              <div className="reader-hud pointer-events-none absolute ui-bottom-safe-hud left-1/2 -translate-x-1/2 px-3 py-1 text-sm">
                 {hudPageLabel}
               </div>
             ) : null}
           </div>
         ) : (
           <div
-            className={`relative h-[100dvh] bg-black ${focusMode ? 'reader-focus-mode' : ''}`}
+            className={`relative ${!fullscreenActive && isTouchDevice ? 'h-[100dvh]' : 'h-full'} bg-black ${focusMode ? 'reader-focus-mode' : ''}`}
             ref={viewportRef}
-            onMouseMove={handleReaderMouseMove}
+            onMouseMove={isTouchDevice ? undefined : handleReaderMouseMove}
+            onClick={handleTouchTapNavigate}
             onPointerDown={(event) => {
-              if (zoomPreset !== 'actual' || !viewportRef.current) {
+              if (!gallerySwipeEnabled) {
+                handleReaderTouchStart(event)
+              }
+
+              if (
+                event.pointerType !== 'mouse' ||
+                zoomPreset !== 'actual' ||
+                !viewportRef.current
+              ) {
                 return
               }
 
@@ -2190,60 +3251,81 @@ function WeebcentralReaderPage() {
 
               viewportRef.current.style.cursor = 'grabbing'
             }}
+            onPointerUp={gallerySwipeEnabled ? undefined : handleReaderTouchEnd}
+            onPointerMove={
+              gallerySwipeEnabled ? undefined : handleReaderTouchMove
+            }
+            onPointerCancel={
+              gallerySwipeEnabled ? undefined : handleReaderTouchCancel
+            }
             style={{
               cursor: zoomPreset === 'actual' ? 'grab' : 'default',
               overflow: zoomPreset === 'actual' ? 'auto' : 'hidden',
+              touchAction: isTouchDevice ? 'pan-y' : 'auto',
+              overscrollBehavior: isTouchDevice ? 'contain' : undefined,
             }}
           >
-            <div className="flex h-full items-center justify-center gap-0">
-              {(mode === 'single'
-                ? [
-                    {
-                      type: 'page' as const,
-                      pageIndex: currentPageIndex,
-                    },
-                  ]
-                : displayUnits
-              ).map((unit, slotIndex) => {
-                const page = pages.find(
-                  (entry) => entry.pageIndex === unit.pageIndex,
-                )
+            {gallerySwipeEnabled ? (
+              <div
+                ref={nativePagerRef}
+                className="reader-native-pager relative flex h-full snap-x snap-mandatory overflow-x-auto overflow-y-hidden"
+                data-testid="reader-paging-container"
+                onScroll={handleNativePagerScroll}
+                style={{
+                  WebkitOverflowScrolling: 'touch',
+                  transition: 'none',
+                  scrollbarWidth: 'none',
+                }}
+              >
+                <div className="h-full w-full shrink-0 snap-start overflow-hidden">
+                  <div
+                    className={`flex h-full items-center justify-center gap-0 ${isSinglePageTouchView ? 'px-4' : ''}`}
+                  >
+                    {renderUnitsForPaging(leftRenderUnits, 'next')}
+                  </div>
+                </div>
+                <div className="h-full w-full shrink-0 snap-start overflow-hidden">
+                  <div
+                    className={`flex h-full items-center justify-center gap-0 overflow-hidden ${isSinglePageTouchView ? 'px-4' : ''} ${!gallerySwipeEnabled && pageMotion ? `reader-page-motion-${pageMotion}` : ''}`}
+                  >
+                    {renderUnitsForPaging(currentRenderUnits, 'current')}
+                  </div>
+                </div>
+                <div className="h-full w-full shrink-0 snap-start overflow-hidden">
+                  <div
+                    className={`flex h-full items-center justify-center gap-0 ${isSinglePageTouchView ? 'px-4' : ''}`}
+                  >
+                    {renderUnitsForPaging(rightRenderUnits, 'prev')}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div
+                className={`flex h-full items-center justify-center gap-0 overflow-hidden ${isSinglePageTouchView ? 'px-4' : ''} ${!gallerySwipeEnabled && pageMotion ? `reader-page-motion-${pageMotion}` : ''}`}
+                data-testid="reader-paging-container"
+              >
+                {renderUnitsForPaging(currentRenderUnits, 'current')}
+              </div>
+            )}
 
-                if (!page) {
-                  return null
-                }
-
-                const paneKey =
-                  mode === 'single'
-                    ? 'pane-single'
-                    : `pane-${slotIndex}-${unit.type === 'half' ? unit.half : 'page'}`
-
-                return (
-                  <PagePane
-                    key={paneKey}
-                    chapterId={chapter.chapterId}
-                    unit={unit}
-                    page={page}
-                    imageUrl={pageUrlMap.get(page.pageIndex)}
-                    zoomPreset={zoomPreset}
-                    loading="eager"
-                    testId="reader-page-container"
-                    onImageMeasure={rememberPageDimension}
-                  />
-                )
-              })}
-            </div>
-
-            <ReaderTapZone side="left" onActivate={goNext} />
-            <ReaderTapZone side="right" onActivate={goPrevious} />
-            {!isFullscreen && showReaderChrome ? (
+            {!isTouchDevice &&
+            !magnifierEnabled &&
+            zoomPreset !== 'actual' ? (
+              <ReaderTapZone side="left" onActivate={goNext} />
+            ) : null}
+            {!isTouchDevice &&
+            !magnifierEnabled &&
+            zoomPreset !== 'actual' ? (
+              <ReaderTapZone side="right" onActivate={goPrevious} />
+            ) : null}
+            {!fullscreenActive && showReaderChrome && !isTouchDevice ? (
               <>
                 <ReaderEdgeArrowButton side="left" onActivate={goNext} />
                 <ReaderEdgeArrowButton side="right" onActivate={goPrevious} />
               </>
             ) : null}
-            {isFullscreen && showPageHud ? (
-              <div className="reader-hud pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 text-sm">
+            {fullscreenActive && showPageHud ? (
+              <div className="reader-hud pointer-events-none absolute ui-bottom-safe-hud left-1/2 -translate-x-1/2 px-3 py-1 text-sm">
                 {hudPageLabel}
               </div>
             ) : null}

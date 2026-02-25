@@ -13,6 +13,7 @@ import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import type { SeriesDetail } from '#/lib/contracts'
 import { fetchJson } from '#/lib/http-client'
+import { isLocalSessionSeriesAllowed } from '#/lib/local-upload-session'
 import { loadReadingHistory, upsertReadingHistory } from '#/lib/reading-history'
 import { cn } from '#/lib/utils'
 
@@ -22,6 +23,11 @@ export const Route = createAnyFileRoute('/series/$seriesId')({
 
 function SeriesPage() {
   const params = Route.useParams()
+  const isSeriesAllowed =
+    typeof window === 'undefined'
+      ? true
+      : isLocalSessionSeriesAllowed(params.seriesId)
+
   const [series, setSeries] = useState<SeriesDetail | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -36,6 +42,12 @@ function SeriesPage() {
   const [previewCoverPageIndex, setPreviewCoverPageIndex] = useState(0)
 
   const loadSeries = useCallback(async () => {
+    if (!isSeriesAllowed) {
+      setIsLoading(false)
+      setError('This upload session has expired. Please upload the file again.')
+      return
+    }
+
     setIsLoading(true)
     setError(null)
 
@@ -50,7 +62,7 @@ function SeriesPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [params.seriesId])
+  }, [isSeriesAllowed, params.seriesId])
 
   useEffect(() => {
     void loadSeries()
@@ -156,13 +168,13 @@ function SeriesPage() {
         className="exp-hero animate-enter"
         style={{ animationDelay: '20ms' }}
       >
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 flex-1 items-start gap-4">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="flex min-w-0 flex-col items-start gap-4 sm:flex-row">
             {previewCoverChapterId ? (
               <img
                 src={`/api/image/${previewCoverChapterId}/${previewCoverPageIndex}?thumb=1`}
                 alt={`${series?.title ?? 'Series'} cover`}
-                className="h-32 w-24 shrink-0 border border-border object-cover"
+                className="h-36 w-24 shrink-0 border border-border object-cover sm:h-32"
                 loading="lazy"
                 onError={() => {
                   if (previewCoverPageIndex === 0) {
@@ -171,7 +183,7 @@ function SeriesPage() {
                 }}
               />
             ) : (
-              <div className="flex h-32 w-24 shrink-0 items-center justify-center border border-border bg-surface-soft text-xs text-muted-foreground">
+              <div className="flex h-36 w-24 shrink-0 items-center justify-center border border-border bg-surface-soft text-xs text-muted-foreground sm:h-32">
                 No image
               </div>
             )}
@@ -188,7 +200,7 @@ function SeriesPage() {
                   <h1 className="manga-title mt-4 text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
                     {series.title}
                   </h1>
-                  <p className="mt-2 text-sm text-muted-foreground">
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground sm:line-clamp-5 md:line-clamp-none">
                     {series.description ?? 'No summary yet.'}
                   </p>
                   <div className="mt-4 flex flex-wrap gap-2">
@@ -212,7 +224,7 @@ function SeriesPage() {
             <Link
               to="/reader/$chapterId"
               params={{ chapterId: nextChapter.id }}
-              className="inline-flex h-10 items-center border-2 border-primary bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[2px_2px_0_var(--shadow)]"
+              className="inline-flex h-10 w-full items-center justify-center border-2 border-primary bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[2px_2px_0_var(--shadow)] sm:w-auto"
             >
               Continue reading
             </Link>

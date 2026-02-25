@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq, lt } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 
 import type {
@@ -14,12 +14,14 @@ import { getDatabase } from './client'
 import { chapters, pages, readingProgress, series } from './schema'
 
 interface CreateSeriesInput {
+  id?: string
   title: string
   description: string | null
   source: 'demo' | 'local-upload' | 'custom-stub'
 }
 
 interface CreateChapterInput {
+  id?: string
   seriesId: string
   title: string
   chapterNumber: number
@@ -42,7 +44,7 @@ export interface CreatePageInput {
 export function createSeries(input: CreateSeriesInput): string {
   const db = getDatabase()
   const now = Date.now()
-  const id = nanoid()
+  const id = input.id ?? nanoid()
 
   db.insert(series)
     .values({
@@ -62,7 +64,7 @@ export function createSeries(input: CreateSeriesInput): string {
 export function createChapter(input: CreateChapterInput): string {
   const db = getDatabase()
   const now = Date.now()
-  const id = nanoid()
+  const id = input.id ?? nanoid()
 
   db.insert(chapters)
     .values({
@@ -391,4 +393,23 @@ export function hasSeriesWithSource(source: string): boolean {
 export function deleteSeriesById(seriesId: string) {
   const db = getDatabase()
   db.delete(series).where(eq(series.id, seriesId)).run()
+}
+
+export function listStaleLocalUploadSeriesIds(
+  cutoffTimestamp: number,
+): string[] {
+  const db = getDatabase()
+
+  const rows = db
+    .select({ id: series.id })
+    .from(series)
+    .where(
+      and(
+        eq(series.source, 'local-upload'),
+        lt(series.updatedAt, cutoffTimestamp),
+      ),
+    )
+    .all()
+
+  return rows.map((row) => row.id)
 }

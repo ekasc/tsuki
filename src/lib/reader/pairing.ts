@@ -18,6 +18,7 @@ export type RenderUnit =
   | {
       type: 'page'
       pageIndex: number
+      crop?: 'left' | 'right'
     }
   | {
       type: 'half'

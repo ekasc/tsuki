@@ -1,25 +1,32 @@
 {
-  "short_name": "TanStack App",
-  "name": "Create TanStack App Sample",
-  "icons": [
-    {
-      "src": "favicon.ico",
-      "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/x-icon"
-    },
-    {
-      "src": "logo192.png",
-      "type": "image/png",
-      "sizes": "192x192"
-    },
-    {
-      "src": "logo512.png",
-      "type": "image/png",
-      "sizes": "512x512"
-    }
-  ],
-  "start_url": ".",
-  "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+    "name": "Tsuki Reader",
+    "short_name": "Tsuki",
+    "description": "A clean, distraction-free manga reader. Read online or from your files.",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#efe6d3",
+    "theme_color": "#1d140d",
+    "orientation": "any",
+    "icons": [
+        {
+            "src": "/favicon.ico",
+            "sizes": "64x64 32x32 24x24 16x16",
+            "type": "image/x-icon"
+        },
+        {
+            "src": "/tsuki_favicon.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "/tsuki_favicon.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "categories": [
+        "entertainment",
+        "books"
+    ]
 }
