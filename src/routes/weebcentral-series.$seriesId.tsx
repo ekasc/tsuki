@@ -198,17 +198,17 @@ function WeebcentralSeriesPage() {
         className="exp-hero animate-enter"
         style={{ animationDelay: '20ms' }}
       >
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 flex-1 items-start gap-4">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="flex min-w-0 flex-col items-start gap-4 sm:flex-row">
             {series.coverUrl ? (
               <img
                 src={series.coverUrl}
                 alt={`${series.title} cover`}
-                className="h-52 w-36 shrink-0 border border-border object-cover md:h-56 md:w-40"
+                className="h-44 w-30 shrink-0 border border-border object-cover sm:h-52 sm:w-36 md:h-56 md:w-40"
                 loading="lazy"
               />
             ) : (
-              <div className="flex h-52 w-36 shrink-0 items-center justify-center border border-border bg-surface-soft text-xs text-muted-foreground md:h-56 md:w-40">
+              <div className="flex h-44 w-30 shrink-0 items-center justify-center border border-border bg-surface-soft text-xs text-muted-foreground sm:h-52 sm:w-36 md:h-56 md:w-40">
                 No image
               </div>
             )}
@@ -224,7 +224,7 @@ function WeebcentralSeriesPage() {
                 {series.title}
               </h1>
               {series.description ? (
-                <p className="mt-2 text-sm text-muted-foreground">
+                <p className="mt-2 text-sm leading-6 text-muted-foreground sm:line-clamp-5 md:line-clamp-none">
                   {series.description}
                 </p>
               ) : null}
@@ -255,7 +255,7 @@ function WeebcentralSeriesPage() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:justify-end">
             {nextChapter ? (
               <Link
                 to="/weebcentral/$chapterId"
@@ -264,7 +264,7 @@ function WeebcentralSeriesPage() {
                   seriesId: series.id,
                   seriesTitle: series.title,
                 }}
-                className="inline-flex h-10 items-center border-2 border-primary bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[2px_2px_0_var(--shadow)]"
+                className="inline-flex h-10 flex-1 items-center justify-center border-2 border-primary bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[2px_2px_0_var(--shadow)] md:flex-none"
               >
                 Continue reading
               </Link>

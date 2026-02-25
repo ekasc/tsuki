@@ -23,3 +23,5 @@ export const INGEST_LIMITS = {
 export const READER_DEFAULTS = {
   spreadWidthMultiplier: 1.35,
 } as const
+
+export const SESSION_UPLOAD_TTL_MS = 4 * 60 * 60 * 1000

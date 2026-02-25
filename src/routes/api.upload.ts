@@ -19,11 +19,15 @@ export const Route = createAnyFileRoute('/api/upload')({
           const { ingestArchiveUpload } = await import(
             '#/server/ingest/import-archive'
           )
+          const { pruneStaleSessionUploads } = await import(
+            '#/server/ingest/prune-session-uploads'
+          )
           const { assertRateLimit, requestClientId } = await import(
             '#/server/rate-limit'
           )
 
           await ensureServerReady()
+          await pruneStaleSessionUploads()
 
           assertRateLimit(requestClientId(request), {
             limit: 6,

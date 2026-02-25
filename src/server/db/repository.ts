@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq, lt } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 
 import type {
@@ -391,4 +391,23 @@ export function hasSeriesWithSource(source: string): boolean {
 export function deleteSeriesById(seriesId: string) {
   const db = getDatabase()
   db.delete(series).where(eq(series.id, seriesId)).run()
+}
+
+export function listStaleLocalUploadSeriesIds(
+  cutoffTimestamp: number,
+): string[] {
+  const db = getDatabase()
+
+  const rows = db
+    .select({ id: series.id })
+    .from(series)
+    .where(
+      and(
+        eq(series.source, 'local-upload'),
+        lt(series.updatedAt, cutoffTimestamp),
+      ),
+    )
+    .all()
+
+  return rows.map((row) => row.id)
 }

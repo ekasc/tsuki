@@ -14,6 +14,7 @@ interface ResolveImageOptions {
   thumbnail?: boolean
   width?: number
   height?: number
+  crop?: 'left' | 'right' | null
 }
 
 interface ImageAsset {
@@ -29,7 +30,7 @@ function buildCacheKey(
   pageIndex: number,
   options: ResolveImageOptions,
 ): string {
-  const payload = `${chapterId}:${pageIndex}:${options.thumbnail ? 'thumb' : 'full'}:${options.width ?? ''}:${options.height ?? ''}`
+  const payload = `${chapterId}:${pageIndex}:${options.thumbnail ? 'thumb' : 'full'}:${options.width ?? ''}:${options.height ?? ''}:${options.crop ?? ''}`
 
   return createHash('sha1').update(payload).digest('hex')
 }
@@ -56,7 +57,7 @@ async function maybeResizeImage(
   pageIndex: number,
   options: ResolveImageOptions,
 ): Promise<string> {
-  if (!options.width && !options.height) {
+  if (!options.width && !options.height && !options.crop) {
     return sourcePath
   }
 
@@ -65,13 +66,32 @@ async function maybeResizeImage(
 
   if (!(await fileExists(cachePath))) {
     await fs.mkdir(CACHE_DIR, { recursive: true })
-    await sharp(sourcePath)
-      .resize({
+    
+    let pipeline = sharp(sourcePath)
+
+    if (options.crop) {
+      const metadata = await pipeline.metadata()
+      if (metadata.width && metadata.height) {
+        const halfWidth = Math.floor(metadata.width / 2)
+        pipeline = pipeline.extract({
+          left: options.crop === 'right' ? halfWidth : 0,
+          top: 0,
+          width: halfWidth,
+          height: metadata.height,
+        })
+      }
+    }
+
+    if (options.width || options.height) {
+      pipeline = pipeline.resize({
         width: options.width,
         height: options.height,
         fit: 'inside',
         withoutEnlargement: true,
       })
+    }
+    
+    await pipeline
       .webp({ quality: 84 })
       .toFile(cachePath)
   }

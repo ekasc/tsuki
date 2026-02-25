@@ -5,7 +5,13 @@ const createAnyFileRoute = createFileRoute as any
 export const Route = createAnyFileRoute('/v1/image/$b64')({
   server: {
     handlers: {
-      GET: async ({ params }: { params: { b64: string } }) => {
+      GET: async ({
+        request,
+        params,
+      }: {
+        request: Request
+        params: { b64: string }
+      }) => {
         const { ensureServerReady } = await import('#/server/bootstrap')
         const { toApiErrorResponse } = await import('#/server/api/http')
 
@@ -15,7 +21,11 @@ export const Route = createAnyFileRoute('/v1/image/$b64')({
           )
 
           await ensureServerReady()
-          return await proxyImageByEncodedUrl(params.b64)
+          const requestUrl = new URL(request.url)
+          const cropRaw = requestUrl.searchParams.get('crop')
+          const crop = cropRaw === 'left' || cropRaw === 'right' ? cropRaw : null
+
+          return await proxyImageByEncodedUrl(params.b64, { crop })
         } catch (error) {
           return toApiErrorResponse(error)
         }

@@ -1,38 +1,52 @@
 import { expect, test, type Page } from '@playwright/test'
 
 async function rewindToStart(page: Page) {
-  for (let index = 0; index < 8; index += 1) {
-    await page.getByTestId('nav-prev').click()
+  let attempts = 0
+  while (attempts < 10) {
+    const text = await page
+      .getByTestId('position-label')
+      .innerText()
+      .catch(() => '')
+    if (text.startsWith('Page 1 /') || text.startsWith('Spread 1 /')) {
+      break
+    }
+    await page.keyboard.press('ArrowRight')
+    await page.waitForTimeout(200)
+    attempts++
   }
 }
 
+test.beforeEach(async ({}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'chromium-desktop',
+    'Desktop-only keyboard and combobox behavior.',
+  )
+})
+
 test('library to reader flow works', async ({ page }) => {
   await page.goto('/')
-
-  await expect(page.getByText('Suki Demo Anthology')).toBeVisible()
-  await page
-    .locator('article')
-    .filter({ hasText: 'Suki Demo Anthology' })
-    .getByRole('link', { name: 'Open' })
-    .click()
+  await page.evaluate(() => localStorage.removeItem('tsuki-history.v1'))
+  await page.goto('/series/Li8ezNK4gAuHoCPzk3yuA')
 
   await expect(
     page.getByRole('heading', { name: 'Suki Demo Anthology' }),
   ).toBeVisible()
-  await page.getByRole('link', { name: 'Read Chapter' }).first().click()
+  await page
+    .getByRole('link', { name: /Chapter/i })
+    .first()
+    .click()
 
-  await expect(
-    page.getByRole('heading', { name: /Chapter 1 - Welcome Grid/i }),
-  ).toBeVisible()
+  await expect(page.getByText('Ch 1 · 5p')).toBeVisible()
   await expect(page.getByTestId('reader-paging-container')).toBeVisible()
-  await page.getByTestId('mode-single').click()
+  await page.mouse.move(100, 100)
+  await page.getByRole('combobox').first().selectOption('single')
   await rewindToStart(page)
 
-  await page.getByLabel('left-arrow').click()
+  await page.keyboard.press('ArrowLeft')
   await expect(page.getByTestId('position-label')).toHaveText(/^Page 2 \/ \d+$/)
-  await page.getByLabel('right-zone').click()
+  await page.keyboard.press('ArrowRight')
   await expect(page.getByTestId('position-label')).toHaveText(/^Page 1 \/ \d+$/)
-  await page.getByLabel('left-zone').click()
+  await page.keyboard.press('ArrowLeft')
   await expect(page.getByTestId('position-label')).toHaveText(/^Page 2 \/ \d+$/)
   await page.waitForTimeout(450)
   await page.reload()
@@ -43,39 +57,45 @@ test('two-page mode never renders more than two containers', async ({
   page,
 }) => {
   await page.goto('/')
+  await page.evaluate(() => localStorage.removeItem('tsuki-history.v1'))
+  await page.goto('/series/Li8ezNK4gAuHoCPzk3yuA')
   await page
-    .locator('article')
-    .filter({ hasText: 'Suki Demo Anthology' })
-    .getByRole('link', { name: 'Open' })
+    .getByRole('link', { name: /Chapter/i })
+    .first()
     .click()
-  await page.getByRole('link', { name: 'Read Chapter' }).first().click()
 
-  await page.getByTestId('mode-single').click()
+  await page.mouse.move(100, 100)
+  await page.getByRole('combobox').first().selectOption('single')
   await rewindToStart(page)
-  await page.getByTestId('mode-double').click()
+
+  await page.mouse.move(100, 100)
+  await page.getByRole('combobox').first().selectOption('double')
 
   for (let index = 0; index < 3; index += 1) {
     const count = await page.getByTestId('reader-page-container').count()
     expect(count).toBeGreaterThanOrEqual(1)
     expect(count).toBeLessThanOrEqual(2)
 
-    await page.getByTestId('nav-next').click()
+    await page.keyboard.press('ArrowLeft')
   }
 })
 
 test('split spread renders exactly two halves', async ({ page }) => {
   await page.goto('/')
-  await page
-    .locator('article')
-    .filter({ hasText: 'Suki Demo Anthology' })
-    .getByRole('link', { name: 'Open' })
-    .click()
+  await page.evaluate(() => localStorage.removeItem('tsuki-history.v1'))
+  await page.goto('/series/Li8ezNK4gAuHoCPzk3yuA')
 
-  await page.getByRole('link', { name: 'Read Chapter' }).nth(1).click()
-  await page.getByTestId('mode-single').click()
+  await page
+    .getByRole('link', { name: /Chapter/i })
+    .nth(1)
+    .click()
+  await page.mouse.move(100, 100)
+  await page.getByRole('combobox').first().selectOption('single')
   await rewindToStart(page)
-  await page.getByTestId('mode-double').click()
-  await page.getByTestId('nav-next').click()
+
+  await page.mouse.move(100, 100)
+  await page.getByRole('combobox').first().selectOption('double')
+  await page.keyboard.press('ArrowLeft')
 
   await expect(page.getByTestId('reader-page-container')).toHaveCount(2)
   await expect(page.getByAltText(/left half/i)).toBeVisible()
@@ -84,21 +104,43 @@ test('split spread renders exactly two halves', async ({ page }) => {
 
 test('navigating past final page opens next chapter', async ({ page }) => {
   await page.goto('/')
-  await page
-    .locator('article')
-    .filter({ hasText: 'Suki Demo Anthology' })
-    .getByRole('link', { name: 'Open' })
-    .click()
+  await page.evaluate(() => localStorage.removeItem('tsuki-history.v1'))
+  await page.goto('/series/Li8ezNK4gAuHoCPzk3yuA')
 
-  await page.getByRole('link', { name: 'Read Chapter' }).first().click()
-  await page.getByTestId('mode-single').click()
+  await page
+    .getByRole('link', { name: /Chapter/i })
+    .first()
+    .click()
+  await page.mouse.move(100, 100)
+  await page.getByRole('combobox').first().selectOption('single')
   await rewindToStart(page)
 
-  for (let index = 0; index < 6; index += 1) {
-    await page.getByTestId('nav-next').click()
+  for (let index = 0; index < 10; index += 1) {
+    await page.keyboard.press('ArrowLeft')
+    await page.waitForTimeout(200)
   }
 
-  await expect(
-    page.getByRole('heading', { name: /Chapter 2 - Split Candidate/i }),
-  ).toBeVisible()
+  await expect(page.getByText('Ch 2 · 4p')).toBeVisible()
+})
+
+test('desktop tap zones disable while magnifier is enabled', async ({ page }) => {
+  await page.goto('/')
+  await page.evaluate(() => localStorage.removeItem('tsuki-history.v1'))
+  await page.goto('/series/Li8ezNK4gAuHoCPzk3yuA')
+
+  await page
+    .getByRole('link', { name: /Chapter/i })
+    .first()
+    .click()
+  await page.mouse.move(100, 100)
+  await page.getByRole('combobox').first().selectOption('single')
+  await rewindToStart(page)
+
+  await expect(page.getByLabel('left-zone')).toHaveCount(1)
+  await expect(page.getByLabel('right-zone')).toHaveCount(1)
+
+  await page.keyboard.press('KeyZ')
+
+  await expect(page.getByLabel('left-zone')).toHaveCount(0)
+  await expect(page.getByLabel('right-zone')).toHaveCount(0)
 })

@@ -15,3 +15,5 @@ data/
 playwright-report/
 test-results/
 coverage/
+.lighthouseci/
+dev.log

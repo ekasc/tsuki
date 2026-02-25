@@ -43,11 +43,14 @@ export const Route = createAnyFileRoute('/api/image/$chapterId/$pageIndex')({
           const thumb = requestUrl.searchParams.get('thumb') === '1'
           const width = parsePositiveInt(requestUrl.searchParams.get('w'))
           const height = parsePositiveInt(requestUrl.searchParams.get('h'))
+          const cropRaw = requestUrl.searchParams.get('crop')
+          const crop = cropRaw === 'left' || cropRaw === 'right' ? cropRaw : null
 
           const asset = await resolveImageAsset(params.chapterId, pageIndex, {
             thumbnail: thumb,
             width,
             height,
+            crop,
           })
 
           const clientEtag = request.headers.get('if-none-match')

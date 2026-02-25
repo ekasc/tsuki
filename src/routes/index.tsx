@@ -6,11 +6,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '#/components/ui/button'
 import { FilePickerButton } from '#/components/ui/file-picker-button'
 import { Input } from '#/components/ui/input'
-import type {
-  LibrarySeries,
-  ReadingHistoryItem,
-  WeebcentralSeriesDTO,
-} from '#/lib/contracts'
+import {
+  isLocalSessionChapterAllowed,
+  registerLocalSessionUpload,
+} from '#/lib/local-upload-session'
+import type { ReadingHistoryItem, WeebcentralSeriesDTO } from '#/lib/contracts'
 import { fetchJson } from '#/lib/http-client'
 import { loadReadingHistory } from '#/lib/reading-history'
 import { cn } from '#/lib/utils'
@@ -24,16 +24,13 @@ import {
 export const Route = createAnyFileRoute('/')({ component: LibraryPage })
 
 function LibraryPage() {
-  const [series, setSeries] = useState<LibrarySeries[]>([])
   const [history, setHistory] = useState<ReadingHistoryItem[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [isUploading, setIsUploading] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [remoteInput, setRemoteInput] = useState('')
   const [isRemoteLoading, setIsRemoteLoading] = useState(false)
   const [remoteError, setRemoteError] = useState<string | null>(null)
-  const [removingSeriesId, setRemovingSeriesId] = useState<string | null>(null)
   const [savedRemoteSeries, setSavedRemoteSeries] = useState<
     WeebcentralSeriesDTO[]
   >([])
@@ -48,30 +45,20 @@ function LibraryPage() {
     }
   }, [])
 
-  const loadSeries = useCallback(async () => {
-    setIsLoading(true)
-
-    try {
-      const payload = await fetchJson<LibrarySeries[]>('/api/series')
-      setSeries(payload)
-      setError(null)
-    } catch (requestError) {
-      void requestError
-      setError('Could not load your library right now.')
-    } finally {
-      setIsLoading(false)
-    }
-  }, [])
-
   const refreshSideData = useCallback(() => {
-    setHistory(loadReadingHistory())
+    setHistory(
+      loadReadingHistory().filter(
+        (item) =>
+          item.readerRoute === 'weebcentral' ||
+          isLocalSessionChapterAllowed(item.chapterId),
+      ),
+    )
     setSavedRemoteSeries(loadSavedWeebcentralSeries())
   }, [])
 
   useEffect(() => {
-    void loadSeries()
     refreshSideData()
-  }, [loadSeries, refreshSideData])
+  }, [refreshSideData])
 
   useEffect(() => {
     const onFocus = () => {
@@ -117,7 +104,16 @@ function LibraryPage() {
           throw new Error(payload.error ?? 'Upload failed')
         }
 
-        await loadSeries()
+        const payload = (await response.json()) as {
+          seriesId: string
+          chapterId: string
+        }
+
+        registerLocalSessionUpload(payload)
+        void navigate({
+          to: '/reader/$chapterId',
+          params: { chapterId: payload.chapterId },
+        })
         dismissOnboardingHint()
       } catch (uploadError) {
         void uploadError
@@ -126,20 +122,8 @@ function LibraryPage() {
         setIsUploading(false)
       }
     },
-    [dismissOnboardingHint, loadSeries],
+    [dismissOnboardingHint, navigate],
   )
-
-  const libraryStats = useMemo(() => {
-    const chapterCount = series.reduce(
-      (total, item) => total + item.chapterCount,
-      0,
-    )
-
-    return {
-      seriesCount: series.length,
-      chapterCount,
-    }
-  }, [series])
 
   const loadRemoteSeries = useCallback(async () => {
     const inputValue = remoteInput.trim()
@@ -171,39 +155,6 @@ function LibraryPage() {
     }
   }, [dismissOnboardingHint, navigate, remoteInput])
 
-  const removeSeries = useCallback(
-    async (seriesId: string, title: string) => {
-      const confirmed = window.confirm(
-        `Remove "${title}" from your files list?`,
-      )
-      if (!confirmed) {
-        return
-      }
-
-      setRemovingSeriesId(seriesId)
-      setError(null)
-
-      try {
-        const response = await fetch(`/api/series/${seriesId}`, {
-          method: 'DELETE',
-        })
-
-        if (!response.ok) {
-          const payload = (await response.json()) as { error?: string }
-          throw new Error(payload.error ?? 'Failed to remove series')
-        }
-
-        await loadSeries()
-      } catch (removeError) {
-        void removeError
-        setError('Could not remove this series right now.')
-      } finally {
-        setRemovingSeriesId(null)
-      }
-    },
-    [loadSeries],
-  )
-
   const removeRemoteSeriesFromLibrary = useCallback((seriesId: string) => {
     removeSavedWeebcentralSeries(seriesId)
     setSavedRemoteSeries(loadSavedWeebcentralSeries())
@@ -212,7 +163,7 @@ function LibraryPage() {
   const recentHistory = history.slice(0, 6)
   const topHistory = recentHistory[0] ?? null
   const hasHistory = recentHistory.length > 0
-  const totalSeries = libraryStats.seriesCount + savedRemoteSeries.length
+  const totalSeries = savedRemoteSeries.length
   const topHistoryCoverUrl = useMemo(() => {
     if (!topHistory) {
       return null
@@ -225,13 +176,8 @@ function LibraryPage() {
       return remoteMatch?.coverUrl ?? null
     }
 
-    const localMatch = series.find((entry) => entry.id === topHistory.seriesId)
-    if (!localMatch?.coverChapterId || localMatch.coverPageIndex === null) {
-      return null
-    }
-
-    return `/api/image/${localMatch.coverChapterId}/${localMatch.coverPageIndex}?thumb=1`
-  }, [savedRemoteSeries, series, topHistory])
+    return `/api/image/${topHistory.chapterId}/0?thumb=1`
+  }, [savedRemoteSeries, topHistory])
 
   const recentSeriesCards = useMemo(() => {
     const seen = new Set<string>()
@@ -266,23 +212,17 @@ function LibraryPage() {
           }
         }
 
-        const localMatch = series.find((entry) => entry.id === item.seriesId)
-        const localCoverUrl =
-          localMatch?.coverChapterId && localMatch.coverPageIndex !== null
-            ? `/api/image/${localMatch.coverChapterId}/${localMatch.coverPageIndex}?thumb=1`
-            : null
-
         return {
           key: `${route}:${item.seriesId}`,
           route,
           chapterId: item.chapterId,
           seriesId: item.seriesId,
-          seriesTitle: item.seriesTitle ?? localMatch?.title ?? 'Series',
+          seriesTitle: item.seriesTitle ?? 'Uploaded manga',
           chapterTitle: item.chapterTitle,
-          coverUrl: localCoverUrl,
+          coverUrl: `/api/image/${item.chapterId}/0?thumb=1`,
         }
       })
-  }, [history, savedRemoteSeries, series])
+  }, [history, savedRemoteSeries])
 
   return (
     <div className="space-y-5 pb-10">
@@ -342,8 +282,7 @@ function LibraryPage() {
               </a>
             </div>
             <p className="mt-4 text-sm text-muted-foreground">
-              {totalSeries} saved series • {libraryStats.chapterCount} chapters
-              • {recentHistory.length} recent reads
+              {totalSeries} saved series • {recentHistory.length} recent reads
             </p>
             {showOnboardingHint ? (
               <div className="mt-3 flex items-start justify-between gap-3 border border-border/70 bg-surface-soft px-3 py-2 text-sm text-muted-foreground">
@@ -365,32 +304,69 @@ function LibraryPage() {
             {hasHistory && topHistory ? (
               <>
                 <p className="exp-kicker">Your last read</p>
-                <div className="flex items-start gap-3">
-                  {topHistoryCoverUrl ? (
-                    <img
-                      src={topHistoryCoverUrl}
-                      alt="Last read manga cover"
-                      className="h-16 w-12 shrink-0 border border-border object-cover"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="flex h-16 w-12 shrink-0 items-center justify-center border border-border bg-surface-soft text-[10px] text-muted-foreground">
-                      No
-                      <br />
-                      image
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {topHistory.chapterTitle}
-                    </p>
-                    {topHistory.seriesTitle ? (
-                      <p className="truncate text-sm text-muted-foreground">
-                        {topHistory.seriesTitle}
+                {topHistory.readerRoute === 'weebcentral' ? (
+                  <Link
+                    to="/weebcentral-series/$seriesId"
+                    params={{ seriesId: topHistory.seriesId }}
+                    className="group flex items-start gap-3 rounded hover:bg-surface transition-colors"
+                  >
+                    {topHistoryCoverUrl ? (
+                      <img
+                        src={topHistoryCoverUrl}
+                        alt="Last read manga cover"
+                        className="h-16 w-12 shrink-0 border border-border object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="flex h-16 w-12 shrink-0 items-center justify-center border border-border bg-surface-soft text-[10px] text-muted-foreground">
+                        No
+                        <br />
+                        image
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                        {topHistory.chapterTitle}
                       </p>
-                    ) : null}
-                  </div>
-                </div>
+                      {topHistory.seriesTitle ? (
+                        <p className="truncate text-sm text-muted-foreground">
+                          {topHistory.seriesTitle}
+                        </p>
+                      ) : null}
+                    </div>
+                  </Link>
+                ) : (
+                  <Link
+                    to="/reader/$chapterId"
+                    params={{ chapterId: topHistory.chapterId }}
+                    className="group flex items-start gap-3 rounded hover:bg-surface transition-colors"
+                  >
+                    {topHistoryCoverUrl ? (
+                      <img
+                        src={topHistoryCoverUrl}
+                        alt="Last read manga cover"
+                        className="h-16 w-12 shrink-0 border border-border object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="flex h-16 w-12 shrink-0 items-center justify-center border border-border bg-surface-soft text-[10px] text-muted-foreground">
+                        No
+                        <br />
+                        image
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                        {topHistory.chapterTitle}
+                      </p>
+                      {topHistory.seriesTitle ? (
+                        <p className="truncate text-sm text-muted-foreground">
+                          {topHistory.seriesTitle}
+                        </p>
+                      ) : null}
+                    </div>
+                  </Link>
+                )}
                 <p className="pt-1 text-xs text-muted-foreground">
                   Tip: Continue above, or jump to a new series below.
                 </p>
@@ -458,42 +434,63 @@ function LibraryPage() {
           </div>
           <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
             {recentSeriesCards.map((item) => (
-              <Link
-                key={item.key}
-                to={
-                  item.route === 'weebcentral'
-                    ? '/weebcentral/$chapterId'
-                    : '/reader/$chapterId'
-                }
-                params={{ chapterId: item.chapterId }}
-                search={
-                  item.route === 'weebcentral'
-                    ? { seriesId: item.seriesId, seriesTitle: item.seriesTitle }
-                    : undefined
-                }
-                className="exp-row h-full min-h-28 items-stretch"
-              >
-                {item.coverUrl ? (
-                  <img
-                    src={item.coverUrl}
-                    alt={`${item.seriesTitle} cover`}
-                    className="h-full w-20 shrink-0 self-stretch border border-border object-cover"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="flex h-full w-20 shrink-0 items-center justify-center self-stretch border border-border bg-surface-soft text-[10px] text-muted-foreground">
-                    No image
+              item.route === 'weebcentral' ? (
+                <Link
+                  key={item.key}
+                  to="/weebcentral-series/$seriesId"
+                  params={{ seriesId: item.seriesId }}
+                  className="exp-row h-full min-h-28 items-stretch"
+                >
+                  {item.coverUrl ? (
+                    <img
+                      src={item.coverUrl}
+                      alt={`${item.seriesTitle} cover`}
+                      className="h-full w-20 shrink-0 self-stretch border border-border object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="flex h-full w-20 shrink-0 items-center justify-center self-stretch border border-border bg-surface-soft text-[10px] text-muted-foreground">
+                      No image
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-foreground md:text-base group-hover:text-primary transition-colors">
+                      {item.seriesTitle}
+                    </p>
+                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                      Last read: {item.chapterTitle}
+                    </p>
                   </div>
-                )}
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-foreground md:text-base">
-                    {item.seriesTitle}
-                  </p>
-                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                    Last read: {item.chapterTitle}
-                  </p>
-                </div>
-              </Link>
+                </Link>
+              ) : (
+                <Link
+                  key={item.key}
+                  to="/reader/$chapterId"
+                  params={{ chapterId: item.chapterId }}
+                  className="exp-row h-full min-h-28 items-stretch"
+                >
+                  {item.coverUrl ? (
+                    <img
+                      src={item.coverUrl}
+                      alt={`${item.seriesTitle} cover`}
+                      className="h-full w-20 shrink-0 self-stretch border border-border object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="flex h-full w-20 shrink-0 items-center justify-center self-stretch border border-border bg-surface-soft text-[10px] text-muted-foreground">
+                      No image
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-foreground md:text-base group-hover:text-primary transition-colors">
+                      {item.seriesTitle}
+                    </p>
+                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                      Last read: {item.chapterTitle}
+                    </p>
+                  </div>
+                </Link>
+              )
             ))}
           </div>
         </section>
@@ -532,7 +529,7 @@ function LibraryPage() {
             className="sm:w-28"
             disabled={isRemoteLoading}
           >
-            {isRemoteLoading ? 'Loading…' : 'Search'}
+            {isRemoteLoading ? 'Loading…' : 'Go'}
           </Button>
         </form>
 
@@ -575,7 +572,11 @@ function LibraryPage() {
                   variant="ghost"
                   size="sm"
                   className="text-destructive hover:text-destructive"
-                  onClick={() => removeRemoteSeriesFromLibrary(item.id)}
+                  onClick={() => {
+                    if (window.confirm(`Are you sure you want to remove ${item.title}?`)) {
+                      removeRemoteSeriesFromLibrary(item.id)
+                    }
+                  }}
                 >
                   Remove series
                 </Button>
@@ -649,68 +650,9 @@ function LibraryPage() {
           <p className="mt-2 text-sm text-destructive">{error}</p>
         ) : null}
 
-        {isLoading ? (
-          <div className="mt-2 exp-surface px-4 py-5 text-sm text-muted-foreground">
-            Loading your library…
-          </div>
-        ) : null}
-
-        {!isLoading && series.length === 0 ? (
-          <div className="mt-2 exp-surface px-4 py-5 text-sm text-muted-foreground">
-            No manga in your files yet.
-          </div>
-        ) : null}
-
-        {!isLoading ? (
-          <div className="mt-2 space-y-1.5">
-            {series.map((item) => (
-              <article key={item.id} className="exp-row">
-                <Link
-                  to="/series/$seriesId"
-                  params={{ seriesId: item.id }}
-                  className="group flex min-w-0 flex-1 items-center gap-3"
-                >
-                  {item.coverChapterId !== null &&
-                  item.coverPageIndex !== null ? (
-                    <img
-                      className="h-20 w-14 shrink-0 border border-border object-cover"
-                      src={`/api/image/${item.coverChapterId}/${item.coverPageIndex}?thumb=1`}
-                      alt={`${item.title} cover`}
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="flex h-20 w-14 shrink-0 items-center justify-center border border-border bg-surface-soft text-[10px] text-muted-foreground">
-                      None
-                    </div>
-                  )}
-
-                  <div className="min-w-0">
-                    <h4 className="truncate text-sm font-semibold text-foreground transition-colors group-hover:text-primary md:text-base">
-                      {item.title}
-                    </h4>
-                    <p className="line-clamp-1 text-sm text-muted-foreground">
-                      {item.description ?? 'No summary yet.'}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {item.chapterCount} chapters
-                    </p>
-                  </div>
-                </Link>
-
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => removeSeries(item.id, item.title)}
-                  disabled={removingSeriesId === item.id}
-                >
-                  {removingSeriesId === item.id ? 'Removing…' : 'Remove series'}
-                </Button>
-              </article>
-            ))}
-          </div>
-        ) : null}
+        <p className="mt-2 text-xs text-muted-foreground">
+          Uploaded files are available in this browser session only.
+        </p>
       </section>
     </div>
   )

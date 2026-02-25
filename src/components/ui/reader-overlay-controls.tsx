@@ -7,13 +7,12 @@ interface ReaderTapZoneProps {
 
 export function ReaderTapZone({ side, onActivate }: ReaderTapZoneProps) {
   return (
-    <Button
+    <button
       aria-label={side === 'left' ? 'left-zone' : 'right-zone'}
-      variant="ghost"
       className={
         side === 'left'
-          ? 'absolute inset-y-0 left-0 z-10 w-1/2 cursor-e-resize rounded-none bg-transparent hover:bg-transparent focus-visible:ring-0'
-          : 'absolute inset-y-0 right-0 z-10 w-1/2 cursor-w-resize rounded-none bg-transparent hover:bg-transparent focus-visible:ring-0'
+          ? 'absolute inset-y-0 left-0 z-10 w-1/2 cursor-e-resize border-0 bg-transparent p-0 touch-manipulation'
+          : 'absolute inset-y-0 right-0 z-10 w-1/2 cursor-w-resize border-0 bg-transparent p-0 touch-manipulation'
       }
       onClick={onActivate}
       onMouseDown={(event) => event.preventDefault()}
