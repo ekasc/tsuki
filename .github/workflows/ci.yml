@@ -163,3 +163,44 @@ jobs:
             test-results/**
             playwright-report/**
           if-no-files-found: ignore
+
+  deploy-cloudflare:
+    name: deploy-cloudflare
+    runs-on: ubuntu-latest
+    needs:
+      - quality
+      - e2e-desktop
+      - e2e-mobile
+      - visual-regression
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://tsukireader.com
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Cloudflare bundle
+        run: pnpm build:cloudflare
+
+      - name: Deploy to Cloudflare Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
