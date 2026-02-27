@@ -2,19 +2,31 @@ import { Link, createFileRoute } from '@tanstack/react-router'
 import {
   ArrowDownWideNarrow,
   ArrowUpNarrowWide,
+  History,
   LayoutGrid,
   List,
   Plus,
   RefreshCcw,
   X,
 } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import type { WeebcentralSeriesDTO } from '#/lib/contracts'
-import { fetchJson } from '#/lib/http-client'
-import { loadReadingHistory, upsertReadingHistory } from '#/lib/reading-history'
+import { weebcentralSeriesQueryOptions } from '#/lib/query-options'
+import {
+  buildRemoteSeriesSourceUrl,
+  detectRemoteProviderFromSeriesId,
+  remoteProviderLabel,
+} from '#/lib/remote-provider'
+import type { AppRouterContext } from '#/lib/router-context'
+import {
+  clearReadingHistoryForSeries,
+  loadReadingHistory,
+  upsertReadingHistory,
+} from '#/lib/reading-history'
 import { cn } from '#/lib/utils'
 import {
   loadSavedWeebcentralSeries,
@@ -25,13 +37,35 @@ import {
 const createAnyFileRoute = createFileRoute as any
 
 export const Route = createAnyFileRoute('/weebcentral-series/$seriesId')({
+  loader: async ({
+    params,
+    context,
+  }: {
+    params: { seriesId: string }
+    context: AppRouterContext
+  }) => {
+    if (typeof window === 'undefined') {
+      return null
+    }
+
+    return context.queryClient.ensureQueryData(
+      weebcentralSeriesQueryOptions(params.seriesId),
+    )
+  },
+  staleTime: 45_000,
+  preloadStaleTime: 120_000,
+  gcTime: 15 * 60_000,
   component: WeebcentralSeriesPage,
 })
 
 function WeebcentralSeriesPage() {
   const { seriesId } = Route.useParams()
-  const [series, setSeries] = useState<WeebcentralSeriesDTO | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const loaderSeries = Route.useLoaderData() as WeebcentralSeriesDTO | undefined
+  const queryClient = useQueryClient()
+  const [series, setSeries] = useState<WeebcentralSeriesDTO | null>(
+    () => loaderSeries ?? null,
+  )
+  const [isLoading, setIsLoading] = useState(() => !loaderSeries)
   const [error, setError] = useState<string | null>(null)
   const [historyMap, setHistoryMap] = useState<Record<string, boolean>>({})
   const [chapterView, setChapterView] = useState<'list' | 'grid'>('list')
@@ -40,6 +74,8 @@ function WeebcentralSeriesPage() {
   )
   const [chapterQuery, setChapterQuery] = useState('')
   const [isSavedInLibrary, setIsSavedInLibrary] = useState(false)
+  const [isSyncingMetadata, setIsSyncingMetadata] = useState(false)
+  const [syncTimedOut, setSyncTimedOut] = useState(false)
 
   const loadSeries = useCallback(
     async (forceRefresh = false) => {
@@ -47,9 +83,15 @@ function WeebcentralSeriesPage() {
       setError(null)
 
       try {
-        const payload = await fetchJson<WeebcentralSeriesDTO>(
-          `/v1/weebcentral/series?url=${encodeURIComponent(seriesId)}${forceRefresh ? '&force=1' : ''}`,
-        )
+        const queryOptions = weebcentralSeriesQueryOptions(seriesId, {
+          forceRefresh,
+        })
+
+        if (forceRefresh) {
+          await queryClient.invalidateQueries({ queryKey: queryOptions.queryKey })
+        }
+
+        const payload = await queryClient.fetchQuery(queryOptions)
         setSeries(payload)
       } catch (requestError) {
         void requestError
@@ -58,12 +100,19 @@ function WeebcentralSeriesPage() {
         setIsLoading(false)
       }
     },
-    [seriesId],
+    [queryClient, seriesId],
   )
 
   useEffect(() => {
+    if (loaderSeries) {
+      setSeries(loaderSeries)
+      setIsLoading(false)
+      setError(null)
+      return
+    }
+
     void loadSeries()
-  }, [loadSeries])
+  }, [loaderSeries, loadSeries])
 
   useEffect(() => {
     const history = loadReadingHistory().filter(
@@ -84,12 +133,80 @@ function WeebcentralSeriesPage() {
     setIsSavedInLibrary(saved.some((entry) => entry.id === seriesId))
   }, [seriesId])
 
+  const syncSeriesMetadata = useCallback(async () => {
+    setSyncTimedOut(false)
+    setError(null)
+    setIsSyncingMetadata(true)
+
+    let timeoutId: number | undefined
+
+    try {
+      const queryOptions = weebcentralSeriesQueryOptions(seriesId, {
+        forceRefresh: true,
+      })
+
+      await queryClient.invalidateQueries({ queryKey: queryOptions.queryKey })
+
+      const timeoutPromise = new Promise<{ type: 'timeout' }>((resolve) => {
+        timeoutId = window.setTimeout(() => resolve({ type: 'timeout' }), 3_000)
+      })
+      const fetchPromise = queryClient.fetchQuery(queryOptions).then(
+        (payload) => ({ type: 'payload' as const, payload }),
+        (requestError) => ({ type: 'error' as const, requestError }),
+      )
+      const result = await Promise.race([fetchPromise, timeoutPromise])
+
+      if (result.type === 'timeout') {
+        setSyncTimedOut(true)
+        return
+      }
+
+      if (result.type === 'error') {
+        throw result.requestError
+      }
+
+      setSeries(result.payload)
+      setSyncTimedOut(false)
+    } catch (requestError) {
+      void requestError
+      setError('Could not sync metadata right now.')
+    } finally {
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId)
+      }
+      setIsSyncingMetadata(false)
+    }
+  }, [queryClient, seriesId])
+
+  const resetSeriesHistory = useCallback(() => {
+    clearReadingHistoryForSeries({ seriesId, readerRoute: 'weebcentral' })
+    setHistoryMap({})
+  }, [seriesId])
+
   const chapters = useMemo(() => {
     const base = [...(series?.chapters ?? [])].sort(
       (left, right) => left.number - right.number,
     )
     return chapterOrder === 'newest' ? [...base].reverse() : base
   }, [chapterOrder, series?.chapters])
+  const chapterCount = useMemo(
+    () => new Set(chapters.map((chapter) => chapter.id)).size,
+    [chapters],
+  )
+  const sourceProvider = useMemo(
+    () =>
+      series?.provider ??
+      detectRemoteProviderFromSeriesId(series?.id ?? seriesId),
+    [series?.id, series?.provider, seriesId],
+  )
+  const sourceLink = useMemo(
+    () => buildRemoteSeriesSourceUrl(series?.id ?? seriesId, sourceProvider),
+    [series?.id, seriesId, sourceProvider],
+  )
+  const sourceLabel = useMemo(
+    () => remoteProviderLabel(sourceProvider),
+    [sourceProvider],
+  )
   const latestReleaseDate = useMemo(
     () => chapters.find((chapter) => Boolean(chapter.date))?.date ?? null,
     [chapters],
@@ -234,14 +351,14 @@ function WeebcentralSeriesPage() {
                 </p>
               ) : null}
               <div className="mt-4 flex flex-wrap gap-2">
-                <span className="manga-stamp">{chapters.length} chapters</span>
+                <span className="manga-stamp">{chapterCount} chapters</span>
                 <a
-                  href={`https://weebcentral.com/series/${series.id}`}
+                  href={sourceLink}
                   target="_blank"
                   rel="noreferrer"
                   className="manga-stamp underline-offset-2 hover:underline"
                 >
-                  Source: WeebCentral
+                  Source: {sourceLabel}
                 </a>
                 {formattedLatestReleaseDate ? (
                   <span className="manga-stamp">
@@ -255,7 +372,7 @@ function WeebcentralSeriesPage() {
             </div>
           </div>
 
-          <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:justify-end">
+          <div className="flex w-full flex-wrap items-start gap-2 md:w-auto md:justify-end">
             {nextChapter ? (
               <Link
                 to="/weebcentral/$chapterId"
@@ -296,19 +413,50 @@ function WeebcentralSeriesPage() {
                 <Plus className="size-3.5" />
               )}
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="size-9"
-              onClick={() => {
-                void loadSeries(true)
-              }}
-              title="Refresh metadata"
-              aria-label="Refresh metadata"
-            >
-              <RefreshCcw className="size-3.5" />
-            </Button>
+            <div className="flex flex-col items-center gap-1">
+              <div className="relative">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className={cn(
+                    'size-9',
+                    syncTimedOut ? 'text-muted-foreground' : '',
+                  )}
+                  onClick={() => {
+                    void syncSeriesMetadata()
+                  }}
+                  title={
+                    syncTimedOut
+                      ? 'Refresh metadata (sync delayed)'
+                      : 'Refresh metadata'
+                  }
+                  aria-label="Refresh metadata"
+                  disabled={isSyncingMetadata}
+                >
+                  <RefreshCcw
+                    className={cn(
+                      'size-3.5',
+                      isSyncingMetadata ? 'animate-spin' : '',
+                    )}
+                  />
+                </Button>
+                {syncTimedOut ? (
+                  <span className="pointer-events-none absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-muted-foreground/70" />
+                ) : null}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="size-9"
+                onClick={resetSeriesHistory}
+                title="Reset reading history"
+                aria-label="Reset reading history"
+              >
+                <History className="size-3.5" />
+              </Button>
+            </div>
           </div>
         </div>
       </section>

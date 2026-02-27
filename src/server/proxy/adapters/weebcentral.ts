@@ -1,4 +1,5 @@
 import { HttpError } from '#/server/errors'
+import type { RemoteProvider } from '#/lib/remote-provider'
 
 import type { ProxyServerConfig } from '../server'
 import {
@@ -8,7 +9,7 @@ import {
     seriesCache,
 } from '../server'
 import { encodeBase64Url } from '../utils/base64url'
-import { fetchWithSafeRedirects } from '../utils/security'
+import { fetchWithWeebcentralPolicy } from '../utils/upstream-policy'
 
 const CHAPTER_IMAGES_QUERY =
     'is_prev=False&current_page=1&reading_style=long_strip'
@@ -17,6 +18,7 @@ const FULL_CHAPTER_LIST_SUFFIX = '/full-chapter-list'
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/
 
 export type SeriesDTO = {
+    provider?: RemoteProvider
     id: string
     title: string
     author?: string
@@ -31,6 +33,7 @@ export type SeriesDTO = {
 }
 
 export type ChapterDTO = {
+    provider?: RemoteProvider
     seriesId: string
     chapterId: string
     pages: Array<{
@@ -575,6 +578,12 @@ function extractChaptersFromHtml(html: string): ParsedChapter[] {
         sourceIndex += 1
     }
 
+    // Prefer anchor-derived chapters whenever available. Script payloads
+    // can include preview/current entries that inflate the chapter count.
+    if (chapterById.size > 0) {
+        return canonicalizeChapterOrder(Array.from(chapterById.values()))
+    }
+
     const scriptPattern =
         /["']chapter(?:_id)?["']\s*[:=]\s*["']([A-Za-z0-9_-]+)["'][\s\S]{0,120}?["']number["']\s*:\s*([0-9]+(?:\.[0-9]+)?)/gi
 
@@ -639,6 +648,7 @@ function extractImageUrlsFromHtml(html: string, responseUrl: string): string[] {
 
 async function fetchTextWithWeebcentralGuards(
     input: URL | string,
+    config: ProxyServerConfig,
     options: {
         allowedHostnames?: string[]
     } = {},
@@ -646,7 +656,7 @@ async function fetchTextWithWeebcentralGuards(
     text: string
     responseUrl: string
 }> {
-    const response = await fetchWithSafeRedirects(
+    const response = await fetchWithWeebcentralPolicy(
         input,
         {
             method: 'GET',
@@ -656,8 +666,9 @@ async function fetchTextWithWeebcentralGuards(
         },
         {
             allowedHostnames: options.allowedHostnames ?? ['weebcentral.com'],
-            maxRedirects: proxyConfig.imageProxyMaxRedirects,
+            maxRedirects: config.imageProxyMaxRedirects,
         },
+        config,
     )
 
     if (!response.ok) {
@@ -687,7 +698,10 @@ async function resolveSeriesIdFromChapterInput(
         const chapterPageUrl =
             parsedInput.url ??
             new URL(`/chapters/${parsedInput.chapterId}`, config.weebcentralOrigin)
-        const { text } = await fetchTextWithWeebcentralGuards(chapterPageUrl)
+        const { text } = await fetchTextWithWeebcentralGuards(
+            chapterPageUrl,
+            config,
+        )
         const seriesId = extractSeriesIdFromHtml(text)
 
         if (!seriesId) {
@@ -702,7 +716,10 @@ async function resolveSeriesIdFromChapterInput(
             `/chapters/${parsedInput.ambiguousId}`,
             config.weebcentralOrigin,
         )
-        const { text } = await fetchTextWithWeebcentralGuards(chapterPageUrl)
+        const { text } = await fetchTextWithWeebcentralGuards(
+            chapterPageUrl,
+            config,
+        )
         const seriesId = extractSeriesIdFromHtml(text)
 
         if (!seriesId) {
@@ -724,7 +741,10 @@ async function fetchSeriesDtoBySeriesId(
 
     const fetchSeriesPayload = async () => {
         const seriesUrl = new URL(`/series/${seriesId}`, config.weebcentralOrigin)
-        const { text: seriesHtml } = await fetchTextWithWeebcentralGuards(seriesUrl)
+        const { text: seriesHtml } = await fetchTextWithWeebcentralGuards(
+            seriesUrl,
+            config,
+        )
         const chapterListUrl = new URL(
             `/series/${seriesId}${FULL_CHAPTER_LIST_SUFFIX}`,
             config.weebcentralOrigin,
@@ -733,7 +753,10 @@ async function fetchSeriesDtoBySeriesId(
         let chapterListHtml = ''
 
         try {
-            const response = await fetchTextWithWeebcentralGuards(chapterListUrl)
+            const response = await fetchTextWithWeebcentralGuards(
+                chapterListUrl,
+                config,
+            )
             chapterListHtml = response.text
         } catch {
             chapterListHtml = ''
@@ -757,6 +780,7 @@ async function fetchSeriesDtoBySeriesId(
         }
 
         return {
+            provider: 'weebcentral' as const,
             id: seriesId,
             title: extractSeriesTitle(seriesHtml, `Series ${seriesId}`),
             author: extractAuthorFromHtml(seriesHtml),
@@ -767,10 +791,22 @@ async function fetchSeriesDtoBySeriesId(
     }
 
     if (options?.bypassCache) {
-        return fetchSeriesPayload()
+        const freshPayload = await fetchSeriesPayload()
+        seriesCache.set(
+            cacheKey,
+            freshPayload,
+            config.seriesCacheTtlMs,
+            config.seriesCacheStaleTtlMs,
+        )
+        return freshPayload
     }
 
-    return seriesCache.getOrSet(cacheKey, fetchSeriesPayload)
+    return seriesCache.getOrSetWithStaleFallback(
+        cacheKey,
+        fetchSeriesPayload,
+        config.seriesCacheTtlMs,
+        config.seriesCacheStaleTtlMs,
+    )
 }
 
 async function resolveSeriesFromInput(
@@ -875,7 +911,7 @@ async function fetchChapterPages(
         config.weebcentralOrigin,
     )
 
-    const response = await fetchWithSafeRedirects(
+    const response = await fetchWithWeebcentralPolicy(
         chapterImagesUrl,
         {
             method: 'GET',
@@ -887,6 +923,7 @@ async function fetchChapterPages(
             allowedHostnames: config.weebcentralImageHostAllowlist,
             maxRedirects: config.imageProxyMaxRedirects,
         },
+        config,
     )
 
     if (!response.ok) {
@@ -929,17 +966,23 @@ export async function getWeebcentralChapter(
     const resolved = await resolveChapterIdFromInput(input, config)
     const cacheKey = `chapter:${resolved.chapterId}`
 
-    return chapterCache.getOrSet(cacheKey, async () => {
-        const pages = await fetchChapterPages(resolved.chapterId, config)
+    return chapterCache.getOrSetWithStaleFallback(
+        cacheKey,
+        async () => {
+            const pages = await fetchChapterPages(resolved.chapterId, config)
 
-        return {
-            seriesId: resolved.seriesId,
-            chapterId: resolved.chapterId,
-            pages: pages.map((url) => ({
-                url: toProxiedImagePath(url),
-            })),
-        }
-    })
+            return {
+                provider: 'weebcentral' as const,
+                seriesId: resolved.seriesId,
+                chapterId: resolved.chapterId,
+                pages: pages.map((url) => ({
+                    url: toProxiedImagePath(url),
+                })),
+            }
+        },
+        config.chapterCacheTtlMs,
+        config.chapterCacheStaleTtlMs,
+    )
 }
 
 export const __testing = {

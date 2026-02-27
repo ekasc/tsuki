@@ -6,7 +6,6 @@ export const Route = createAnyFileRoute('/v1/weebcentral/chapter')({
   server: {
     handlers: {
       GET: async ({ request }: { request: Request }) => {
-        const { ensureServerReady } = await import('#/server/bootstrap')
         const { jsonResponse, toApiErrorResponse } = await import(
           '#/server/api/http'
         )
@@ -16,9 +15,13 @@ export const Route = createAnyFileRoute('/v1/weebcentral/chapter')({
             '#/server/proxy/routes/weebcentral'
           )
 
-          await ensureServerReady()
           const payload = await getChapterDtoForRequest(request)
-          return jsonResponse(payload)
+          return jsonResponse(payload, {
+            headers: {
+              'Cache-Control':
+                'public, max-age=30, s-maxage=120, stale-while-revalidate=300',
+            },
+          })
         } catch (error) {
           return toApiErrorResponse(error)
         }

@@ -4,6 +4,10 @@
 
 - Full PR gate: `pnpm test:ci`
 - PWA audit (main/nightly parity): `pnpm test:lighthouse`
+- v1 online-release lock checks: `pnpm verify:release:v1`
+
+For the current first-release scope, use:
+- `/Users/ekassinghchhabra/Projects/ts/suki/docs/release-v1-online-checklist.md`
 
 ## CI Workflows
 

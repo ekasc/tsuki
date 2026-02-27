@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 
 const createAnyFileRoute = createFileRoute as any
 import {
@@ -29,8 +30,14 @@ import type {
   SeriesDetail,
   ZoomPreset,
 } from '#/lib/contracts'
-import { fetchJson } from '#/lib/http-client'
+import { setBoundedMapEntry } from '#/lib/bounded-cache'
+import { resolveApiUrl } from '#/lib/http-client'
 import { isLocalSessionChapterAllowed } from '#/lib/local-upload-session'
+import {
+  localChapterQueryOptions,
+  localSeriesQueryOptions,
+} from '#/lib/query-options'
+import type { AppRouterContext } from '#/lib/router-context'
 import { upsertReadingHistory } from '#/lib/reading-history'
 import {
   buildTwoPageSteps,
@@ -44,12 +51,34 @@ import { useImagePrefetch } from '#/hooks/use-image-prefetch'
 import { useTouchDevice, useTouchPortrait } from '#/hooks/use-touch-portrait'
 
 export const Route = createAnyFileRoute('/reader/$chapterId')({
+  loader: async ({
+    params,
+    context,
+  }: {
+    params: { chapterId: string }
+    context: AppRouterContext
+  }) => {
+    if (typeof window === 'undefined') {
+      return null
+    }
+
+    return context.queryClient.ensureQueryData(
+      localChapterQueryOptions(params.chapterId),
+    )
+  },
+  staleTime: 120_000,
+  preloadStaleTime: 240_000,
+  gcTime: 15 * 60_000,
   component: ReaderPage,
 })
 
 const prefetchedLocalChapterPayloads = new Map<string, ChapterPayload>()
 const prefetchedLocalSeriesDetails = new Map<string, SeriesDetail>()
+const inFlightLocalChapterPrefetches = new Set<string>()
 const optimisticLocalProgress = new Map<string, ChapterProgress>()
+const PREFETCHED_LOCAL_CHAPTER_LIMIT = 48
+const PREFETCHED_LOCAL_SERIES_LIMIT = 48
+const OPTIMISTIC_PROGRESS_LIMIT = 240
 const LOCAL_READER_UI_PREFS_KEY = 'tsuki-local-reader-ui.v1'
 const LEGACY_LOCAL_READER_UI_PREFS_KEY = 'suki-local-reader-ui.v1'
 const LOCAL_READER_SERIES_PRESETS_KEY = 'tsuki-local-reader-series-presets.v1'
@@ -84,6 +113,21 @@ interface ReaderUiPrefs {
   uiAutoHideMs: number
   magnifierSize: number
   magnifierZoom: number
+}
+
+const DEFAULT_LOCAL_READER_UI_PREFS: ReaderUiPrefs = {
+  mode: 'single',
+  zoomPreset: 'fit-width',
+  sidebarOpen: false,
+  doublePageOffset: false,
+  preloadAhead: 8,
+  preloadBehind: 4,
+  prefetchConcurrency: 2,
+  nextChapterPrefetchThreshold: 8,
+  nextChapterWarmPages: 4,
+  uiAutoHideMs: 1400,
+  magnifierSize: 220,
+  magnifierZoom: 2.4,
 }
 
 interface ReaderSeriesPreset {
@@ -453,6 +497,8 @@ function resolveAdjacentChapterIds(series: SeriesDetail, chapterId: string) {
 function ReaderPage() {
   const params = Route.useParams()
   const navigate = useNavigate()
+  const loaderChapterPayload = Route.useLoaderData() as ChapterPayload | undefined
+  const queryClient = useQueryClient()
 
   const [chapterPayload, setChapterPayload] = useState<ChapterPayload | null>(
     null,
@@ -466,94 +512,50 @@ function ReaderPage() {
   const [seriesChapters, setSeriesChapters] = useState<
     SeriesDetail['chapters']
   >([])
-
-  const [mode, setMode] = useState<ReaderMode>(
+  const initialUiPrefs = useMemo(
     () =>
       loadReaderUiPrefs(
         LOCAL_READER_UI_PREFS_KEY,
         LEGACY_LOCAL_READER_UI_PREFS_KEY,
-      )?.mode ?? 'single',
+      ) ?? DEFAULT_LOCAL_READER_UI_PREFS,
+    [],
   )
+
+  const [mode, setMode] = useState<ReaderMode>(initialUiPrefs.mode)
   const [zoomPreset, setZoomPreset] = useState<ZoomPreset>(
-    () =>
-      loadReaderUiPrefs(
-        LOCAL_READER_UI_PREFS_KEY,
-        LEGACY_LOCAL_READER_UI_PREFS_KEY,
-      )?.zoomPreset ?? 'fit-width',
+    initialUiPrefs.zoomPreset,
   )
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(
-    () =>
-      loadReaderUiPrefs(
-        LOCAL_READER_UI_PREFS_KEY,
-        LEGACY_LOCAL_READER_UI_PREFS_KEY,
-      )?.sidebarOpen ?? false,
+    initialUiPrefs.sidebarOpen,
   )
   const [doublePageOffset, setDoublePageOffset] = useState<boolean>(
-    () =>
-      loadReaderUiPrefs(
-        LOCAL_READER_UI_PREFS_KEY,
-        LEGACY_LOCAL_READER_UI_PREFS_KEY,
-      )?.doublePageOffset ?? false,
+    initialUiPrefs.doublePageOffset,
   )
   const [settingsTab, setSettingsTab] = useState<'basic' | 'advanced'>('basic')
   const [mobileSettingsMinimized, setMobileSettingsMinimized] = useState(false)
   const [preloadAhead, setPreloadAhead] = useState<number>(
-    () =>
-      loadReaderUiPrefs(
-        LOCAL_READER_UI_PREFS_KEY,
-        LEGACY_LOCAL_READER_UI_PREFS_KEY,
-      )?.preloadAhead ?? 8,
+    initialUiPrefs.preloadAhead,
   )
   const [preloadBehind, setPreloadBehind] = useState<number>(
-    () =>
-      loadReaderUiPrefs(
-        LOCAL_READER_UI_PREFS_KEY,
-        LEGACY_LOCAL_READER_UI_PREFS_KEY,
-      )?.preloadBehind ?? 4,
+    initialUiPrefs.preloadBehind,
   )
   const [prefetchConcurrency, setPrefetchConcurrency] = useState<number>(
-    () =>
-      loadReaderUiPrefs(
-        LOCAL_READER_UI_PREFS_KEY,
-        LEGACY_LOCAL_READER_UI_PREFS_KEY,
-      )?.prefetchConcurrency ?? 2,
+    initialUiPrefs.prefetchConcurrency,
   )
   const [nextChapterPrefetchThreshold, setNextChapterPrefetchThreshold] =
-    useState<number>(
-      () =>
-        loadReaderUiPrefs(
-          LOCAL_READER_UI_PREFS_KEY,
-          LEGACY_LOCAL_READER_UI_PREFS_KEY,
-        )?.nextChapterPrefetchThreshold ?? 8,
-    )
+    useState<number>(initialUiPrefs.nextChapterPrefetchThreshold)
   const [nextChapterWarmPages, setNextChapterWarmPages] = useState<number>(
-    () =>
-      loadReaderUiPrefs(
-        LOCAL_READER_UI_PREFS_KEY,
-        LEGACY_LOCAL_READER_UI_PREFS_KEY,
-      )?.nextChapterWarmPages ?? 4,
+    initialUiPrefs.nextChapterWarmPages,
   )
   const [uiAutoHideMs, setUiAutoHideMs] = useState<number>(
-    () =>
-      loadReaderUiPrefs(
-        LOCAL_READER_UI_PREFS_KEY,
-        LEGACY_LOCAL_READER_UI_PREFS_KEY,
-      )?.uiAutoHideMs ?? 1400,
+    initialUiPrefs.uiAutoHideMs,
   )
   const [magnifierEnabled, setMagnifierEnabled] = useState(false)
   const [magnifierSize, setMagnifierSize] = useState<number>(
-    () =>
-      loadReaderUiPrefs(
-        LOCAL_READER_UI_PREFS_KEY,
-        LEGACY_LOCAL_READER_UI_PREFS_KEY,
-      )?.magnifierSize ?? 220,
+    initialUiPrefs.magnifierSize,
   )
   const [magnifierZoom, setMagnifierZoom] = useState<number>(
-    () =>
-      loadReaderUiPrefs(
-        LOCAL_READER_UI_PREFS_KEY,
-        LEGACY_LOCAL_READER_UI_PREFS_KEY,
-      )?.magnifierZoom ?? 2.4,
+    initialUiPrefs.magnifierZoom,
   )
   const [showReaderChrome, setShowReaderChrome] = useState(false)
   const [focusMode, setFocusMode] = useState(false)
@@ -603,15 +605,17 @@ function ReaderPage() {
     lock: 'x' | 'y' | null
   } | null>(null)
   const suppressTapRef = useRef(false)
-  const swipeCommitTimeoutRef = useRef<number | null>(null)
   const swipeTrackRef = useRef<HTMLDivElement>(null)
   const swipeOffsetRef = useRef(0)
   const swipeDraggingRef = useRef(false)
-  const pagerSettleTimeoutRef = useRef<number | null>(null)
   const isTouchDevice = useTouchDevice()
   const isTouchPortrait = useTouchPortrait()
 
   const pages = chapterPayload?.manifest.pages ?? []
+  const pageByIndex = useMemo(
+    () => new Map(pages.map((page) => [page.pageIndex, page] as const)),
+    [pages],
+  )
   const chapterId = chapterPayload?.manifest.chapterId ?? params.chapterId
 
   const twoPageSteps = useMemo(
@@ -670,7 +674,7 @@ function ReaderPage() {
     }
 
     const spreadUnit = renderedUnits.find((unit) => {
-      const page = pages.find((entry) => entry.pageIndex === unit.pageIndex)
+      const page = pageByIndex.get(unit.pageIndex)
       if (!page) {
         return false
       }
@@ -679,7 +683,7 @@ function ReaderPage() {
     })
 
     return spreadUnit ? [spreadUnit] : renderedUnits
-  }, [activeStep?.kind, isTouchPortrait, mode, pages, renderedUnits])
+  }, [activeStep?.kind, isTouchPortrait, mode, pageByIndex, renderedUnits])
 
   const currentRenderUnits = useMemo(
     () =>
@@ -786,26 +790,36 @@ function ReaderPage() {
       return
     }
 
+    const remainingPages = maxPageIndex - currentTargetPageIndex
     const shouldPrefetchNextChapter =
-      currentTargetPageIndex >= maxPageIndex - nextChapterPrefetchThreshold
+      remainingPages <= nextChapterPrefetchThreshold
     if (!shouldPrefetchNextChapter) {
       return
     }
 
-    if (prefetchedLocalChapterPayloads.has(nextChapterId)) {
+    if (
+      prefetchedLocalChapterPayloads.has(nextChapterId) ||
+      inFlightLocalChapterPrefetches.has(nextChapterId)
+    ) {
       return
     }
 
     const controller = new AbortController()
+    inFlightLocalChapterPrefetches.add(nextChapterId)
 
     void (async () => {
       try {
-        const payload = await fetchJson<ChapterPayload>(
-          `/api/chapter/${nextChapterId}`,
-          { signal: controller.signal },
-        )
+        const chapterOptions = localChapterQueryOptions(nextChapterId)
+        const payload =
+          queryClient.getQueryData<ChapterPayload>(chapterOptions.queryKey) ??
+          (await queryClient.fetchQuery(chapterOptions))
 
-        prefetchedLocalChapterPayloads.set(nextChapterId, payload)
+        setBoundedMapEntry(
+          prefetchedLocalChapterPayloads,
+          nextChapterId,
+          payload,
+          PREFETCHED_LOCAL_CHAPTER_LIMIT,
+        )
 
         const warmCount = Math.min(
           nextChapterWarmPages,
@@ -823,7 +837,7 @@ function ReaderPage() {
             cursor += 1
 
             try {
-              await fetch(`/api/image/${nextChapterId}/${index}`, {
+              await fetch(resolveApiUrl(`/api/image/${nextChapterId}/${index}`), {
                 signal: controller.signal,
                 cache: 'force-cache',
               })
@@ -836,6 +850,8 @@ function ReaderPage() {
         await Promise.all(Array.from({ length: workerCount }, warmWorker))
       } catch {
         // Ignore prefetch failures; regular navigation still works.
+      } finally {
+        inFlightLocalChapterPrefetches.delete(nextChapterId)
       }
     })()
 
@@ -850,7 +866,25 @@ function ReaderPage() {
     nextChapterId,
     pages.length,
     prefetchConcurrency,
+    queryClient,
   ])
+
+  useEffect(() => {
+    if (!loaderChapterPayload) {
+      return
+    }
+
+    if (loaderChapterPayload.manifest.chapterId !== params.chapterId) {
+      return
+    }
+
+    setBoundedMapEntry(
+      prefetchedLocalChapterPayloads,
+      params.chapterId,
+      loaderChapterPayload,
+      PREFETCHED_LOCAL_CHAPTER_LIMIT,
+    )
+  }, [loaderChapterPayload, params.chapterId])
 
   const loadChapter = useCallback(async () => {
     if (
@@ -863,8 +897,13 @@ function ReaderPage() {
       return
     }
 
-    const cachedPayload = prefetchedLocalChapterPayloads.get(params.chapterId)
-    if (cachedPayload) {
+    const chapterOptions = localChapterQueryOptions(params.chapterId)
+    const prefetchedPayload = prefetchedLocalChapterPayloads.get(params.chapterId)
+    const cachedPayload =
+      prefetchedPayload ??
+      queryClient.getQueryData<ChapterPayload>(chapterOptions.queryKey)
+
+    if (prefetchedPayload) {
       prefetchedLocalChapterPayloads.delete(params.chapterId)
     }
 
@@ -916,17 +955,24 @@ function ReaderPage() {
 
     try {
       const payload =
-        cachedPayload ??
-        (await fetchJson<ChapterPayload>(`/api/chapter/${params.chapterId}`))
+        cachedPayload ?? (await queryClient.fetchQuery(chapterOptions))
       if (!cachedPayload) {
         applyPayloadState(payload)
       }
 
-      const cachedSeries = prefetchedLocalSeriesDetails.get(
-        payload.manifest.seriesId,
-      )
+      const seriesOptions = localSeriesQueryOptions(payload.manifest.seriesId)
+      const cachedSeries =
+        prefetchedLocalSeriesDetails.get(payload.manifest.seriesId) ??
+        queryClient.getQueryData<SeriesDetail>(seriesOptions.queryKey)
 
       if (cachedSeries) {
+        setBoundedMapEntry(
+          prefetchedLocalSeriesDetails,
+          payload.manifest.seriesId,
+          cachedSeries,
+          PREFETCHED_LOCAL_SERIES_LIMIT,
+        )
+
         const adjacent = resolveAdjacentChapterIds(
           cachedSeries,
           payload.manifest.chapterId,
@@ -940,10 +986,13 @@ function ReaderPage() {
         try {
           const series =
             cachedSeries ??
-            (await fetchJson<SeriesDetail>(
-              `/api/series/${payload.manifest.seriesId}`,
-            ))
-          prefetchedLocalSeriesDetails.set(payload.manifest.seriesId, series)
+            (await queryClient.fetchQuery(seriesOptions))
+          setBoundedMapEntry(
+            prefetchedLocalSeriesDetails,
+            payload.manifest.seriesId,
+            series,
+            PREFETCHED_LOCAL_SERIES_LIMIT,
+          )
 
           const adjacent = resolveAdjacentChapterIds(
             series,
@@ -964,7 +1013,7 @@ function ReaderPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [params.chapterId])
+  }, [params.chapterId, queryClient])
 
   useEffect(() => {
     void loadChapter()
@@ -1074,17 +1123,22 @@ function ReaderPage() {
     }
 
     const timeout = setTimeout(() => {
-      optimisticLocalProgress.set(chapterId, {
+      setBoundedMapEntry(
+        optimisticLocalProgress,
         chapterId,
-        pageIndex: currentTargetPageIndex,
-        stepIndex: currentStepIndex,
-        mode,
-        direction: 'rtl',
-        zoomPreset,
-        updatedAt: Date.now(),
-      })
+        {
+          chapterId,
+          pageIndex: currentTargetPageIndex,
+          stepIndex: currentStepIndex,
+          mode,
+          direction: 'rtl',
+          zoomPreset,
+          updatedAt: Date.now(),
+        },
+        OPTIMISTIC_PROGRESS_LIMIT,
+      )
 
-      void fetch(`/api/chapter/${chapterId}/progress`, {
+      void fetch(resolveApiUrl(`/api/chapter/${chapterId}/progress`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1142,7 +1196,7 @@ function ReaderPage() {
         return
       }
 
-      void fetch(`/api/chapter/${chapterId}/progress`, {
+      void fetch(resolveApiUrl(`/api/chapter/${chapterId}/progress`), {
         keepalive: true,
         method: 'PUT',
         headers: {
@@ -1158,15 +1212,20 @@ function ReaderPage() {
         }),
       })
 
-      optimisticLocalProgress.set(chapterId, {
+      setBoundedMapEntry(
+        optimisticLocalProgress,
         chapterId,
-        pageIndex,
-        stepIndex,
-        mode,
-        direction: 'rtl',
-        zoomPreset,
-        updatedAt: Date.now(),
-      })
+        {
+          chapterId,
+          pageIndex,
+          stepIndex,
+          mode,
+          direction: 'rtl',
+          zoomPreset,
+          updatedAt: Date.now(),
+        },
+        OPTIMISTIC_PROGRESS_LIMIT,
+      )
 
       upsertReadingHistory({
         chapterId,
@@ -1588,12 +1647,6 @@ function ReaderPage() {
       swipeDraggingRef.current = false
       swipeOffsetRef.current = 0
 
-      // Cancel any pending commit from a previous swipe so fast-swipes work
-      if (swipeCommitTimeoutRef.current !== null) {
-        window.clearTimeout(swipeCommitTimeoutRef.current)
-        swipeCommitTimeoutRef.current = null
-      }
-
       if (swipeTrackRef.current) {
         swipeTrackRef.current.style.transition = 'none'
         swipeTrackRef.current.style.transform = 'translate3d(0px, 0, 0)'
@@ -1726,15 +1779,13 @@ function ReaderPage() {
         return
       }
 
-      swipeOffsetRef.current = commit === 'next' ? width : -width
+      swipeOffsetRef.current = 0
       if (swipeTrackRef.current) {
-        swipeTrackRef.current.style.transition =
-          'transform 160ms cubic-bezier(0.22, 0.78, 0.16, 1)'
-        swipeTrackRef.current.style.transform = `translate3d(${swipeOffsetRef.current}px, 0, 0)`
+        swipeTrackRef.current.style.transition = 'none'
+        swipeTrackRef.current.style.transform = 'translate3d(0px, 0, 0)'
       }
 
-      // Navigate immediately — the re-centering effect will reset the transform.
-      // No timeout delay so rapid swipes aren't blocked.
+      // Commit immediately and let page-motion animate content swap.
       if (commit === 'next') {
         goNext()
       } else {
@@ -1758,14 +1809,14 @@ function ReaderPage() {
   const renderUnitsForPaging = useCallback(
     (units: ReadonlyArray<RenderUnit>, keyPrefix: string) =>
       units.map((unit, slotIndex) => {
-        const page = pages.find((entry) => entry.pageIndex === unit.pageIndex)
+        const page = pageByIndex.get(unit.pageIndex)
         if (!page) {
           return null
         }
 
         return (
           <PagePane
-            key={`${keyPrefix}-${slotIndex}-${unit.type === 'half' ? unit.half : unit.type === 'page' && 'crop' in unit ? unit.crop : 'page'}-${unit.pageIndex}`}
+            key={`${keyPrefix}-${slotIndex}`}
             chapterId={chapterId}
             unit={unit}
             page={page}
@@ -1776,7 +1827,7 @@ function ReaderPage() {
           />
         )
       }),
-    [chapterId, isSinglePageTouchView, pages, zoomPreset],
+    [chapterId, isSinglePageTouchView, pageByIndex, zoomPreset],
   )
 
   useEffect(() => {
@@ -1786,11 +1837,6 @@ function ReaderPage() {
     if (swipeTrackRef.current) {
       swipeTrackRef.current.style.transition = 'none'
       swipeTrackRef.current.style.transform = 'translate3d(0px, 0, 0)'
-    }
-
-    if (pagerSettleTimeoutRef.current !== null) {
-      window.clearTimeout(pagerSettleTimeoutRef.current)
-      pagerSettleTimeoutRef.current = null
     }
   }, [currentPageIndex, currentSingleStepIndex, currentStepIndex, mode])
 
@@ -2021,14 +2067,6 @@ function ReaderPage() {
 
       if (pageMotionTimeoutRef.current !== null) {
         window.clearTimeout(pageMotionTimeoutRef.current)
-      }
-
-      if (swipeCommitTimeoutRef.current !== null) {
-        window.clearTimeout(swipeCommitTimeoutRef.current)
-      }
-
-      if (pagerSettleTimeoutRef.current !== null) {
-        window.clearTimeout(pagerSettleTimeoutRef.current)
       }
     },
     [],

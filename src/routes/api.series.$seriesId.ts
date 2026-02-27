@@ -11,6 +11,9 @@ export const Route = createAnyFileRoute('/api/series/$seriesId')({
         )
 
         try {
+          const { assertLocalLibraryEnabled } = await import('#/server/runtime')
+          assertLocalLibraryEnabled()
+
           const { ensureServerReady } = await import('#/server/bootstrap')
           const { getSeriesDetail } = await import('#/server/db/repository')
           const { HttpError } = await import('#/server/errors')
@@ -33,6 +36,9 @@ export const Route = createAnyFileRoute('/api/series/$seriesId')({
         )
 
         try {
+          const { assertLocalLibraryEnabled } = await import('#/server/runtime')
+          assertLocalLibraryEnabled()
+
           const { ensureServerReady } = await import('#/server/bootstrap')
           const { deleteSeriesById, getSeriesDetail } = await import(
             '#/server/db/repository'

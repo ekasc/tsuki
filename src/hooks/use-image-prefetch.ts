@@ -1,6 +1,9 @@
 import { useEffect } from 'react'
+import { addBoundedSetEntry } from '#/lib/bounded-cache'
+import { resolveApiUrl } from '#/lib/http-client'
 
 const prefetched = new Set<string>()
+const PREFETCH_URL_CACHE_LIMIT = 1200
 
 interface PrefetchOptions {
   chapterId: string
@@ -40,7 +43,7 @@ export function useImagePrefetch({
     }
 
     const urls = targets
-      .map((pageIndex) => `/api/image/${chapterId}/${pageIndex}`)
+      .map((pageIndex) => resolveApiUrl(`/api/image/${chapterId}/${pageIndex}`))
       .filter((url) => !prefetched.has(url))
 
     if (urls.length === 0) {
@@ -61,7 +64,7 @@ export function useImagePrefetch({
             signal: controller.signal,
             cache: 'force-cache',
           })
-          prefetched.add(url)
+          addBoundedSetEntry(prefetched, url, PREFETCH_URL_CACHE_LIMIT)
         } catch {
           // Ignore aborted/failed prefetches.
         }

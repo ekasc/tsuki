@@ -11,6 +11,9 @@ export const Route = createAnyFileRoute('/api/chapter/$chapterId')({
         )
 
         try {
+          const { assertLocalLibraryEnabled } = await import('#/server/runtime')
+          assertLocalLibraryEnabled()
+
           const { ensureServerReady } = await import('#/server/bootstrap')
           const { getChapterPayload } = await import('#/server/db/repository')
           const { HttpError } = await import('#/server/errors')

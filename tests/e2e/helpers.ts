@@ -2,23 +2,43 @@ import { expect, type Page } from '@playwright/test'
 
 export type ThemeMode = 'light' | 'dark' | 'paper'
 
+interface PrimeStorageOptions {
+  theme?: ThemeMode
+  localStorage?: Record<string, string>
+}
+
 interface LibrarySeriesRecord {
   id: string
   source: string
   title: string
 }
 
-export async function primeStorage(page: Page, theme?: ThemeMode) {
+export async function primeStorage(
+  page: Page,
+  options?: ThemeMode | PrimeStorageOptions,
+) {
+  const normalizedOptions: PrimeStorageOptions =
+    typeof options === 'string' ? { theme: options } : (options ?? {})
+
   await page.addInitScript(
-    ({ selectedTheme }) => {
+    ({ selectedTheme, initialLocalStorage }) => {
       window.localStorage.clear()
       window.sessionStorage.clear()
 
       if (selectedTheme) {
         window.localStorage.setItem('tsuki-theme-mode.v1', selectedTheme)
       }
+
+      if (initialLocalStorage) {
+        for (const [key, value] of Object.entries(initialLocalStorage)) {
+          window.localStorage.setItem(key, value)
+        }
+      }
     },
-    { selectedTheme: theme ?? null },
+    {
+      selectedTheme: normalizedOptions.theme ?? null,
+      initialLocalStorage: normalizedOptions.localStorage ?? null,
+    },
   )
 }
 
@@ -54,6 +74,7 @@ function isRetryableSeriesOpenError(error: unknown) {
   return (
     isNavigationInterruptionError(error) ||
     error.name === 'TimeoutError' ||
+    error.message.includes('net::ERR_ABORTED') ||
     error.message.includes('Series page returned error state')
   )
 }

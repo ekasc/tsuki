@@ -1,3 +1,5 @@
+import type { RemoteProvider } from './remote-provider'
+
 export type ConnectorSource = 'demo' | 'local-upload' | 'custom-stub'
 
 export interface LibrarySeries {
@@ -82,6 +84,7 @@ export interface ReadingHistoryItem {
 }
 
 export interface WeebcentralSeriesDTO {
+  provider?: RemoteProvider
   id: string
   title: string
   author?: string
@@ -96,6 +99,7 @@ export interface WeebcentralSeriesDTO {
 }
 
 export interface WeebcentralChapterDTO {
+  provider?: RemoteProvider
   seriesId: string
   chapterId: string
   pages: Array<{

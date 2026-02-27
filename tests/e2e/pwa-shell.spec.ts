@@ -18,6 +18,9 @@ test('pwa shell includes manifest and Apple web app metadata', async ({
     page.locator('link[rel="manifest"][href="/manifest.json"]'),
   ).toHaveCount(1)
   await expect(
+    page.locator('meta[name="mobile-web-app-capable"][content="yes"]'),
+  ).toHaveCount(1)
+  await expect(
     page.locator('meta[name="apple-mobile-web-app-capable"][content="yes"]'),
   ).toHaveCount(1)
   await expect(

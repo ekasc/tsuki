@@ -12,7 +12,6 @@ export const Route = createAnyFileRoute('/v1/image/$b64')({
         request: Request
         params: { b64: string }
       }) => {
-        const { ensureServerReady } = await import('#/server/bootstrap')
         const { toApiErrorResponse } = await import('#/server/api/http')
 
         try {
@@ -20,12 +19,11 @@ export const Route = createAnyFileRoute('/v1/image/$b64')({
             '#/server/proxy/routes/imageProxy'
           )
 
-          await ensureServerReady()
           const requestUrl = new URL(request.url)
           const cropRaw = requestUrl.searchParams.get('crop')
           const crop = cropRaw === 'left' || cropRaw === 'right' ? cropRaw : null
 
-          return await proxyImageByEncodedUrl(params.b64, { crop })
+          return await proxyImageByEncodedUrl(request, params.b64, { crop })
         } catch (error) {
           return toApiErrorResponse(error)
         }

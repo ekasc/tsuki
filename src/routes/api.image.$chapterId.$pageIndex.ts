@@ -32,6 +32,9 @@ export const Route = createAnyFileRoute('/api/image/$chapterId/$pageIndex')({
         const { toApiErrorResponse } = await import('#/server/api/http')
 
         try {
+          const { assertLocalLibraryEnabled } = await import('#/server/runtime')
+          assertLocalLibraryEnabled()
+
           const { ensureServerReady } = await import('#/server/bootstrap')
           const { resolveImageAsset } = await import('#/server/image-service')
 

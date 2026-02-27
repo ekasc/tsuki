@@ -7,7 +7,7 @@ Tsuki is a web manga reader focused on fast reading, RTL-first navigation, and a
 - RTL manga reading with `single`, `double`, and `scroll` modes.
 - Desktop reader controls with keyboard shortcuts, zoom modes, and magnifier.
 - Reading progress + history persistence per chapter.
-- Content ingestion from local archives (`.cbz` / `.zip`) and remote chapter flows.
+- Online-first chapter reading flow with WeebCentral integration.
 
 ## Quick Start
 
@@ -18,7 +18,27 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+## Deploy (Cloudflare)
+
+```bash
+pnpm deploy:cloudflare:dry
+pnpm deploy:cloudflare
+```
+
+This deploys a single Cloudflare Worker that serves the app and API routes.
+Default Cloudflare mode is online-reader focused (`TSUKI_LOCAL_LIBRARY_ENABLED=0`), so local file upload/library APIs are disabled.
+
+If you split frontend and backend:
+- Build frontend with `VITE_API_BASE_URL=https://your-backend-origin`.
+- Run backend where Node native modules are available and set `TSUKI_LOCAL_LIBRARY_ENABLED=1` there.
+
 ## Testing
+
+Run the v1 online release lock checks:
+
+```bash
+pnpm verify:release:v1
+```
 
 Run the full local ship gate:
 
@@ -37,6 +57,8 @@ If you intentionally changed reader visuals, update snapshots in a dedicated PR:
 ```bash
 pnpm exec playwright test tests/e2e/visual-reader.spec.ts --update-snapshots
 ```
+
+Release checklist: `/Users/ekassinghchhabra/Projects/ts/suki/docs/release-v1-online-checklist.md`
 
 ## Contributing
 

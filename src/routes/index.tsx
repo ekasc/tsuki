@@ -1,19 +1,14 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 
 const createAnyFileRoute = createFileRoute as any
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Button } from '#/components/ui/button'
-import { FilePickerButton } from '#/components/ui/file-picker-button'
 import { Input } from '#/components/ui/input'
-import {
-  isLocalSessionChapterAllowed,
-  registerLocalSessionUpload,
-} from '#/lib/local-upload-session'
 import type { ReadingHistoryItem, WeebcentralSeriesDTO } from '#/lib/contracts'
-import { fetchJson } from '#/lib/http-client'
+import { weebcentralSeriesQueryOptions } from '#/lib/query-options'
 import { loadReadingHistory } from '#/lib/reading-history'
-import { cn } from '#/lib/utils'
 
 const HOME_ONBOARDING_KEY = 'tsuki-home-onboarding-dismissed.v1'
 import {
@@ -25,9 +20,6 @@ export const Route = createAnyFileRoute('/')({ component: LibraryPage })
 
 function LibraryPage() {
   const [history, setHistory] = useState<ReadingHistoryItem[]>([])
-  const [isUploading, setIsUploading] = useState(false)
-  const [isDragging, setIsDragging] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [remoteInput, setRemoteInput] = useState('')
   const [isRemoteLoading, setIsRemoteLoading] = useState(false)
   const [remoteError, setRemoteError] = useState<string | null>(null)
@@ -36,6 +28,7 @@ function LibraryPage() {
   >([])
   const [showOnboardingHint, setShowOnboardingHint] = useState(false)
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const dismissOnboardingHint = useCallback(() => {
     setShowOnboardingHint(false)
@@ -46,13 +39,7 @@ function LibraryPage() {
   }, [])
 
   const refreshSideData = useCallback(() => {
-    setHistory(
-      loadReadingHistory().filter(
-        (item) =>
-          item.readerRoute === 'weebcentral' ||
-          isLocalSessionChapterAllowed(item.chapterId),
-      ),
-    )
+    setHistory(loadReadingHistory().filter((item) => item.readerRoute === 'weebcentral'))
     setSavedRemoteSeries(loadSavedWeebcentralSeries())
   }, [])
 
@@ -81,55 +68,11 @@ function LibraryPage() {
     setShowOnboardingHint(!dismissed)
   }, [])
 
-  const uploadArchive = useCallback(
-    async (archive: File) => {
-      if (!archive) {
-        return
-      }
-
-      setIsUploading(true)
-      setError(null)
-
-      try {
-        const formData = new FormData()
-        formData.append('archive', archive)
-
-        const response = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        })
-
-        if (!response.ok) {
-          const payload = (await response.json()) as { error?: string }
-          throw new Error(payload.error ?? 'Upload failed')
-        }
-
-        const payload = (await response.json()) as {
-          seriesId: string
-          chapterId: string
-        }
-
-        registerLocalSessionUpload(payload)
-        void navigate({
-          to: '/reader/$chapterId',
-          params: { chapterId: payload.chapterId },
-        })
-        dismissOnboardingHint()
-      } catch (uploadError) {
-        void uploadError
-        setError('Could not upload that file. Please try another .cbz or .zip.')
-      } finally {
-        setIsUploading(false)
-      }
-    },
-    [dismissOnboardingHint, navigate],
-  )
-
   const loadRemoteSeries = useCallback(async () => {
     const inputValue = remoteInput.trim()
 
     if (inputValue.length === 0) {
-      setRemoteError('Paste a WeebCentral link first')
+      setRemoteError('Paste an online series link first')
       return
     }
 
@@ -137,8 +80,8 @@ function LibraryPage() {
     setRemoteError(null)
 
     try {
-      const payload = await fetchJson<WeebcentralSeriesDTO>(
-        `/v1/weebcentral/series?url=${encodeURIComponent(inputValue)}`,
+      const payload = await queryClient.fetchQuery(
+        weebcentralSeriesQueryOptions(inputValue),
       )
       dismissOnboardingHint()
       void navigate({
@@ -153,7 +96,7 @@ function LibraryPage() {
     } finally {
       setIsRemoteLoading(false)
     }
-  }, [dismissOnboardingHint, navigate, remoteInput])
+  }, [dismissOnboardingHint, navigate, queryClient, remoteInput])
 
   const removeRemoteSeriesFromLibrary = useCallback((seriesId: string) => {
     removeSavedWeebcentralSeries(seriesId)
@@ -168,15 +111,10 @@ function LibraryPage() {
     if (!topHistory) {
       return null
     }
-
-    if (topHistory.readerRoute === 'weebcentral') {
-      const remoteMatch = savedRemoteSeries.find(
-        (entry) => entry.id === topHistory.seriesId,
-      )
-      return remoteMatch?.coverUrl ?? null
-    }
-
-    return `/api/image/${topHistory.chapterId}/0?thumb=1`
+    const remoteMatch = savedRemoteSeries.find(
+      (entry) => entry.id === topHistory.seriesId,
+    )
+    return remoteMatch?.coverUrl ?? null
   }, [savedRemoteSeries, topHistory])
 
   const recentSeriesCards = useMemo(() => {
@@ -184,8 +122,11 @@ function LibraryPage() {
 
     return history
       .filter((item) => {
-        const route = item.readerRoute ?? 'local'
-        const key = `${route}:${item.seriesId}`
+        if (item.readerRoute !== 'weebcentral') {
+          return false
+        }
+
+        const key = item.seriesId
         if (seen.has(key)) {
           return false
         }
@@ -194,32 +135,16 @@ function LibraryPage() {
       })
       .slice(0, 6)
       .map((item) => {
-        const route = item.readerRoute ?? 'local'
-
-        if (route === 'weebcentral') {
-          const remoteMatch = savedRemoteSeries.find(
-            (entry) => entry.id === item.seriesId,
-          )
-
-          return {
-            key: `${route}:${item.seriesId}`,
-            route,
-            chapterId: item.chapterId,
-            seriesId: item.seriesId,
-            seriesTitle: item.seriesTitle ?? remoteMatch?.title ?? 'Series',
-            chapterTitle: item.chapterTitle,
-            coverUrl: remoteMatch?.coverUrl ?? null,
-          }
-        }
+        const remoteMatch = savedRemoteSeries.find(
+          (entry) => entry.id === item.seriesId,
+        )
 
         return {
-          key: `${route}:${item.seriesId}`,
-          route,
-          chapterId: item.chapterId,
+          key: `remote:${item.seriesId}`,
           seriesId: item.seriesId,
-          seriesTitle: item.seriesTitle ?? 'Uploaded manga',
+          seriesTitle: item.seriesTitle ?? remoteMatch?.title ?? 'Series',
           chapterTitle: item.chapterTitle,
-          coverUrl: `/api/image/${item.chapterId}/0?thumb=1`,
+          coverUrl: remoteMatch?.coverUrl ?? null,
         }
       })
   }, [history, savedRemoteSeries])
@@ -230,42 +155,32 @@ function LibraryPage() {
         className="exp-hero animate-enter"
         style={{ animationDelay: '20ms' }}
       >
-        <span className="issue-label">Start here</span>
+        <span className="issue-label">Library</span>
         <div className="mt-3 grid gap-4 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
           <div>
             <h1 className="manga-title max-w-4xl text-3xl font-semibold leading-tight text-foreground md:text-5xl">
               {hasHistory
-                ? 'Welcome back. Keep reading.'
-                : 'Read manga without the noise'}
+                ? 'Continue reading'
+                : 'Read manga'}
             </h1>
             <p className="manga-subtitle mt-3 max-w-2xl text-sm text-muted-foreground md:text-base">
               {hasHistory
-                ? 'Your recent chapters are ready below. You can also switch to online or files anytime.'
-                : 'Open from a link or from your files. Your place is saved automatically.'}
+                ? 'Your recent chapters are below. You can open any saved online series anytime.'
+                : 'Paste a WeebCentral or MangaDex series link and start reading.'}
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               {topHistory ? (
-                topHistory.readerRoute === 'weebcentral' ? (
-                  <Link
-                    to="/weebcentral/$chapterId"
-                    params={{ chapterId: topHistory.chapterId }}
-                    search={{
-                      seriesId: topHistory.seriesId,
-                      seriesTitle: topHistory.seriesTitle,
-                    }}
-                    className="inline-flex h-10 items-center border-2 border-primary bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[2px_2px_0_var(--shadow)]"
-                  >
-                    Continue reading
-                  </Link>
-                ) : (
-                  <Link
-                    to="/reader/$chapterId"
-                    params={{ chapterId: topHistory.chapterId }}
-                    className="inline-flex h-10 items-center border-2 border-primary bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[2px_2px_0_var(--shadow)]"
-                  >
-                    Continue reading
-                  </Link>
-                )
+                <Link
+                  to="/weebcentral/$chapterId"
+                  params={{ chapterId: topHistory.chapterId }}
+                  search={{
+                    seriesId: topHistory.seriesId,
+                    seriesTitle: topHistory.seriesTitle,
+                  }}
+                  className="inline-flex h-10 items-center border-2 border-primary bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[2px_2px_0_var(--shadow)]"
+                >
+                  Continue reading
+                </Link>
               ) : (
                 <a
                   href="#proxy"
@@ -274,12 +189,6 @@ function LibraryPage() {
                   Start online
                 </a>
               )}
-              <a
-                href="#local"
-                className="inline-flex h-10 items-center border-2 border-border bg-surface px-4 text-sm font-semibold text-foreground"
-              >
-                Add your files
-              </a>
             </div>
             <p className="mt-4 text-sm text-muted-foreground">
               {totalSeries} saved series • {recentHistory.length} recent reads
@@ -287,8 +196,7 @@ function LibraryPage() {
             {showOnboardingHint ? (
               <div className="mt-3 flex items-start justify-between gap-3 border border-border/70 bg-surface-soft px-3 py-2 text-sm text-muted-foreground">
                 <p>
-                  New here? Start with <strong>Read online</strong> or{' '}
-                  <strong>Add your files</strong>.
+                  Start with <strong>Read online</strong>.
                 </p>
                 <button
                   type="button"
@@ -304,85 +212,52 @@ function LibraryPage() {
             {hasHistory && topHistory ? (
               <>
                 <p className="exp-kicker">Your last read</p>
-                {topHistory.readerRoute === 'weebcentral' ? (
-                  <Link
-                    to="/weebcentral-series/$seriesId"
-                    params={{ seriesId: topHistory.seriesId }}
-                    className="group flex items-start gap-3 rounded hover:bg-surface transition-colors"
-                  >
-                    {topHistoryCoverUrl ? (
-                      <img
-                        src={topHistoryCoverUrl}
-                        alt="Last read manga cover"
-                        className="h-16 w-12 shrink-0 border border-border object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="flex h-16 w-12 shrink-0 items-center justify-center border border-border bg-surface-soft text-[10px] text-muted-foreground">
-                        No
-                        <br />
-                        image
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground group-hover:text-primary transition-colors">
-                        {topHistory.chapterTitle}
-                      </p>
-                      {topHistory.seriesTitle ? (
-                        <p className="truncate text-sm text-muted-foreground">
-                          {topHistory.seriesTitle}
-                        </p>
-                      ) : null}
+                <Link
+                  to="/weebcentral-series/$seriesId"
+                  params={{ seriesId: topHistory.seriesId }}
+                  className="group flex items-start gap-3 rounded hover:bg-surface transition-colors"
+                >
+                  {topHistoryCoverUrl ? (
+                    <img
+                      src={topHistoryCoverUrl}
+                      alt="Last read manga cover"
+                      className="h-16 w-12 shrink-0 border border-border object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="flex h-16 w-12 shrink-0 items-center justify-center border border-border bg-surface-soft text-[10px] text-muted-foreground">
+                      No
+                      <br />
+                      image
                     </div>
-                  </Link>
-                ) : (
-                  <Link
-                    to="/reader/$chapterId"
-                    params={{ chapterId: topHistory.chapterId }}
-                    className="group flex items-start gap-3 rounded hover:bg-surface transition-colors"
-                  >
-                    {topHistoryCoverUrl ? (
-                      <img
-                        src={topHistoryCoverUrl}
-                        alt="Last read manga cover"
-                        className="h-16 w-12 shrink-0 border border-border object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="flex h-16 w-12 shrink-0 items-center justify-center border border-border bg-surface-soft text-[10px] text-muted-foreground">
-                        No
-                        <br />
-                        image
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground group-hover:text-primary transition-colors">
-                        {topHistory.chapterTitle}
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                      {topHistory.chapterTitle}
+                    </p>
+                    {topHistory.seriesTitle ? (
+                      <p className="truncate text-sm text-muted-foreground">
+                        {topHistory.seriesTitle}
                       </p>
-                      {topHistory.seriesTitle ? (
-                        <p className="truncate text-sm text-muted-foreground">
-                          {topHistory.seriesTitle}
-                        </p>
-                      ) : null}
-                    </div>
-                  </Link>
-                )}
+                    ) : null}
+                  </div>
+                </Link>
                 <p className="pt-1 text-xs text-muted-foreground">
-                  Tip: Continue above, or jump to a new series below.
+                  Continue from above, or pick another series below.
                 </p>
               </>
             ) : (
               <>
-                <p className="exp-kicker">How it works</p>
+                <p className="exp-kicker">Quick start</p>
                 <p className="text-sm text-muted-foreground">
-                  1. Choose online or files
+                  1. Open an online series
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  2. Open any chapter
+                  2. Select a chapter
                 </p>
-                <p className="text-sm text-muted-foreground">3. Keep reading</p>
+                <p className="text-sm text-muted-foreground">3. Start reading</p>
                 <p className="pt-1 text-xs text-muted-foreground">
-                  No setup, no account, no distractions.
+                  No account required.
                 </p>
               </>
             )}
@@ -399,7 +274,7 @@ function LibraryPage() {
             No recent reads yet
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Start in one step: open an online series or add your local files.
+            Start in one step: open an online series.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <a
@@ -407,12 +282,6 @@ function LibraryPage() {
               className="inline-flex h-9 items-center border border-border bg-surface px-3 text-sm font-semibold text-foreground"
             >
               Read online
-            </a>
-            <a
-              href="#local"
-              className="inline-flex h-9 items-center border border-border bg-surface px-3 text-sm font-semibold text-foreground"
-            >
-              Add file
             </a>
           </div>
         </section>
@@ -434,63 +303,33 @@ function LibraryPage() {
           </div>
           <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
             {recentSeriesCards.map((item) => (
-              item.route === 'weebcentral' ? (
-                <Link
-                  key={item.key}
-                  to="/weebcentral-series/$seriesId"
-                  params={{ seriesId: item.seriesId }}
-                  className="exp-row h-full min-h-28 items-stretch"
-                >
-                  {item.coverUrl ? (
-                    <img
-                      src={item.coverUrl}
-                      alt={`${item.seriesTitle} cover`}
-                      className="h-full w-20 shrink-0 self-stretch border border-border object-cover"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="flex h-full w-20 shrink-0 items-center justify-center self-stretch border border-border bg-surface-soft text-[10px] text-muted-foreground">
-                      No image
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-foreground md:text-base group-hover:text-primary transition-colors">
-                      {item.seriesTitle}
-                    </p>
-                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                      Last read: {item.chapterTitle}
-                    </p>
+              <Link
+                key={item.key}
+                to="/weebcentral-series/$seriesId"
+                params={{ seriesId: item.seriesId }}
+                className="exp-row h-full min-h-28 items-stretch"
+              >
+                {item.coverUrl ? (
+                  <img
+                    src={item.coverUrl}
+                    alt={`${item.seriesTitle} cover`}
+                    className="h-full w-20 shrink-0 self-stretch border border-border object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="flex h-full w-20 shrink-0 items-center justify-center self-stretch border border-border bg-surface-soft text-[10px] text-muted-foreground">
+                    No image
                   </div>
-                </Link>
-              ) : (
-                <Link
-                  key={item.key}
-                  to="/reader/$chapterId"
-                  params={{ chapterId: item.chapterId }}
-                  className="exp-row h-full min-h-28 items-stretch"
-                >
-                  {item.coverUrl ? (
-                    <img
-                      src={item.coverUrl}
-                      alt={`${item.seriesTitle} cover`}
-                      className="h-full w-20 shrink-0 self-stretch border border-border object-cover"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="flex h-full w-20 shrink-0 items-center justify-center self-stretch border border-border bg-surface-soft text-[10px] text-muted-foreground">
-                      No image
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-foreground md:text-base group-hover:text-primary transition-colors">
-                      {item.seriesTitle}
-                    </p>
-                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                      Last read: {item.chapterTitle}
-                    </p>
-                  </div>
-                </Link>
-              )
+                )}
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-foreground md:text-base group-hover:text-primary transition-colors">
+                    {item.seriesTitle}
+                  </p>
+                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                    Last read: {item.chapterTitle}
+                  </p>
+                </div>
+              </Link>
             ))}
           </div>
         </section>
@@ -508,7 +347,7 @@ function LibraryPage() {
           Read online
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Paste a WeebCentral series link, then pick a chapter.
+          Paste a WeebCentral or MangaDex series link, then pick a chapter.
         </p>
 
         <form
@@ -521,7 +360,7 @@ function LibraryPage() {
           <Input
             value={remoteInput}
             onChange={(event) => setRemoteInput(event.target.value)}
-            placeholder="Paste WeebCentral series link"
+            placeholder="Paste WeebCentral or MangaDex series link"
           />
           <Button
             type="submit"
@@ -584,75 +423,6 @@ function LibraryPage() {
             ))}
           </div>
         ) : null}
-      </section>
-
-      <section
-        id="local"
-        className="exp-surface-soft animate-enter"
-        style={{ animationDelay: '115ms' }}
-      >
-        <span className="issue-label">Files</span>
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="manga-title text-xl font-semibold tracking-tight text-foreground md:text-2xl">
-            Add from your files
-          </h2>
-
-          <FilePickerButton
-            variant="soft"
-            accept=".cbz,.zip"
-            onFileSelect={(file) => {
-              void uploadArchive(file)
-            }}
-            disabled={isUploading}
-          >
-            {isUploading ? 'Importing…' : 'Add file'}
-          </FilePickerButton>
-        </div>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Drag and drop a .cbz or .zip file, or click Add file.
-        </p>
-
-        <div
-          className={cn(
-            'exp-dropzone mt-4 transition-colors duration-150',
-            isDragging ? 'bg-surface' : '',
-          )}
-          onDragEnter={(event) => {
-            event.preventDefault()
-            setIsDragging(true)
-          }}
-          onDragOver={(event) => {
-            event.preventDefault()
-            setIsDragging(true)
-          }}
-          onDragLeave={(event) => {
-            event.preventDefault()
-            if (event.currentTarget === event.target) {
-              setIsDragging(false)
-            }
-          }}
-          onDrop={(event) => {
-            event.preventDefault()
-            setIsDragging(false)
-
-            const file = event.dataTransfer.files?.[0]
-            if (file) {
-              void uploadArchive(file)
-            }
-          }}
-        >
-          <p className="text-sm text-muted-foreground">
-            Drop a .cbz or .zip file here
-          </p>
-        </div>
-
-        {error ? (
-          <p className="mt-2 text-sm text-destructive">{error}</p>
-        ) : null}
-
-        <p className="mt-2 text-xs text-muted-foreground">
-          Uploaded files are available in this browser session only.
-        </p>
       </section>
     </div>
   )
