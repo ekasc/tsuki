@@ -38,15 +38,38 @@ export async function resolveDemoSeriesId(page: Page): Promise<string> {
   return demoSeries.id
 }
 
+function isNavigationInterruptionError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  return error.message.includes('is interrupted by another navigation')
+}
+
 export async function openDemoSeries(page: Page): Promise<string> {
-  await page.goto('/')
   const demoSeriesId = await resolveDemoSeriesId(page)
-  await page.goto(`/series/${demoSeriesId}`)
 
-  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
-  await expect(page.getByRole('link', { name: /Chapter/i }).first()).toBeVisible()
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await page.goto(`/series/${demoSeriesId}`, { waitUntil: 'domcontentloaded' })
 
-  return demoSeriesId
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+      await expect(
+        page.getByRole('link', { name: /Chapter/i }).first(),
+      ).toBeVisible()
+
+      return demoSeriesId
+    } catch (error) {
+      if (!isNavigationInterruptionError(error) || attempt === 2) {
+        throw error
+      }
+
+      await page.goto('/', { waitUntil: 'domcontentloaded' })
+      await page.waitForTimeout(150)
+    }
+  }
+
+  throw new Error('Could not open demo series after retries')
 }
 
 export async function openLocalReader(page: Page) {
