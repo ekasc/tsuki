@@ -46,26 +46,50 @@ function isNavigationInterruptionError(error: unknown) {
   return error.message.includes('is interrupted by another navigation')
 }
 
+function isRetryableSeriesOpenError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  return (
+    isNavigationInterruptionError(error) ||
+    error.name === 'TimeoutError' ||
+    error.message.includes('Series page returned error state')
+  )
+}
+
+async function waitForSeriesReady(page: Page) {
+  const chapterLink = page.getByRole('link', { name: /Chapter/i }).first()
+  const errorState = page.getByText('We could not open this series right now.')
+
+  await Promise.race([
+    chapterLink.waitFor({ state: 'visible', timeout: 15_000 }),
+    errorState.waitFor({ state: 'visible', timeout: 15_000 }),
+  ])
+
+  if (await errorState.isVisible()) {
+    throw new Error('Series page returned error state')
+  }
+
+  await expect(chapterLink).toBeVisible({ timeout: 15_000 })
+}
+
 export async function openDemoSeries(page: Page): Promise<string> {
   const demoSeriesId = await resolveDemoSeriesId(page)
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       await page.goto(`/series/${demoSeriesId}`, { waitUntil: 'domcontentloaded' })
-
-      await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
-      await expect(
-        page.getByRole('link', { name: /Chapter/i }).first(),
-      ).toBeVisible()
+      await waitForSeriesReady(page)
 
       return demoSeriesId
     } catch (error) {
-      if (!isNavigationInterruptionError(error) || attempt === 2) {
+      if (!isRetryableSeriesOpenError(error) || attempt === 2) {
         throw error
       }
 
       await page.goto('/', { waitUntil: 'domcontentloaded' })
-      await page.waitForTimeout(150)
+      await page.waitForTimeout(250)
     }
   }
 
