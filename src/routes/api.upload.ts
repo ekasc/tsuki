@@ -11,6 +11,9 @@ export const Route = createAnyFileRoute('/api/upload')({
         )
 
         try {
+          const { assertLocalLibraryEnabled } = await import('#/server/runtime')
+          assertLocalLibraryEnabled()
+
           const { ensureServerReady } = await import('#/server/bootstrap')
           const { uploadRequestSchema } = await import(
             '#/server/api/validators'

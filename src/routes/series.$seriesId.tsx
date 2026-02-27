@@ -5,6 +5,7 @@ import {
   LayoutGrid,
   List,
 } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 
 const createAnyFileRoute = createFileRoute as any
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -12,24 +13,48 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import type { SeriesDetail } from '#/lib/contracts'
-import { fetchJson } from '#/lib/http-client'
+import { resolveApiUrl } from '#/lib/http-client'
 import { isLocalSessionSeriesAllowed } from '#/lib/local-upload-session'
+import { localSeriesQueryOptions } from '#/lib/query-options'
+import type { AppRouterContext } from '#/lib/router-context'
 import { loadReadingHistory, upsertReadingHistory } from '#/lib/reading-history'
 import { cn } from '#/lib/utils'
 
 export const Route = createAnyFileRoute('/series/$seriesId')({
+  loader: async ({
+    params,
+    context,
+  }: {
+    params: { seriesId: string }
+    context: AppRouterContext
+  }) => {
+    if (typeof window === 'undefined') {
+      return null
+    }
+
+    return context.queryClient.ensureQueryData(
+      localSeriesQueryOptions(params.seriesId),
+    )
+  },
+  staleTime: 120_000,
+  preloadStaleTime: 240_000,
+  gcTime: 15 * 60_000,
   component: SeriesPage,
 })
 
 function SeriesPage() {
   const params = Route.useParams()
+  const loaderSeries = Route.useLoaderData() as SeriesDetail | undefined
+  const queryClient = useQueryClient()
   const isSeriesAllowed =
     typeof window === 'undefined'
       ? true
       : isLocalSessionSeriesAllowed(params.seriesId)
 
-  const [series, setSeries] = useState<SeriesDetail | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [series, setSeries] = useState<SeriesDetail | null>(
+    () => loaderSeries ?? null,
+  )
+  const [isLoading, setIsLoading] = useState(() => !loaderSeries)
   const [error, setError] = useState<string | null>(null)
   const [completedChapters, setCompletedChapters] = useState<Set<string>>(
     () => new Set<string>(),
@@ -52,8 +77,8 @@ function SeriesPage() {
     setError(null)
 
     try {
-      const payload = await fetchJson<SeriesDetail>(
-        `/api/series/${params.seriesId}`,
+      const payload = await queryClient.ensureQueryData(
+        localSeriesQueryOptions(params.seriesId),
       )
       setSeries(payload)
     } catch (requestError) {
@@ -62,11 +87,18 @@ function SeriesPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [isSeriesAllowed, params.seriesId])
+  }, [isSeriesAllowed, params.seriesId, queryClient])
 
   useEffect(() => {
+    if (loaderSeries) {
+      setSeries(loaderSeries)
+      setIsLoading(false)
+      setError(null)
+      return
+    }
+
     void loadSeries()
-  }, [loadSeries])
+  }, [loadSeries, loaderSeries])
 
   useEffect(() => {
     const completed = loadReadingHistory()
@@ -172,7 +204,9 @@ function SeriesPage() {
           <div className="flex min-w-0 flex-col items-start gap-4 sm:flex-row">
             {previewCoverChapterId ? (
               <img
-                src={`/api/image/${previewCoverChapterId}/${previewCoverPageIndex}?thumb=1`}
+                src={resolveApiUrl(
+                  `/api/image/${previewCoverChapterId}/${previewCoverPageIndex}?thumb=1`,
+                )}
                 alt={`${series?.title ?? 'Series'} cover`}
                 className="h-36 w-24 shrink-0 border border-border object-cover sm:h-32"
                 loading="lazy"

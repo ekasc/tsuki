@@ -10,10 +10,13 @@ export const Route = createAnyFileRoute('/v1/local/$chapterId/$filename')({
       }: {
         params: { chapterId: string; filename: string }
       }) => {
-        const { ensureServerReady } = await import('#/server/bootstrap')
         const { toApiErrorResponse } = await import('#/server/api/http')
 
         try {
+          const { assertLocalLibraryEnabled } = await import('#/server/runtime')
+          assertLocalLibraryEnabled()
+
+          const { ensureServerReady } = await import('#/server/bootstrap')
           const { streamLocalAsset } = await import(
             '#/server/proxy/routes/localAssets'
           )

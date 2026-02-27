@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { ChapterPageManifest, ZoomPreset } from '#/lib/contracts'
+import { resolveApiUrl } from '#/lib/http-client'
 import type { RenderUnit } from '#/lib/reader/pairing'
 import { Button } from '#/components/ui/button'
 
@@ -97,44 +98,45 @@ export function PagePane({
   onImageMeasure,
   forceFullWidth = false,
 }: PagePaneProps) {
-  const resolvedImageUrl = useMemo(() => {
-    // Never append ?crop= for page-type units — cropping is done via CSS to
-    // avoid corrupting page dimension measurements with half-width server
-    // responses. Only half-type units keep server-side crop for compat.
+  const baseImageUrl = useMemo(() => {
     const base = imageUrl ?? `/api/image/${chapterId}/${page.pageIndex}`
-    if (unit.type === 'half') {
-      return base.includes('?') ? `${base}&crop=${unit.half}` : `${base}?crop=${unit.half}`
+    return resolveApiUrl(base)
+  }, [chapterId, imageUrl, page.pageIndex])
+  const [retryNonce, setRetryNonce] = useState(0)
+  const resolvedImageUrl = useMemo(() => {
+    if (retryNonce <= 0) {
+      return baseImageUrl
     }
-    return base
-  }, [chapterId, imageUrl, page.pageIndex, unit])
+
+    const separator = baseImageUrl.includes('?') ? '&' : '?'
+    return `${baseImageUrl}${separator}_r=${retryNonce}`
+  }, [baseImageUrl, retryNonce])
   const readySource = useStableImageSource(resolvedImageUrl)
 
   const [imageError, setImageError] = useState(false)
   const retryCountRef = useRef(0)
   const MAX_AUTO_RETRIES = 2
 
-  // Reset error state when the source changes
+  // Reset retries when the underlying page source changes.
   useEffect(() => {
     setImageError(false)
     retryCountRef.current = 0
-  }, [resolvedImageUrl])
+    setRetryNonce(0)
+  }, [baseImageUrl])
 
   const handleImageError = useCallback(() => {
     if (retryCountRef.current < MAX_AUTO_RETRIES) {
       retryCountRef.current += 1
-      // Force reload by appending a cache-bust param
-      const separator = resolvedImageUrl.includes('?') ? '&' : '?'
-      const bustUrl = `${resolvedImageUrl}${separator}_r=${retryCountRef.current}`
-      const img = new Image()
-      img.src = bustUrl
+      setRetryNonce(retryCountRef.current)
       return
     }
     setImageError(true)
-  }, [resolvedImageUrl])
+  }, [])
 
   const handleManualRetry = useCallback(() => {
     setImageError(false)
     retryCountRef.current = 0
+    setRetryNonce((current) => current + 1)
   }, [])
 
   const errorOverlay = imageError ? (
@@ -146,9 +148,14 @@ export function PagePane({
     </div>
   ) : null
 
-  // Determine if we're doing a CSS crop on a page-type unit
-  const cssCrop = unit.type === 'page' && 'crop' in unit ? (unit.crop as 'left' | 'right') : null
-  const isCropped = cssCrop !== null || unit.type === 'half'
+  // Determine if we're doing a CSS crop on either half or cropped page units.
+  const cssCrop =
+    unit.type === 'half'
+      ? unit.half
+      : unit.type === 'page' && 'crop' in unit
+        ? (unit.crop as 'left' | 'right')
+        : null
+  const isCropped = cssCrop !== null
   const paneAspectRatio = isCropped ? Math.max(0.1, page.aspect / 2) : page.aspect
   const fetchPriority = loading === 'eager' ? 'high' : 'auto'
 

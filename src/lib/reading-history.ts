@@ -92,3 +92,26 @@ export function upsertReadingHistory(input: {
 
   window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(next))
 }
+
+export function clearReadingHistoryForSeries(input: {
+  seriesId: string
+  readerRoute?: 'local' | 'weebcentral'
+}) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const next = loadReadingHistory().filter((item) => {
+    if (item.seriesId !== input.seriesId) {
+      return true
+    }
+
+    if (!input.readerRoute) {
+      return false
+    }
+
+    return item.readerRoute !== input.readerRoute
+  })
+
+  window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(next))
+}

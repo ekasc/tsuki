@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 
 const createAnyFileRoute = createFileRoute as any
 import {
@@ -30,7 +31,13 @@ import type {
   WeebcentralSeriesDTO,
   ZoomPreset,
 } from '#/lib/contracts'
-import { fetchJson } from '#/lib/http-client'
+import { setBoundedMapEntry } from '#/lib/bounded-cache'
+import { resolveApiUrl } from '#/lib/http-client'
+import {
+  weebcentralChapterQueryOptions,
+  weebcentralSeriesQueryOptions,
+} from '#/lib/query-options'
+import type { AppRouterContext } from '#/lib/router-context'
 import { upsertReadingHistory } from '#/lib/reading-history'
 import {
   buildTwoPageSteps,
@@ -43,6 +50,24 @@ import {
 import { useTouchDevice, useTouchPortrait } from '#/hooks/use-touch-portrait'
 
 export const Route = createAnyFileRoute('/weebcentral/$chapterId')({
+  loader: async ({
+    params,
+    context,
+  }: {
+    params: { chapterId: string }
+    context: AppRouterContext
+  }) => {
+    if (typeof window === 'undefined') {
+      return null
+    }
+
+    return context.queryClient.ensureQueryData(
+      weebcentralChapterQueryOptions(params.chapterId),
+    )
+  },
+  staleTime: 45_000,
+  preloadStaleTime: 120_000,
+  gcTime: 15 * 60_000,
   component: WeebcentralReaderPage,
 })
 
@@ -50,6 +75,10 @@ const REMOTE_PROGRESS_STORAGE_KEY = 'tsuki-remote-progress.v1'
 const LEGACY_REMOTE_PROGRESS_STORAGE_KEY = 'suki-remote-progress.v1'
 const prefetchedRemoteChapters = new Map<string, WeebcentralChapterDTO>()
 const prefetchedRemoteSeries = new Map<string, WeebcentralSeriesDTO>()
+const inFlightRemoteChapterPrefetches = new Set<string>()
+const PREFETCHED_REMOTE_CHAPTER_LIMIT = 64
+const PREFETCHED_REMOTE_SERIES_LIMIT = 64
+const REMOTE_PAGE_DIMENSIONS_LIMIT = 180
 interface RemotePageDimension {
   width: number
   height: number
@@ -100,6 +129,21 @@ interface ReaderUiPrefs {
   uiAutoHideMs: number
   magnifierSize: number
   magnifierZoom: number
+}
+
+const DEFAULT_REMOTE_READER_UI_PREFS: ReaderUiPrefs = {
+  mode: 'single',
+  zoomPreset: 'fit-width',
+  sidebarOpen: false,
+  doublePageOffset: false,
+  preloadAhead: 6,
+  preloadBehind: 2,
+  prefetchConcurrency: 2,
+  nextChapterPrefetchThreshold: 6,
+  nextChapterWarmPages: 2,
+  uiAutoHideMs: 1400,
+  magnifierSize: 220,
+  magnifierZoom: 2.4,
 }
 
 interface ReaderSeriesPreset {
@@ -209,27 +253,27 @@ function loadReaderUiPrefs(
       doublePageOffset: Boolean(parsed.doublePageOffset),
       preloadAhead:
         typeof parsed.preloadAhead === 'number'
-          ? Math.max(1, Math.min(24, Math.floor(parsed.preloadAhead)))
-          : 8,
+          ? Math.max(1, Math.min(16, Math.floor(parsed.preloadAhead)))
+          : 6,
       preloadBehind:
         typeof parsed.preloadBehind === 'number'
-          ? Math.max(0, Math.min(12, Math.floor(parsed.preloadBehind)))
-          : 4,
+          ? Math.max(0, Math.min(8, Math.floor(parsed.preloadBehind)))
+          : 2,
       prefetchConcurrency:
         typeof parsed.prefetchConcurrency === 'number'
-          ? Math.max(1, Math.min(8, Math.floor(parsed.prefetchConcurrency)))
+          ? Math.max(1, Math.min(4, Math.floor(parsed.prefetchConcurrency)))
           : 2,
       nextChapterPrefetchThreshold:
         typeof parsed.nextChapterPrefetchThreshold === 'number'
           ? Math.max(
               1,
-              Math.min(24, Math.floor(parsed.nextChapterPrefetchThreshold)),
+              Math.min(12, Math.floor(parsed.nextChapterPrefetchThreshold)),
             )
-          : 8,
+          : 6,
       nextChapterWarmPages:
         typeof parsed.nextChapterWarmPages === 'number'
-          ? Math.max(1, Math.min(16, Math.floor(parsed.nextChapterWarmPages)))
-          : 4,
+          ? Math.max(1, Math.min(6, Math.floor(parsed.nextChapterWarmPages)))
+          : 2,
       uiAutoHideMs:
         typeof parsed.uiAutoHideMs === 'number'
           ? Math.max(400, Math.min(5000, Math.floor(parsed.uiAutoHideMs)))
@@ -414,7 +458,7 @@ function buildSinglePageSteps(
 
 function getDisplayUnitsForStep(
   step: PairingStep | null,
-  pages: ChapterPageManifest[],
+  pageByIndex: ReadonlyMap<number, ChapterPageManifest>,
   isTouchPortrait: boolean,
 ) {
   if (!step) {
@@ -437,7 +481,7 @@ function getDisplayUnitsForStep(
   }
 
   const spreadUnit = renderedUnits.find((unit) => {
-    const page = pages.find((entry) => entry.pageIndex === unit.pageIndex)
+    const page = pageByIndex.get(unit.pageIndex)
     if (!page) {
       return false
     }
@@ -446,31 +490,6 @@ function getDisplayUnitsForStep(
   })
 
   return spreadUnit ? [spreadUnit] : renderedUnits
-}
-
-async function fetchJsonWith429Retry<T>(
-  input: RequestInfo | URL,
-  init?: RequestInit,
-): Promise<T> {
-  const delays = [220, 520]
-
-  for (let attempt = 0; attempt <= delays.length; attempt += 1) {
-    try {
-      return await fetchJson<T>(input, init)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : ''
-      const isRateLimited = message.includes('429')
-      if (!isRateLimited || attempt >= delays.length) {
-        throw error
-      }
-
-      await new Promise((resolve) => {
-        window.setTimeout(resolve, delays[attempt])
-      })
-    }
-  }
-
-  throw new Error('Failed to fetch resource')
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -576,99 +595,57 @@ function WeebcentralReaderPage() {
     seriesTitle?: string
   }
   const navigate = useNavigate()
+  const loaderChapter = Route.useLoaderData() as WeebcentralChapterDTO | undefined
+  const queryClient = useQueryClient()
 
   const [series, setSeries] = useState<WeebcentralSeriesDTO | null>(null)
   const [chapter, setChapter] = useState<WeebcentralChapterDTO | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-
-  const [mode, setMode] = useState<ReaderMode>(
+  const initialUiPrefs = useMemo(
     () =>
       loadReaderUiPrefs(
         REMOTE_READER_UI_PREFS_KEY,
         LEGACY_REMOTE_READER_UI_PREFS_KEY,
-      )?.mode ?? 'single',
+      ) ?? DEFAULT_REMOTE_READER_UI_PREFS,
+    [],
   )
+
+  const [mode, setMode] = useState<ReaderMode>(initialUiPrefs.mode)
   const [zoomPreset, setZoomPreset] = useState<ZoomPreset>(
-    () =>
-      loadReaderUiPrefs(
-        REMOTE_READER_UI_PREFS_KEY,
-        LEGACY_REMOTE_READER_UI_PREFS_KEY,
-      )?.zoomPreset ?? 'fit-width',
+    initialUiPrefs.zoomPreset,
   )
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(
-    () =>
-      loadReaderUiPrefs(
-        REMOTE_READER_UI_PREFS_KEY,
-        LEGACY_REMOTE_READER_UI_PREFS_KEY,
-      )?.sidebarOpen ?? false,
+    initialUiPrefs.sidebarOpen,
   )
   const [doublePageOffset, setDoublePageOffset] = useState<boolean>(
-    () =>
-      loadReaderUiPrefs(
-        REMOTE_READER_UI_PREFS_KEY,
-        LEGACY_REMOTE_READER_UI_PREFS_KEY,
-      )?.doublePageOffset ?? false,
+    initialUiPrefs.doublePageOffset,
   )
   const [settingsTab, setSettingsTab] = useState<'basic' | 'advanced'>('basic')
   const [mobileSettingsMinimized, setMobileSettingsMinimized] = useState(false)
   const [preloadAhead, setPreloadAhead] = useState<number>(
-    () =>
-      loadReaderUiPrefs(
-        REMOTE_READER_UI_PREFS_KEY,
-        LEGACY_REMOTE_READER_UI_PREFS_KEY,
-      )?.preloadAhead ?? 8,
+    initialUiPrefs.preloadAhead,
   )
   const [preloadBehind, setPreloadBehind] = useState<number>(
-    () =>
-      loadReaderUiPrefs(
-        REMOTE_READER_UI_PREFS_KEY,
-        LEGACY_REMOTE_READER_UI_PREFS_KEY,
-      )?.preloadBehind ?? 4,
+    initialUiPrefs.preloadBehind,
   )
   const [prefetchConcurrency, setPrefetchConcurrency] = useState<number>(
-    () =>
-      loadReaderUiPrefs(
-        REMOTE_READER_UI_PREFS_KEY,
-        LEGACY_REMOTE_READER_UI_PREFS_KEY,
-      )?.prefetchConcurrency ?? 2,
+    initialUiPrefs.prefetchConcurrency,
   )
   const [nextChapterPrefetchThreshold, setNextChapterPrefetchThreshold] =
-    useState<number>(
-      () =>
-        loadReaderUiPrefs(
-          REMOTE_READER_UI_PREFS_KEY,
-          LEGACY_REMOTE_READER_UI_PREFS_KEY,
-        )?.nextChapterPrefetchThreshold ?? 8,
-    )
+    useState<number>(initialUiPrefs.nextChapterPrefetchThreshold)
   const [nextChapterWarmPages, setNextChapterWarmPages] = useState<number>(
-    () =>
-      loadReaderUiPrefs(
-        REMOTE_READER_UI_PREFS_KEY,
-        LEGACY_REMOTE_READER_UI_PREFS_KEY,
-      )?.nextChapterWarmPages ?? 4,
+    initialUiPrefs.nextChapterWarmPages,
   )
   const [uiAutoHideMs, setUiAutoHideMs] = useState<number>(
-    () =>
-      loadReaderUiPrefs(
-        REMOTE_READER_UI_PREFS_KEY,
-        LEGACY_REMOTE_READER_UI_PREFS_KEY,
-      )?.uiAutoHideMs ?? 1400,
+    initialUiPrefs.uiAutoHideMs,
   )
   const [magnifierEnabled, setMagnifierEnabled] = useState(false)
   const [magnifierSize, setMagnifierSize] = useState<number>(
-    () =>
-      loadReaderUiPrefs(
-        REMOTE_READER_UI_PREFS_KEY,
-        LEGACY_REMOTE_READER_UI_PREFS_KEY,
-      )?.magnifierSize ?? 220,
+    initialUiPrefs.magnifierSize,
   )
   const [magnifierZoom, setMagnifierZoom] = useState<number>(
-    () =>
-      loadReaderUiPrefs(
-        REMOTE_READER_UI_PREFS_KEY,
-        LEGACY_REMOTE_READER_UI_PREFS_KEY,
-      )?.magnifierZoom ?? 2.4,
+    initialUiPrefs.magnifierZoom,
   )
   const [showReaderChrome, setShowReaderChrome] = useState(false)
   const [focusMode, setFocusMode] = useState(false)
@@ -735,6 +712,10 @@ function WeebcentralReaderPage() {
     () => (chapter ? createPlaceholderPages(chapter, pageDimensions) : []),
     [chapter, pageDimensions],
   )
+  const pageByIndex = useMemo(
+    () => new Map(pages.map((page) => [page.pageIndex, page] as const)),
+    [pages],
+  )
 
   const pageUrlMap = useMemo(() => {
     const map = new Map<number, string>()
@@ -764,7 +745,12 @@ function WeebcentralReaderPage() {
           ...current,
           [pageIndex]: { width, height },
         }
-        remotePageDimensionsCache.set(chapter.chapterId, next)
+        setBoundedMapEntry(
+          remotePageDimensionsCache,
+          chapter.chapterId,
+          next,
+          REMOTE_PAGE_DIMENSIONS_LIMIT,
+        )
         return next
       })
     },
@@ -866,7 +852,7 @@ function WeebcentralReaderPage() {
     }
 
     const spreadUnit = renderedUnits.find((unit) => {
-      const page = pages.find((entry) => entry.pageIndex === unit.pageIndex)
+      const page = pageByIndex.get(unit.pageIndex)
       if (!page) {
         return false
       }
@@ -875,7 +861,7 @@ function WeebcentralReaderPage() {
     })
 
     return spreadUnit ? [spreadUnit] : renderedUnits
-  }, [activeStep?.kind, isTouchPortrait, mode, pages, renderedUnits])
+  }, [activeStep?.kind, isTouchPortrait, mode, pageByIndex, renderedUnits])
 
   const currentRenderUnits = useMemo(
     () =>
@@ -903,7 +889,7 @@ function WeebcentralReaderPage() {
 
     return getDisplayUnitsForStep(
       activeDoubleSteps[currentStepIndex + 1] ?? null,
-      pages,
+      pageByIndex,
       isTouchPortrait,
     )
   }, [
@@ -913,7 +899,7 @@ function WeebcentralReaderPage() {
     isTouchPortrait,
     maxSingleStepIndex,
     mode,
-    pages,
+    pageByIndex,
     singlePageSteps,
   ])
 
@@ -928,7 +914,7 @@ function WeebcentralReaderPage() {
 
     return getDisplayUnitsForStep(
       activeDoubleSteps[currentStepIndex - 1] ?? null,
-      pages,
+      pageByIndex,
       isTouchPortrait,
     )
   }, [
@@ -937,7 +923,7 @@ function WeebcentralReaderPage() {
     currentStepIndex,
     isTouchPortrait,
     mode,
-    pages,
+    pageByIndex,
     singlePageSteps,
   ])
   const leftRenderUnits =
@@ -1220,9 +1206,27 @@ function WeebcentralReaderPage() {
     ],
   )
 
+  useEffect(() => {
+    if (!loaderChapter) {
+      return
+    }
+
+    setBoundedMapEntry(
+      prefetchedRemoteChapters,
+      params.chapterId,
+      loaderChapter,
+      PREFETCHED_REMOTE_CHAPTER_LIMIT,
+    )
+  }, [loaderChapter, params.chapterId])
+
   const loadRemoteChapter = useCallback(async () => {
-    const cachedChapter = prefetchedRemoteChapters.get(params.chapterId)
-    if (cachedChapter) {
+    const chapterOptions = weebcentralChapterQueryOptions(params.chapterId)
+    const prefetchedChapter = prefetchedRemoteChapters.get(params.chapterId)
+    const cachedChapter =
+      prefetchedChapter ??
+      queryClient.getQueryData<WeebcentralChapterDTO>(chapterOptions.queryKey)
+
+    if (prefetchedChapter) {
       prefetchedRemoteChapters.delete(params.chapterId)
     }
 
@@ -1277,18 +1281,31 @@ function WeebcentralReaderPage() {
 
     try {
       const chapterPayload =
-        cachedChapter ??
-        (await fetchJsonWith429Retry<WeebcentralChapterDTO>(
-          `/v1/weebcentral/chapter?url=${encodeURIComponent(params.chapterId)}`,
-        ))
+        cachedChapter ?? (await queryClient.fetchQuery(chapterOptions))
       if (!cachedChapter) {
         applyChapterState(chapterPayload)
       }
 
       const seriesInput =
         search.seriesId?.trim() || chapterPayload.seriesId || params.chapterId
-      const cachedSeries = prefetchedRemoteSeries.get(seriesInput)
+      const seriesOptions = weebcentralSeriesQueryOptions(seriesInput)
+      const cachedSeries =
+        prefetchedRemoteSeries.get(seriesInput) ??
+        prefetchedRemoteSeries.get(chapterPayload.seriesId) ??
+        queryClient.getQueryData<WeebcentralSeriesDTO>(seriesOptions.queryKey)
       if (cachedSeries) {
+        setBoundedMapEntry(
+          prefetchedRemoteSeries,
+          seriesInput,
+          cachedSeries,
+          PREFETCHED_REMOTE_SERIES_LIMIT,
+        )
+        setBoundedMapEntry(
+          prefetchedRemoteSeries,
+          cachedSeries.id,
+          cachedSeries,
+          PREFETCHED_REMOTE_SERIES_LIMIT,
+        )
         setSeries(cachedSeries)
       }
 
@@ -1296,11 +1313,19 @@ function WeebcentralReaderPage() {
         try {
           const seriesPayload =
             cachedSeries ??
-            (await fetchJsonWith429Retry<WeebcentralSeriesDTO>(
-              `/v1/weebcentral/series?url=${encodeURIComponent(seriesInput)}`,
-            ))
-          prefetchedRemoteSeries.set(seriesInput, seriesPayload)
-          prefetchedRemoteSeries.set(seriesPayload.id, seriesPayload)
+            (await queryClient.fetchQuery(seriesOptions))
+          setBoundedMapEntry(
+            prefetchedRemoteSeries,
+            seriesInput,
+            seriesPayload,
+            PREFETCHED_REMOTE_SERIES_LIMIT,
+          )
+          setBoundedMapEntry(
+            prefetchedRemoteSeries,
+            seriesPayload.id,
+            seriesPayload,
+            PREFETCHED_REMOTE_SERIES_LIMIT,
+          )
           setSeries(seriesPayload)
         } catch {
           // Ignore series metadata failure; chapter can still render.
@@ -1312,7 +1337,7 @@ function WeebcentralReaderPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [params.chapterId, search.seriesId])
+  }, [params.chapterId, queryClient, search.seriesId])
 
   useEffect(() => {
     void loadRemoteChapter()
@@ -1421,33 +1446,17 @@ function WeebcentralReaderPage() {
       return
     }
 
-    saveRemoteProgress(chapter.chapterId, {
-      pageIndex: currentTargetPageIndex,
-      mode,
-      zoomPreset,
-    })
+    const timeout = window.setTimeout(() => {
+      persistRemoteProgressNow(currentTargetPageIndex)
+    }, 220)
 
-    upsertReadingHistory({
-      chapterId: chapter.chapterId,
-      seriesId: series?.id ?? search.seriesId ?? chapter.seriesId,
-      seriesTitle: series?.title ?? search.seriesTitle,
-      chapterTitle:
-        series?.chapters.find((entry) => entry.id === chapter.chapterId)
-          ?.title ?? `Chapter ${chapter.chapterId}`,
-      pageIndex: currentTargetPageIndex,
-      mode,
-      readerRoute: 'weebcentral',
-      completed: currentTargetPageIndex >= maxPageIndex,
-    })
+    return () => {
+      window.clearTimeout(timeout)
+    }
   }, [
-    chapter,
     currentTargetPageIndex,
-    mode,
-    search.seriesId,
-    search.seriesTitle,
-    series?.id,
-    series?.title,
-    zoomPreset,
+    chapter,
+    persistRemoteProgressNow,
   ])
 
   useEffect(() => {
@@ -1500,26 +1509,39 @@ function WeebcentralReaderPage() {
       return
     }
 
+    const remainingPages = maxPageIndex - currentTargetPageIndex
     const shouldPrefetchNextChapter =
-      currentTargetPageIndex >= maxPageIndex - nextChapterPrefetchThreshold
+      remainingPages <= nextChapterPrefetchThreshold
     if (!shouldPrefetchNextChapter) {
       return
     }
 
-    if (prefetchedRemoteChapters.has(nextChapterId)) {
+    if (
+      prefetchedRemoteChapters.has(nextChapterId) ||
+      inFlightRemoteChapterPrefetches.has(nextChapterId)
+    ) {
       return
     }
 
     const controller = new AbortController()
+    inFlightRemoteChapterPrefetches.add(nextChapterId)
 
     void (async () => {
       try {
-        const payload = await fetchJsonWith429Retry<WeebcentralChapterDTO>(
-          `/v1/weebcentral/chapter?url=${encodeURIComponent(nextChapterId)}`,
-          { signal: controller.signal },
-        )
+        const chapterOptions = weebcentralChapterQueryOptions(nextChapterId, {
+          prefetch: true,
+        })
+        const payload =
+          queryClient.getQueryData<WeebcentralChapterDTO>(
+            chapterOptions.queryKey,
+          ) ?? (await queryClient.fetchQuery(chapterOptions))
 
-        prefetchedRemoteChapters.set(nextChapterId, payload)
+        setBoundedMapEntry(
+          prefetchedRemoteChapters,
+          nextChapterId,
+          payload,
+          PREFETCHED_REMOTE_CHAPTER_LIMIT,
+        )
 
         const warmCount = Math.min(nextChapterWarmPages, payload.pages.length)
         const workerCount = Math.max(
@@ -1538,42 +1560,24 @@ function WeebcentralReaderPage() {
             }
 
             try {
-              await fetch(page.url, {
+              await fetch(resolveApiUrl(page.url), {
                 signal: controller.signal,
                 cache: 'force-cache',
+                headers: {
+                  'x-tsuki-prefetch': '1',
+                },
               })
             } catch {
               // Ignore warm failures.
             }
-
-            const image = new Image()
-            image.decoding = 'async'
-            image.addEventListener('load', () => {
-              const current = remotePageDimensionsCache.get(nextChapterId) ?? {}
-              const existing = current[pageIndex]
-              if (
-                existing &&
-                existing.width === image.naturalWidth &&
-                existing.height === image.naturalHeight
-              ) {
-                return
-              }
-
-              remotePageDimensionsCache.set(nextChapterId, {
-                ...current,
-                [pageIndex]: {
-                  width: image.naturalWidth,
-                  height: image.naturalHeight,
-                },
-              })
-            })
-            image.src = page.url
           }
         }
 
         await Promise.all(Array.from({ length: workerCount }, warmWorker))
       } catch {
         // Ignore prefetch failures; regular navigation still works.
+      } finally {
+        inFlightRemoteChapterPrefetches.delete(nextChapterId)
       }
     })()
 
@@ -1588,6 +1592,7 @@ function WeebcentralReaderPage() {
     nextChapterWarmPages,
     pages.length,
     prefetchConcurrency,
+    queryClient,
   ])
 
   useEffect(() => {
@@ -2251,14 +2256,14 @@ function WeebcentralReaderPage() {
   const renderUnitsForPaging = useCallback(
     (units: ReadonlyArray<RenderUnit>, keyPrefix: string) =>
       units.map((unit, slotIndex) => {
-        const page = pages.find((entry) => entry.pageIndex === unit.pageIndex)
+        const page = pageByIndex.get(unit.pageIndex)
         if (!page) {
           return null
         }
 
         return (
           <PagePane
-            key={`${keyPrefix}-${slotIndex}-${unit.type === 'half' ? unit.half : unit.type === 'page' && 'crop' in unit ? unit.crop : 'page'}-${unit.pageIndex}`}
+            key={`${keyPrefix}-${slotIndex}`}
             chapterId={chapter?.chapterId ?? params.chapterId}
             unit={unit}
             page={page}
@@ -2275,7 +2280,7 @@ function WeebcentralReaderPage() {
       chapter?.chapterId,
       isSinglePageTouchView,
       pageUrlMap,
-      pages,
+      pageByIndex,
       params.chapterId,
       rememberPageDimension,
       zoomPreset,
@@ -2559,7 +2564,7 @@ function WeebcentralReaderPage() {
     toggleFullscreen,
   ])
 
-  const remoteSeriesTitle = series?.title ?? search.seriesTitle ?? 'WeebCentral'
+  const remoteSeriesTitle = series?.title ?? search.seriesTitle ?? 'Online series'
   const remoteSeriesIdForLink =
     series?.id ?? search.seriesId ?? chapter?.seriesId ?? params.chapterId
   const activeChapterMetadata =
@@ -2896,14 +2901,14 @@ function WeebcentralReaderPage() {
                   <Input
                     type="number"
                     min={1}
-                    max={24}
+                    max={16}
                     value={preloadAhead}
                     onChange={(event) =>
                       setPreloadAhead(
                         clampNumber(
                           Number.parseInt(event.target.value, 10),
                           1,
-                          24,
+                          16,
                         ),
                       )
                     }
@@ -2915,14 +2920,14 @@ function WeebcentralReaderPage() {
                   <Input
                     type="number"
                     min={0}
-                    max={12}
+                    max={8}
                     value={preloadBehind}
                     onChange={(event) =>
                       setPreloadBehind(
                         clampNumber(
                           Number.parseInt(event.target.value, 10),
                           0,
-                          12,
+                          8,
                         ),
                       )
                     }
@@ -2934,14 +2939,14 @@ function WeebcentralReaderPage() {
                   <Input
                     type="number"
                     min={1}
-                    max={8}
+                    max={4}
                     value={prefetchConcurrency}
                     onChange={(event) =>
                       setPrefetchConcurrency(
                         clampNumber(
                           Number.parseInt(event.target.value, 10),
                           1,
-                          8,
+                          4,
                         ),
                       )
                     }
@@ -2953,14 +2958,14 @@ function WeebcentralReaderPage() {
                   <Input
                     type="number"
                     min={1}
-                    max={24}
+                    max={12}
                     value={nextChapterPrefetchThreshold}
                     onChange={(event) =>
                       setNextChapterPrefetchThreshold(
                         clampNumber(
                           Number.parseInt(event.target.value, 10),
                           1,
-                          24,
+                          12,
                         ),
                       )
                     }
@@ -2972,14 +2977,14 @@ function WeebcentralReaderPage() {
                   <Input
                     type="number"
                     min={1}
-                    max={16}
+                    max={6}
                     value={nextChapterWarmPages}
                     onChange={(event) =>
                       setNextChapterWarmPages(
                         clampNumber(
                           Number.parseInt(event.target.value, 10),
                           1,
-                          16,
+                          6,
                         ),
                       )
                     }

@@ -17,6 +17,9 @@ export const Route = createAnyFileRoute('/api/chapter/$chapterId/progress')({
         )
 
         try {
+          const { assertLocalLibraryEnabled } = await import('#/server/runtime')
+          assertLocalLibraryEnabled()
+
           const { ensureServerReady } = await import('#/server/bootstrap')
           const { progressPayloadSchema } = await import(
             '#/server/api/validators'

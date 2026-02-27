@@ -19,6 +19,9 @@ export const Route = createAnyFileRoute(
         )
 
         try {
+          const { assertLocalLibraryEnabled } = await import('#/server/runtime')
+          assertLocalLibraryEnabled()
+
           const { ensureServerReady } = await import('#/server/bootstrap')
           const { pageOverridePayloadSchema } = await import(
             '#/server/api/validators'

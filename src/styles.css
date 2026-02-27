@@ -495,12 +495,12 @@
 
   .reader-page-motion-next {
     animation: reader-page-motion-next 180ms cubic-bezier(0.18, 0.78, 0.2, 1);
-    will-change: transform, opacity;
+    will-change: transform;
   }
 
   .reader-page-motion-prev {
     animation: reader-page-motion-prev 180ms cubic-bezier(0.18, 0.78, 0.2, 1);
-    will-change: transform, opacity;
+    will-change: transform;
   }
 
   @media (max-width: 768px) {
@@ -520,22 +520,18 @@
 
 @keyframes reader-page-motion-next {
   from {
-    opacity: 0.82;
     transform: translateX(14px);
   }
   to {
-    opacity: 1;
     transform: translateX(0);
   }
 }
 
 @keyframes reader-page-motion-prev {
   from {
-    opacity: 0.82;
     transform: translateX(-14px);
   }
   to {
-    opacity: 1;
     transform: translateX(0);
   }
 }

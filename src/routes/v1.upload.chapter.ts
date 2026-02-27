@@ -6,12 +6,15 @@ export const Route = createAnyFileRoute('/v1/upload/chapter')({
   server: {
     handlers: {
       POST: async ({ request }: { request: Request }) => {
-        const { ensureServerReady } = await import('#/server/bootstrap')
         const { jsonResponse, toApiErrorResponse } = await import(
           '#/server/api/http'
         )
 
         try {
+          const { assertLocalLibraryEnabled } = await import('#/server/runtime')
+          assertLocalLibraryEnabled()
+
+          const { ensureServerReady } = await import('#/server/bootstrap')
           const { uploadChapterFromRequest } = await import(
             '#/server/proxy/routes/uploads'
           )
