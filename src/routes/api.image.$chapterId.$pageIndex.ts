@@ -1,6 +1,3 @@
-import fs from 'node:fs'
-import { Readable } from 'node:stream'
-
 import { createFileRoute } from '@tanstack/react-router'
 
 const createAnyFileRoute = createFileRoute as any
@@ -68,7 +65,12 @@ export const Route = createAnyFileRoute('/api/image/$chapterId/$pageIndex')({
             })
           }
 
-          const stream = fs.createReadStream(asset.filePath)
+          const [{ createReadStream }, { Readable }] = await Promise.all([
+            import('node:fs'),
+            import('node:stream'),
+          ])
+
+          const stream = createReadStream(asset.filePath)
 
           return new Response(Readable.toWeb(stream) as ReadableStream, {
             headers: {
