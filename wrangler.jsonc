@@ -6,8 +6,8 @@
   "workers_dev": false,
   "routes": [
     {
-      "pattern": "tsukireader.com",
-      "custom_domain": true
+      "pattern": "tsukireader.com/*",
+      "zone_name": "tsukireader.com"
     }
   ],
   "vars": {
