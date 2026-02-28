@@ -13,7 +13,7 @@
   "vars": {
     "TSUKI_LOCAL_LIBRARY_ENABLED": "0"
   },
-  "main": "dist/server/server.js",
+  "main": "worker-entry.mjs",
   "assets": {
     "directory": "dist/client",
     "binding": "ASSETS"
