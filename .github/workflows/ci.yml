@@ -204,7 +204,7 @@ jobs:
         run: pnpm build:cloudflare
 
       - name: Validate Wrangler config
-        run: npx --yes wrangler@4.69.0 check --config wrangler.jsonc
+        run: npx --yes wrangler@4.69.0 deploy --dry-run --config wrangler.jsonc
 
       - name: Deploy to Cloudflare Worker
         env:
