@@ -20,6 +20,7 @@ function isThemeMode(value: string | undefined): value is ThemeMode {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const currentYear = new Date().getFullYear()
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const { platform, formFactor, isStandalonePwa } = useDeviceProfile()
@@ -96,6 +97,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <main className="ui-shell-bottom-safe mx-auto mt-4 max-w-7xl px-4 md:px-8">
         {children}
       </main>
+
+      <footer className="ui-shell-bottom-safe mx-auto mt-6 max-w-7xl px-4 pb-6 text-xs text-muted-foreground md:px-8">
+        <div className="border-t border-border/60 pt-3">
+          <p>
+            Tsuki is an image proxy/reader UI. This website does not host manga
+            files.
+          </p>
+          <p className="mt-1">
+            Credits:{' '}
+            <a
+              href="https://weebcentral.com"
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+              className="underline underline-offset-2 hover:text-foreground"
+            >
+              Weeb Central
+            </a>{' '}
+            and{' '}
+            <a
+              href="https://cubari.moe"
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+              className="underline underline-offset-2 hover:text-foreground"
+            >
+              Cubari.moe
+            </a>
+            .
+          </p>
+          <p className="mt-1">© {currentYear} Tsuki Reader. All rights reserved.</p>
+        </div>
+      </footer>
     </div>
   )
 }

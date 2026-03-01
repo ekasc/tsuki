@@ -7,7 +7,8 @@ function parseJsonc(content) {
     /^\s*\/\/.*$/gm,
     '',
   )
-  return JSON.parse(withoutLineComments)
+  const withoutTrailingCommas = withoutLineComments.replace(/,\s*([}\]])/g, '$1')
+  return JSON.parse(withoutTrailingCommas)
 }
 
 function assertIncludes(list, value, label, failures) {
@@ -29,12 +30,10 @@ async function main() {
     )
   }
 
-  if (wrangler?.main !== 'dist/server/server.js') {
-    failures.push('wrangler.jsonc main must be "dist/server/server.js"')
-  }
-
-  if (wrangler?.assets?.directory !== 'dist/client') {
-    failures.push('wrangler.jsonc assets.directory must be "dist/client"')
+  if (wrangler?.main !== '@tanstack/react-start/server-entry') {
+    failures.push(
+      'wrangler.jsonc main must be "@tanstack/react-start/server-entry"',
+    )
   }
 
   const scripts = packageJson?.scripts ?? {}
@@ -55,8 +54,44 @@ async function main() {
     failures,
   )
   assertIncludes(
+    cloudflareDryDeployScript,
+    'wrangler@4.69.0',
+    'package.json scripts.deploy:cloudflare:dry',
+    failures,
+  )
+  assertIncludes(
+    cloudflareDryDeployScript,
+    'check --config wrangler.jsonc',
+    'package.json scripts.deploy:cloudflare:dry',
+    failures,
+  )
+  assertIncludes(
+    cloudflareDryDeployScript,
+    '--config wrangler.jsonc',
+    'package.json scripts.deploy:cloudflare:dry',
+    failures,
+  )
+  assertIncludes(
     cloudflareDeployScript,
     'VITE_LOCAL_LIBRARY_ENABLED=0',
+    'package.json scripts.deploy:cloudflare',
+    failures,
+  )
+  assertIncludes(
+    cloudflareDeployScript,
+    'wrangler@4.69.0',
+    'package.json scripts.deploy:cloudflare',
+    failures,
+  )
+  assertIncludes(
+    cloudflareDeployScript,
+    'check --config wrangler.jsonc',
+    'package.json scripts.deploy:cloudflare',
+    failures,
+  )
+  assertIncludes(
+    cloudflareDeployScript,
+    '--config wrangler.jsonc',
     'package.json scripts.deploy:cloudflare',
     failures,
   )

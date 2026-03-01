@@ -9,26 +9,87 @@ import appCss from '../styles.css?url'
 
 import { AppShell } from '#/components/AppShell'
 import { ErrorBoundary } from '#/components/ErrorBoundary'
+import { absoluteUrl, DEFAULT_OG_IMAGE_PATH, SITE_URL } from '#/lib/seo'
 import type { AppRouterContext } from '#/lib/router-context'
+
+const TSUKI_DEFAULT_TITLE = 'Tsuki Reader'
+const TSUKI_DEFAULT_DESCRIPTION =
+  'Fast web manga reader and image proxy with clean navigation, RTL support, and a distraction-free layout.'
+const TSUKI_JSON_LD = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: TSUKI_DEFAULT_TITLE,
+    url: SITE_URL,
+    description: TSUKI_DEFAULT_DESCRIPTION,
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebApplication',
+    name: TSUKI_DEFAULT_TITLE,
+    url: SITE_URL,
+    applicationCategory: 'EntertainmentApplication',
+    operatingSystem: 'iOS, Android, macOS, Windows, Linux',
+    isAccessibleForFree: true,
+    description: TSUKI_DEFAULT_DESCRIPTION,
+  },
+]
 
 export const Route = createRootRouteWithContext<AppRouterContext>()({
   head: () => ({
     meta: [
       { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
-      { title: 'Tsuki Reader' },
-      { name: 'description', content: 'A clean, distraction-free manga reader. Read online or from your files.' },
+      {
+        name: 'viewport',
+        content: 'width=device-width, initial-scale=1, viewport-fit=cover',
+      },
+      { title: TSUKI_DEFAULT_TITLE },
+      { name: 'description', content: TSUKI_DEFAULT_DESCRIPTION },
+      { name: 'robots', content: 'index,follow,max-image-preview:large' },
+      { name: 'referrer', content: 'strict-origin-when-cross-origin' },
+      { name: 'application-name', content: TSUKI_DEFAULT_TITLE },
+      { name: 'apple-mobile-web-app-title', content: TSUKI_DEFAULT_TITLE },
       { name: 'mobile-web-app-capable', content: 'yes' },
       { name: 'theme-color', content: '#1d140d' },
       { name: 'apple-mobile-web-app-capable', content: 'yes' },
-      { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
+      {
+        name: 'apple-mobile-web-app-status-bar-style',
+        content: 'black-translucent',
+      },
+      { property: 'og:type', content: 'website' },
+      { property: 'og:site_name', content: TSUKI_DEFAULT_TITLE },
+      { property: 'og:title', content: TSUKI_DEFAULT_TITLE },
+      { property: 'og:description', content: TSUKI_DEFAULT_DESCRIPTION },
+      { property: 'og:url', content: SITE_URL },
+      { property: 'og:image', content: absoluteUrl(DEFAULT_OG_IMAGE_PATH) },
+      { property: 'og:image:alt', content: 'Tsuki Reader icon' },
+      { name: 'twitter:card', content: 'summary_large_image' },
+      { name: 'twitter:title', content: TSUKI_DEFAULT_TITLE },
+      { name: 'twitter:description', content: TSUKI_DEFAULT_DESCRIPTION },
+      { name: 'twitter:image', content: absoluteUrl(DEFAULT_OG_IMAGE_PATH) },
     ],
     links: [
       { rel: 'stylesheet', href: appCss },
-      { rel: 'icon', href: '/favicon.ico', sizes: 'any' },
-      { rel: 'icon', href: '/tsuki_favicon.png', type: 'image/png' },
+      { rel: 'icon', href: '/favicon.png', type: 'image/png' },
+      {
+        rel: 'icon',
+        href: '/favicon-32x32.png',
+        type: 'image/png',
+        sizes: '32x32',
+      },
+      {
+        rel: 'icon',
+        href: '/favicon-16x16.png',
+        type: 'image/png',
+        sizes: '16x16',
+      },
       { rel: 'manifest', href: '/manifest.json' },
-      { rel: 'apple-touch-icon', href: '/tsuki_favicon.png' },
+      {
+        rel: 'apple-touch-icon',
+        href: '/apple-touch-icon.png',
+        sizes: '180x180',
+      },
+      { rel: 'sitemap', href: '/sitemap.xml', type: 'application/xml' },
     ],
   }),
   shellComponent: RootDocument,
@@ -40,6 +101,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(TSUKI_JSON_LD) }}
+        />
       </head>
       <body>
         {children}

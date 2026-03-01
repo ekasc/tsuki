@@ -27,6 +27,12 @@ import {
   loadReadingHistory,
   upsertReadingHistory,
 } from '#/lib/reading-history'
+import {
+  absoluteUrl,
+  canonicalUrl,
+  DEFAULT_OG_IMAGE_PATH,
+  truncateDescription,
+} from '#/lib/seo'
 import { cn } from '#/lib/utils'
 import {
   loadSavedWeebcentralSeries,
@@ -37,6 +43,41 @@ import {
 const createAnyFileRoute = createFileRoute as any
 
 export const Route = createAnyFileRoute('/weebcentral-series/$seriesId')({
+  head: ({
+    params,
+    loaderData,
+  }: {
+    params: { seriesId: string }
+    loaderData?: WeebcentralSeriesDTO | null
+  }) => {
+    const seriesTitle = loaderData?.title?.trim()
+    const title = seriesTitle ? `${seriesTitle} | Tsuki Reader` : 'Series | Tsuki Reader'
+    const description = truncateDescription(
+      loaderData?.description?.trim() ||
+        'Browse chapters and continue reading with Tsuki Reader.',
+    )
+    const canonical = canonicalUrl(
+      `/weebcentral-series/${encodeURIComponent(params.seriesId)}`,
+    )
+    const image = absoluteUrl(loaderData?.coverUrl || DEFAULT_OG_IMAGE_PATH)
+
+    return {
+      meta: [
+        { title },
+        { name: 'description', content: description },
+        { property: 'og:type', content: 'website' },
+        { property: 'og:title', content: title },
+        { property: 'og:description', content: description },
+        { property: 'og:url', content: canonical },
+        { property: 'og:image', content: image },
+        { property: 'og:image:alt', content: 'Series cover image' },
+        { name: 'twitter:title', content: title },
+        { name: 'twitter:description', content: description },
+        { name: 'twitter:image', content: image },
+      ],
+      links: [{ rel: 'canonical', href: canonical }],
+    }
+  },
   loader: async ({
     params,
     context,

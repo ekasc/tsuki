@@ -39,6 +39,7 @@ import {
 } from '#/lib/query-options'
 import type { AppRouterContext } from '#/lib/router-context'
 import { upsertReadingHistory } from '#/lib/reading-history'
+import { canonicalUrl } from '#/lib/seo'
 import {
   buildTwoPageSteps,
   findStepIndexByPageIndex,
@@ -50,6 +51,25 @@ import {
 import { useTouchDevice, useTouchPortrait } from '#/hooks/use-touch-portrait'
 
 export const Route = createAnyFileRoute('/weebcentral/$chapterId')({
+  headers: () => ({
+    'X-Robots-Tag': 'noindex, follow',
+  }),
+  head: ({ params }: { params: { chapterId: string } }) => ({
+    meta: [
+      { title: 'Reader | Tsuki Reader' },
+      {
+        name: 'description',
+        content: 'Read manga chapters in Tsuki with a clean, distraction-free viewer.',
+      },
+      { name: 'robots', content: 'noindex,follow' },
+    ],
+    links: [
+      {
+        rel: 'canonical',
+        href: canonicalUrl(`/weebcentral/${encodeURIComponent(params.chapterId)}`),
+      },
+    ],
+  }),
   loader: async ({
     params,
     context,

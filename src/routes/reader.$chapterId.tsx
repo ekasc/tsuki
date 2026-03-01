@@ -51,6 +51,15 @@ import { useImagePrefetch } from '#/hooks/use-image-prefetch'
 import { useTouchDevice, useTouchPortrait } from '#/hooks/use-touch-portrait'
 
 export const Route = createAnyFileRoute('/reader/$chapterId')({
+  headers: () => ({
+    'X-Robots-Tag': 'noindex, nofollow',
+  }),
+  head: () => ({
+    meta: [
+      { title: 'Local Reader | Tsuki Reader' },
+      { name: 'robots', content: 'noindex,nofollow' },
+    ],
+  }),
   loader: async ({
     params,
     context,

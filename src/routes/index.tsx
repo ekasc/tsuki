@@ -9,6 +9,12 @@ import { Input } from '#/components/ui/input'
 import type { ReadingHistoryItem, WeebcentralSeriesDTO } from '#/lib/contracts'
 import { weebcentralSeriesQueryOptions } from '#/lib/query-options'
 import { loadReadingHistory } from '#/lib/reading-history'
+import {
+  absoluteUrl,
+  canonicalUrl,
+  DEFAULT_OG_IMAGE_PATH,
+  SITE_URL,
+} from '#/lib/seo'
 
 const HOME_ONBOARDING_KEY = 'tsuki-home-onboarding-dismissed.v1'
 import {
@@ -16,7 +22,29 @@ import {
   removeSavedWeebcentralSeries,
 } from '#/lib/weebcentral-library'
 
-export const Route = createAnyFileRoute('/')({ component: LibraryPage })
+const HOME_TITLE = 'Tsuki Reader | Old-School Manga Reader'
+const HOME_DESCRIPTION =
+  'Tsuki Reader is a fast web manga reader and image proxy with a clean interface, smooth paging, and mobile-friendly controls.'
+
+export const Route = createAnyFileRoute('/')({
+  head: () => ({
+    meta: [
+      { title: HOME_TITLE },
+      { name: 'description', content: HOME_DESCRIPTION },
+      { property: 'og:type', content: 'website' },
+      { property: 'og:title', content: HOME_TITLE },
+      { property: 'og:description', content: HOME_DESCRIPTION },
+      { property: 'og:url', content: SITE_URL },
+      { property: 'og:image', content: absoluteUrl(DEFAULT_OG_IMAGE_PATH) },
+      { property: 'og:image:alt', content: 'Tsuki Reader icon' },
+      { name: 'twitter:title', content: HOME_TITLE },
+      { name: 'twitter:description', content: HOME_DESCRIPTION },
+      { name: 'twitter:image', content: absoluteUrl(DEFAULT_OG_IMAGE_PATH) },
+    ],
+    links: [{ rel: 'canonical', href: canonicalUrl('/') }],
+  }),
+  component: LibraryPage,
+})
 
 function LibraryPage() {
   const [history, setHistory] = useState<ReadingHistoryItem[]>([])
@@ -423,6 +451,23 @@ function LibraryPage() {
             ))}
           </div>
         ) : null}
+      </section>
+
+      <section
+        className="exp-surface-soft animate-enter space-y-3"
+        style={{ animationDelay: '105ms' }}
+      >
+        <h2 className="manga-title text-lg font-semibold text-foreground md:text-xl">
+          About Tsuki Reader
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Tsuki is a web manga reader focused on fast page turns, clean typography,
+          and a minimal old-school reading layout.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          This website is an image proxy and reading interface. It does not host
+          manga files.
+        </p>
       </section>
     </div>
   )

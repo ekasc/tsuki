@@ -21,6 +21,15 @@ import { loadReadingHistory, upsertReadingHistory } from '#/lib/reading-history'
 import { cn } from '#/lib/utils'
 
 export const Route = createAnyFileRoute('/series/$seriesId')({
+  headers: () => ({
+    'X-Robots-Tag': 'noindex, nofollow',
+  }),
+  head: () => ({
+    meta: [
+      { title: 'Local Series | Tsuki Reader' },
+      { name: 'robots', content: 'noindex,nofollow' },
+    ],
+  }),
   loader: async ({
     params,
     context,
