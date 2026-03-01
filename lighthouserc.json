@@ -1,7 +1,7 @@
 {
   "ci": {
     "collect": {
-      "startServerCommand": "pnpm dev --host 127.0.0.1 --port 4173",
+      "startServerCommand": "TSUKI_LOCAL_LIBRARY_DRIVER=fixtures TSUKI_TEST_FIXTURES=1 CLOUDFLARE_ENV=test pnpm preview --host 127.0.0.1 --port 4173",
       "startServerReadyPattern": "Local",
       "url": [
         "http://127.0.0.1:4173/",
