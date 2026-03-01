@@ -30,8 +30,10 @@ async function main() {
     )
   }
 
-  if (wrangler?.main !== 'dist/server/server.js') {
-    failures.push('wrangler.jsonc main must be "dist/server/server.js"')
+  if (wrangler?.main !== '@tanstack/react-start/server-entry') {
+    failures.push(
+      'wrangler.jsonc main must be "@tanstack/react-start/server-entry"',
+    )
   }
 
   const scripts = packageJson?.scripts ?? {}
@@ -59,13 +61,13 @@ async function main() {
   )
   assertIncludes(
     cloudflareDryDeployScript,
-    'deploy --dry-run --config wrangler.jsonc',
+    'deploy --dry-run --config dist/server/wrangler.json',
     'package.json scripts.deploy:cloudflare:dry',
     failures,
   )
   assertIncludes(
     cloudflareDryDeployScript,
-    '--config wrangler.jsonc',
+    '--config dist/server/wrangler.json',
     'package.json scripts.deploy:cloudflare:dry',
     failures,
   )
@@ -83,13 +85,13 @@ async function main() {
   )
   assertIncludes(
     cloudflareDeployScript,
-    'deploy --config wrangler.jsonc',
+    'deploy --config dist/server/wrangler.json',
     'package.json scripts.deploy:cloudflare',
     failures,
   )
   assertIncludes(
     cloudflareDeployScript,
-    '--config wrangler.jsonc',
+    '--config dist/server/wrangler.json',
     'package.json scripts.deploy:cloudflare',
     failures,
   )
