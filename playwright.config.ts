@@ -16,10 +16,10 @@ export default defineConfig({
   },
   webServer: {
     command:
-      'TSUKI_LOCAL_LIBRARY_ENABLED=1 pnpm dev --host 127.0.0.1 --port 3100',
+      'CLOUDFLARE_ENV=test TSUKI_LOCAL_LIBRARY_DRIVER=fixtures pnpm build && CLOUDFLARE_ENV=test TSUKI_LOCAL_LIBRARY_DRIVER=fixtures pnpm preview --host 127.0.0.1 --port 3100',
     port: 3100,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    reuseExistingServer: false,
+    timeout: 180_000,
   },
   projects: [
     {
