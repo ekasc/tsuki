@@ -11,6 +11,120 @@
         "enabled": true,
     },
     "vars": {
+        "TSUKI_LOCAL_LIBRARY_DRIVER": "disabled",
         "TSUKI_LOCAL_LIBRARY_ENABLED": "0"
+    },
+    "routes": [
+        {
+            "pattern": "tsukireader.com/*",
+            "zone_name": "tsukireader.com"
+        },
+        {
+            "pattern": "www.tsukireader.com/*",
+            "zone_name": "tsukireader.com"
+        }
+    ],
+    "ratelimits": [
+        {
+            "name": "TSUKI_RL_SCRAPE",
+            "namespace_id": "21001",
+            "simple": {
+                "limit": 120,
+                "period": 60
+            }
+        },
+        {
+            "name": "TSUKI_RL_SCRAPE_PREFETCH",
+            "namespace_id": "21002",
+            "simple": {
+                "limit": 36,
+                "period": 60
+            }
+        },
+        {
+            "name": "TSUKI_RL_SCRAPE_FORCE",
+            "namespace_id": "21003",
+            "simple": {
+                "limit": 8,
+                "period": 60
+            }
+        },
+        {
+            "name": "TSUKI_RL_IMAGE",
+            "namespace_id": "21004",
+            "simple": {
+                "limit": 320,
+                "period": 60
+            }
+        },
+        {
+            "name": "TSUKI_RL_IMAGE_PREFETCH",
+            "namespace_id": "21005",
+            "simple": {
+                "limit": 90,
+                "period": 60
+            }
+        }
+    ],
+    "analytics_engine_datasets": [
+        {
+            "binding": "TSUKI_ANALYTICS"
+        }
+    ],
+    "env": {
+        "test": {
+            "vars": {
+                "TSUKI_LOCAL_LIBRARY_DRIVER": "fixtures",
+                "TSUKI_TEST_FIXTURES": "1",
+                "TSUKI_LOCAL_LIBRARY_ENABLED": "1"
+            },
+            "ratelimits": [
+                {
+                    "name": "TSUKI_RL_SCRAPE",
+                    "namespace_id": "91001",
+                    "simple": {
+                        "limit": 120,
+                        "period": 60
+                    }
+                },
+                {
+                    "name": "TSUKI_RL_SCRAPE_PREFETCH",
+                    "namespace_id": "91002",
+                    "simple": {
+                        "limit": 36,
+                        "period": 60
+                    }
+                },
+                {
+                    "name": "TSUKI_RL_SCRAPE_FORCE",
+                    "namespace_id": "91003",
+                    "simple": {
+                        "limit": 8,
+                        "period": 60
+                    }
+                },
+                {
+                    "name": "TSUKI_RL_IMAGE",
+                    "namespace_id": "91004",
+                    "simple": {
+                        "limit": 320,
+                        "period": 60
+                    }
+                },
+                {
+                    "name": "TSUKI_RL_IMAGE_PREFETCH",
+                    "namespace_id": "91005",
+                    "simple": {
+                        "limit": 90,
+                        "period": 60
+                    }
+                }
+            ],
+            "analytics_engine_datasets": [
+                {
+                    "binding": "TSUKI_ANALYTICS"
+                }
+            ]
+        }
     }
 }
