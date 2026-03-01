@@ -15,7 +15,8 @@ export default defineConfig({
     colorScheme: 'light',
   },
   webServer: {
-    command: 'pnpm dev --host 127.0.0.1 --port 3100',
+    command:
+      'TSUKI_LOCAL_LIBRARY_ENABLED=1 pnpm dev --host 127.0.0.1 --port 3100',
     port: 3100,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
