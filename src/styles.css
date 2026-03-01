@@ -487,10 +487,18 @@
 
   .reader-native-pager {
     -ms-overflow-style: none;
+    contain: layout paint size;
+    transform: translateZ(0);
+    backface-visibility: hidden;
   }
 
   .reader-native-pager::-webkit-scrollbar {
     display: none;
+  }
+
+  .reader-native-pager > div {
+    transform: translateZ(0);
+    backface-visibility: hidden;
   }
 
   .reader-page-motion-next {

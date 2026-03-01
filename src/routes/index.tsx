@@ -24,19 +24,28 @@ import {
 
 const HOME_TITLE = 'Tsuki Reader | Old-School Manga Reader'
 const HOME_DESCRIPTION =
-  'Tsuki Reader is a fast web manga reader and image proxy with a clean interface, smooth paging, and mobile-friendly controls.'
+  'Tsuki Reader is an online manga reader and image proxy built for smooth right-to-left paging on desktop, phones, and tablets.'
 
 export const Route = createAnyFileRoute('/')({
   head: () => ({
     meta: [
       { title: HOME_TITLE },
       { name: 'description', content: HOME_DESCRIPTION },
+      {
+        name: 'keywords',
+        content:
+          'manga reader, web manga reader, rtl manga reader, weebcentral reader, image proxy',
+      },
       { property: 'og:type', content: 'website' },
       { property: 'og:title', content: HOME_TITLE },
       { property: 'og:description', content: HOME_DESCRIPTION },
       { property: 'og:url', content: SITE_URL },
+      { property: 'og:locale', content: 'en_US' },
       { property: 'og:image', content: absoluteUrl(DEFAULT_OG_IMAGE_PATH) },
       { property: 'og:image:alt', content: 'Tsuki Reader icon' },
+      { property: 'og:image:width', content: '512' },
+      { property: 'og:image:height', content: '512' },
+      { name: 'twitter:card', content: 'summary_large_image' },
       { name: 'twitter:title', content: HOME_TITLE },
       { name: 'twitter:description', content: HOME_DESCRIPTION },
       { name: 'twitter:image', content: absoluteUrl(DEFAULT_OG_IMAGE_PATH) },

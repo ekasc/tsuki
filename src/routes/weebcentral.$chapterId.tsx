@@ -694,6 +694,7 @@ function WeebcentralReaderPage() {
   >(null)
   const [boundaryNotice, setBoundaryNotice] = useState<string | null>(null)
   const [pageMotion, setPageMotion] = useState<'next' | 'prev' | null>(null)
+  const [nativePagerVisualLock, setNativePagerVisualLock] = useState(false)
 
   const viewportRef = useRef<HTMLDivElement>(null)
   const readerStageRef = useRef<HTMLElement>(null)
@@ -723,6 +724,7 @@ function WeebcentralReaderPage() {
   const pagerSettleTimeoutRef = useRef<number | null>(null)
   const nativePagerCenterRafRef = useRef<number | null>(null)
   const nativePagerInitRafRef = useRef<number | null>(null)
+  const nativePagerVisualLockTimeoutRef = useRef<number | null>(null)
   const nativePagerReadyRef = useRef(false)
   const nativePagerCenteringRef = useRef(false)
   const isTouchDevice = useTouchDevice()
@@ -947,9 +949,30 @@ function WeebcentralReaderPage() {
     singlePageSteps,
   ])
   const leftRenderUnits =
-    nextRenderUnits.length > 0 ? nextRenderUnits : currentRenderUnits
+    nativePagerVisualLock
+      ? currentRenderUnits
+      : nextRenderUnits.length > 0
+        ? nextRenderUnits
+        : currentRenderUnits
   const rightRenderUnits =
-    previousRenderUnits.length > 0 ? previousRenderUnits : currentRenderUnits
+    nativePagerVisualLock
+      ? currentRenderUnits
+      : previousRenderUnits.length > 0
+        ? previousRenderUnits
+        : currentRenderUnits
+
+  const armNativePagerVisualLock = useCallback((durationMs = 220) => {
+    setNativePagerVisualLock(true)
+
+    if (nativePagerVisualLockTimeoutRef.current !== null) {
+      window.clearTimeout(nativePagerVisualLockTimeoutRef.current)
+    }
+
+    nativePagerVisualLockTimeoutRef.current = window.setTimeout(() => {
+      setNativePagerVisualLock(false)
+      nativePagerVisualLockTimeoutRef.current = null
+    }, durationMs)
+  }, [])
 
   const recenterNativePager = useCallback(
     (options?: { attempts?: number; markReady?: boolean }) => {
@@ -1692,6 +1715,10 @@ function WeebcentralReaderPage() {
         window.clearTimeout(pagerSettleTimeoutRef.current)
       }
 
+      if (nativePagerVisualLockTimeoutRef.current !== null) {
+        window.clearTimeout(nativePagerVisualLockTimeoutRef.current)
+      }
+
       if (nativePagerInitRafRef.current !== null) {
         window.cancelAnimationFrame(nativePagerInitRafRef.current)
       }
@@ -2048,6 +2075,7 @@ function WeebcentralReaderPage() {
         if (nextRenderUnits.length > 0) {
           suppressTapRef.current = true
           navigatingRef.current = true
+          armNativePagerVisualLock()
           flushSync(() => {
             goNext()
           })
@@ -2063,6 +2091,7 @@ function WeebcentralReaderPage() {
         if (previousRenderUnits.length > 0) {
           suppressTapRef.current = true
           navigatingRef.current = true
+          armNativePagerVisualLock()
           flushSync(() => {
             goPrevious()
           })
@@ -2077,6 +2106,7 @@ function WeebcentralReaderPage() {
       recenterNativePager({ attempts: 1 })
     }, 100)
   }, [
+    armNativePagerVisualLock,
     gallerySwipeEnabled,
     goNext,
     goPrevious,
@@ -2324,6 +2354,11 @@ function WeebcentralReaderPage() {
     if (!gallerySwipeEnabled || !nativePagerRef.current) {
       nativePagerReadyRef.current = false
       nativePagerCenteringRef.current = false
+      setNativePagerVisualLock(false)
+      if (nativePagerVisualLockTimeoutRef.current !== null) {
+        window.clearTimeout(nativePagerVisualLockTimeoutRef.current)
+        nativePagerVisualLockTimeoutRef.current = null
+      }
       return
     }
 
@@ -2344,6 +2379,7 @@ function WeebcentralReaderPage() {
       }
 
       currentPager.style.overflowX = 'hidden'
+      armNativePagerVisualLock(320)
       const centered = recenterNativePager({ attempts: 4, markReady: false })
       if (!centered) {
         if (attempt < 8) {
@@ -2402,8 +2438,19 @@ function WeebcentralReaderPage() {
       pager.style.scrollSnapType = ''
       nativePagerReadyRef.current = false
       nativePagerCenteringRef.current = false
+      setNativePagerVisualLock(false)
+      if (nativePagerVisualLockTimeoutRef.current !== null) {
+        window.clearTimeout(nativePagerVisualLockTimeoutRef.current)
+        nativePagerVisualLockTimeoutRef.current = null
+      }
     }
-  }, [chapter?.chapterId, gallerySwipeEnabled, isLoading, recenterNativePager])
+  }, [
+    armNativePagerVisualLock,
+    chapter?.chapterId,
+    gallerySwipeEnabled,
+    isLoading,
+    recenterNativePager,
+  ])
 
   useEffect(() => {
     if (

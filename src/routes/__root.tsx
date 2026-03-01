@@ -14,7 +14,7 @@ import type { AppRouterContext } from '#/lib/router-context'
 
 const TSUKI_DEFAULT_TITLE = 'Tsuki Reader'
 const TSUKI_DEFAULT_DESCRIPTION =
-  'Fast web manga reader and image proxy with clean navigation, RTL support, and a distraction-free layout.'
+  'Read manga online in a fast, old-school reader with right-to-left paging, smooth navigation, and no clutter.'
 const TSUKI_JSON_LD = [
   {
     '@context': 'https://schema.org',
@@ -46,6 +46,10 @@ export const Route = createRootRouteWithContext<AppRouterContext>()({
       { title: TSUKI_DEFAULT_TITLE },
       { name: 'description', content: TSUKI_DEFAULT_DESCRIPTION },
       { name: 'robots', content: 'index,follow,max-image-preview:large' },
+      {
+        name: 'googlebot',
+        content: 'index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1',
+      },
       { name: 'referrer', content: 'strict-origin-when-cross-origin' },
       { name: 'application-name', content: TSUKI_DEFAULT_TITLE },
       { name: 'apple-mobile-web-app-title', content: TSUKI_DEFAULT_TITLE },
@@ -61,8 +65,11 @@ export const Route = createRootRouteWithContext<AppRouterContext>()({
       { property: 'og:title', content: TSUKI_DEFAULT_TITLE },
       { property: 'og:description', content: TSUKI_DEFAULT_DESCRIPTION },
       { property: 'og:url', content: SITE_URL },
+      { property: 'og:locale', content: 'en_US' },
       { property: 'og:image', content: absoluteUrl(DEFAULT_OG_IMAGE_PATH) },
       { property: 'og:image:alt', content: 'Tsuki Reader icon' },
+      { property: 'og:image:width', content: '512' },
+      { property: 'og:image:height', content: '512' },
       { name: 'twitter:card', content: 'summary_large_image' },
       { name: 'twitter:title', content: TSUKI_DEFAULT_TITLE },
       { name: 'twitter:description', content: TSUKI_DEFAULT_DESCRIPTION },

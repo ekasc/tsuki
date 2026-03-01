@@ -1,8 +1,10 @@
 {
     "name": "Tsuki Reader",
     "short_name": "Tsuki",
-    "description": "A clean, distraction-free manga reader. Read online or from your files.",
+    "description": "Online manga reader and image proxy with smooth right-to-left paging.",
+    "id": "/",
     "start_url": "/",
+    "scope": "/",
     "display": "standalone",
     "background_color": "#efe6d3",
     "theme_color": "#1d140d",

@@ -68,7 +68,8 @@
     ],
     "analytics_engine_datasets": [
         {
-            "binding": "TSUKI_ANALYTICS"
+            "binding": "TSUKI_ANALYTICS",
+            "dataset": "TSUKI_ANALYTICS"
         }
     ],
     "env": {
@@ -122,7 +123,8 @@
             ],
             "analytics_engine_datasets": [
                 {
-                    "binding": "TSUKI_ANALYTICS"
+                    "binding": "TSUKI_ANALYTICS",
+                    "dataset": "TSUKI_ANALYTICS"
                 }
             ]
         }
