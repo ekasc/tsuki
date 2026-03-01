@@ -11,15 +11,13 @@ export const Route = createAnyFileRoute('/api/series/$seriesId')({
         )
 
         try {
-          const { assertLocalLibraryEnabled } = await import('#/server/runtime')
-          assertLocalLibraryEnabled()
-
-          const { ensureServerReady } = await import('#/server/bootstrap')
-          const { getSeriesDetail } = await import('#/server/db/repository')
+          const { getLocalLibraryProvider } = await import(
+            '#/server/local-library'
+          )
           const { HttpError } = await import('#/server/errors')
 
-          await ensureServerReady()
-          const series = getSeriesDetail(params.seriesId)
+          const provider = await getLocalLibraryProvider()
+          const series = await provider.getSeries(params.seriesId)
 
           if (!series) {
             throw new HttpError(404, 'Series not found')
@@ -36,29 +34,16 @@ export const Route = createAnyFileRoute('/api/series/$seriesId')({
         )
 
         try {
-          const { assertLocalLibraryEnabled } = await import('#/server/runtime')
-          assertLocalLibraryEnabled()
-
-          const { ensureServerReady } = await import('#/server/bootstrap')
-          const { deleteSeriesById, getSeriesDetail } = await import(
-            '#/server/db/repository'
-          )
-          const { removeDirectory, safeResolveDataPath } = await import(
-            '#/server/fs'
+          const { getLocalLibraryProvider } = await import(
+            '#/server/local-library'
           )
           const { HttpError } = await import('#/server/errors')
 
-          await ensureServerReady()
-
-          const series = getSeriesDetail(params.seriesId)
-          if (!series) {
+          const provider = await getLocalLibraryProvider()
+          const deleted = await provider.deleteSeries(params.seriesId)
+          if (!deleted) {
             throw new HttpError(404, 'Series not found')
           }
-
-          deleteSeriesById(params.seriesId)
-          await removeDirectory(
-            safeResolveDataPath(`library/${params.seriesId}`),
-          )
 
           return noContentResponse()
         } catch (error) {

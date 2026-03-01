@@ -246,6 +246,7 @@ async function fetchMangadexJson<TResponse>(
   pathname: string,
   config: ProxyServerConfig,
   searchParams?: URLSearchParams,
+  options?: { bypassCloudflareCache?: boolean },
 ): Promise<TResponse> {
   const url = new URL(pathname, MANGADEX_API_ORIGIN)
   if (searchParams) {
@@ -263,6 +264,8 @@ async function fetchMangadexJson<TResponse>(
     {
       allowedHostnames: [MANGADEX_API_HOST],
       maxRedirects: config.imageProxyMaxRedirects,
+      cacheClass: 'metadata',
+      bypassCloudflareCache: options?.bypassCloudflareCache,
     },
     config,
   )
@@ -361,7 +364,9 @@ async function fetchSeriesDtoBySeriesId(
     seriesQuery.append('includes[]', 'cover_art')
     const seriesPayload = await fetchMangadexJson<
       MangadexSingleResponse<MangadexEntity<MangadexMangaAttributes>>
-    >(`/manga/${seriesId}`, config, seriesQuery)
+    >(`/manga/${seriesId}`, config, seriesQuery, {
+      bypassCloudflareCache: options?.bypassCache,
+    })
 
     if (seriesPayload.result !== 'ok' || !seriesPayload.data) {
       throw new HttpError(502, 'Invalid MangaDex series payload')
@@ -404,7 +409,9 @@ async function fetchSeriesDtoBySeriesId(
 
       const feedPayload = await fetchMangadexJson<
         MangadexCollectionResponse<MangadexEntity<MangadexChapterAttributes>>
-      >(`/manga/${seriesId}/feed`, config, feedQuery)
+      >(`/manga/${seriesId}/feed`, config, feedQuery, {
+        bypassCloudflareCache: options?.bypassCache,
+      })
 
       if (feedPayload.result !== 'ok' || !Array.isArray(feedPayload.data)) {
         throw new HttpError(502, 'Invalid MangaDex chapter feed payload')

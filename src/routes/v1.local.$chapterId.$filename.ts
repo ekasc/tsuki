@@ -13,8 +13,10 @@ export const Route = createAnyFileRoute('/v1/local/$chapterId/$filename')({
         const { toApiErrorResponse } = await import('#/server/api/http')
 
         try {
-          const { assertLocalLibraryEnabled } = await import('#/server/runtime')
-          assertLocalLibraryEnabled()
+          const { assertNodeLocalLibraryDriver } = await import(
+            '#/server/runtime-driver'
+          )
+          assertNodeLocalLibraryDriver()
 
           const { ensureServerReady } = await import('#/server/bootstrap')
           const { streamLocalAsset } = await import(

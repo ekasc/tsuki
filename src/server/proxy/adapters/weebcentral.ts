@@ -651,6 +651,8 @@ async function fetchTextWithWeebcentralGuards(
     config: ProxyServerConfig,
     options: {
         allowedHostnames?: string[]
+        cacheClass?: 'metadata' | 'image'
+        bypassCloudflareCache?: boolean
     } = {},
 ): Promise<{
     text: string
@@ -667,6 +669,8 @@ async function fetchTextWithWeebcentralGuards(
         {
             allowedHostnames: options.allowedHostnames ?? ['weebcentral.com'],
             maxRedirects: config.imageProxyMaxRedirects,
+            cacheClass: options.cacheClass ?? 'metadata',
+            bypassCloudflareCache: options.bypassCloudflareCache,
         },
         config,
     )
@@ -693,6 +697,7 @@ async function fetchTextWithWeebcentralGuards(
 async function resolveSeriesIdFromChapterInput(
     parsedInput: ParsedWeebcentralInput,
     config: ProxyServerConfig,
+    options?: { bypassCache?: boolean },
 ): Promise<string> {
     if (parsedInput.chapterId) {
         const chapterPageUrl =
@@ -701,6 +706,10 @@ async function resolveSeriesIdFromChapterInput(
         const { text } = await fetchTextWithWeebcentralGuards(
             chapterPageUrl,
             config,
+            {
+                cacheClass: 'metadata',
+                bypassCloudflareCache: options?.bypassCache,
+            },
         )
         const seriesId = extractSeriesIdFromHtml(text)
 
@@ -719,6 +728,10 @@ async function resolveSeriesIdFromChapterInput(
         const { text } = await fetchTextWithWeebcentralGuards(
             chapterPageUrl,
             config,
+            {
+                cacheClass: 'metadata',
+                bypassCloudflareCache: options?.bypassCache,
+            },
         )
         const seriesId = extractSeriesIdFromHtml(text)
 
@@ -744,6 +757,10 @@ async function fetchSeriesDtoBySeriesId(
         const { text: seriesHtml } = await fetchTextWithWeebcentralGuards(
             seriesUrl,
             config,
+            {
+                cacheClass: 'metadata',
+                bypassCloudflareCache: options?.bypassCache,
+            },
         )
         const chapterListUrl = new URL(
             `/series/${seriesId}${FULL_CHAPTER_LIST_SUFFIX}`,
@@ -756,6 +773,10 @@ async function fetchSeriesDtoBySeriesId(
             const response = await fetchTextWithWeebcentralGuards(
                 chapterListUrl,
                 config,
+                {
+                    cacheClass: 'metadata',
+                    bypassCloudflareCache: options?.bypassCache,
+                },
             )
             chapterListHtml = response.text
         } catch {
@@ -824,6 +845,7 @@ async function resolveSeriesFromInput(
         const resolvedSeriesId = await resolveSeriesIdFromChapterInput(
             parsed,
             config,
+            options,
         )
         return fetchSeriesDtoBySeriesId(resolvedSeriesId, config, options)
     }
@@ -835,6 +857,7 @@ async function resolveSeriesFromInput(
             const resolvedSeriesId = await resolveSeriesIdFromChapterInput(
                 parsed,
                 config,
+                options,
             )
             return fetchSeriesDtoBySeriesId(resolvedSeriesId, config, options)
         }
@@ -922,6 +945,7 @@ async function fetchChapterPages(
         {
             allowedHostnames: config.weebcentralImageHostAllowlist,
             maxRedirects: config.imageProxyMaxRedirects,
+            cacheClass: 'metadata',
         },
         config,
     )

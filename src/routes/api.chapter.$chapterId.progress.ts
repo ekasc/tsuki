@@ -17,16 +17,13 @@ export const Route = createAnyFileRoute('/api/chapter/$chapterId/progress')({
         )
 
         try {
-          const { assertLocalLibraryEnabled } = await import('#/server/runtime')
-          assertLocalLibraryEnabled()
-
-          const { ensureServerReady } = await import('#/server/bootstrap')
+          const { getLocalLibraryProvider } = await import(
+            '#/server/local-library'
+          )
           const { progressPayloadSchema } = await import(
             '#/server/api/validators'
           )
-          const { upsertProgress } = await import('#/server/db/repository')
 
-          await ensureServerReady()
           const body = await request.json()
           const payload = progressPayloadSchema.parse(body)
 
@@ -34,7 +31,8 @@ export const Route = createAnyFileRoute('/api/chapter/$chapterId/progress')({
             return jsonResponse({ error: 'Chapter mismatch' }, { status: 400 })
           }
 
-          const progress = upsertProgress(payload)
+          const provider = await getLocalLibraryProvider()
+          const progress = await provider.updateProgress(payload)
           return jsonResponse(progress)
         } catch (error) {
           return toApiErrorResponse(error)

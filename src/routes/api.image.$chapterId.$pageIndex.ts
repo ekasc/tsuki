@@ -29,15 +29,16 @@ export const Route = createAnyFileRoute('/api/image/$chapterId/$pageIndex')({
         const { toApiErrorResponse } = await import('#/server/api/http')
 
         try {
-          const { assertLocalLibraryEnabled } = await import('#/server/runtime')
-          assertLocalLibraryEnabled()
-
-          const { ensureServerReady } = await import('#/server/bootstrap')
-          const { resolveImageAsset } = await import('#/server/image-service')
-
-          await ensureServerReady()
+          const { getLocalLibraryProvider } = await import(
+            '#/server/local-library'
+          )
+          const { HttpError } = await import('#/server/errors')
 
           const pageIndex = Number.parseInt(params.pageIndex, 10)
+          if (Number.isNaN(pageIndex) || pageIndex < 0) {
+            throw new HttpError(400, 'Invalid page index')
+          }
+
           const requestUrl = new URL(request.url)
 
           const thumb = requestUrl.searchParams.get('thumb') === '1'
@@ -46,41 +47,12 @@ export const Route = createAnyFileRoute('/api/image/$chapterId/$pageIndex')({
           const cropRaw = requestUrl.searchParams.get('crop')
           const crop = cropRaw === 'left' || cropRaw === 'right' ? cropRaw : null
 
-          const asset = await resolveImageAsset(params.chapterId, pageIndex, {
+          const provider = await getLocalLibraryProvider()
+          return await provider.getImageResponse(request, params.chapterId, pageIndex, {
             thumbnail: thumb,
             width,
             height,
             crop,
-          })
-
-          const clientEtag = request.headers.get('if-none-match')
-
-          if (clientEtag && clientEtag === asset.etag) {
-            return new Response(null, {
-              status: 304,
-              headers: {
-                ETag: asset.etag,
-                'Cache-Control': 'public, max-age=31536000, immutable',
-              },
-            })
-          }
-
-          const [{ createReadStream }, { Readable }] = await Promise.all([
-            import('node:fs'),
-            import('node:stream'),
-          ])
-
-          const stream = createReadStream(asset.filePath)
-
-          return new Response(Readable.toWeb(stream) as ReadableStream, {
-            headers: {
-              'Content-Type': asset.contentType,
-              'Content-Length': asset.contentLength,
-              'Cache-Control': 'public, max-age=31536000, immutable',
-              ETag: asset.etag,
-              'Last-Modified': asset.lastModified,
-              'X-Content-Type-Options': 'nosniff',
-            },
           })
         } catch (error) {
           return toApiErrorResponse(error)

@@ -11,15 +11,13 @@ export const Route = createAnyFileRoute('/api/chapter/$chapterId')({
         )
 
         try {
-          const { assertLocalLibraryEnabled } = await import('#/server/runtime')
-          assertLocalLibraryEnabled()
-
-          const { ensureServerReady } = await import('#/server/bootstrap')
-          const { getChapterPayload } = await import('#/server/db/repository')
+          const { getLocalLibraryProvider } = await import(
+            '#/server/local-library'
+          )
           const { HttpError } = await import('#/server/errors')
 
-          await ensureServerReady()
-          const payload = getChapterPayload(params.chapterId)
+          const provider = await getLocalLibraryProvider()
+          const payload = await provider.getChapter(params.chapterId)
 
           if (!payload) {
             throw new HttpError(404, 'Chapter not found')

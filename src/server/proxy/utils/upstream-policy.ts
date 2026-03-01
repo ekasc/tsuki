@@ -5,6 +5,11 @@ import { assertRateLimit, requestClientId } from '#/server/rate-limit'
 
 import type { ProxyServerConfig } from '../server'
 import { proxyConfig } from '../server'
+import {
+  type CloudflareRateLimitBinding,
+  type CloudflareRateLimitResult,
+  getCloudflareBinding,
+} from './cloudflare-bindings'
 import { fetchWithSafeRedirects } from './security'
 
 const circuitFailuresByHost = new Map<string, number[]>()
@@ -14,6 +19,26 @@ const upstreamLimitersByConcurrency = new Map<number, ReturnType<typeof pLimit>>
 const RETRYABLE_STATUSES = new Set([502, 503, 504])
 const CIRCUIT_BREAKER_STATUSES = new Set([403, 429, 502, 503, 504])
 const MAX_RETRY_AFTER_MS = 15 * 60_000
+const EDGE_RATE_LIMIT_SCRAPE_BINDING = 'TSUKI_RL_SCRAPE'
+const EDGE_RATE_LIMIT_SCRAPE_PREFETCH_BINDING = 'TSUKI_RL_SCRAPE_PREFETCH'
+const EDGE_RATE_LIMIT_SCRAPE_FORCE_BINDING = 'TSUKI_RL_SCRAPE_FORCE'
+const EDGE_RATE_LIMIT_IMAGE_BINDING = 'TSUKI_RL_IMAGE'
+const EDGE_RATE_LIMIT_IMAGE_PREFETCH_BINDING = 'TSUKI_RL_IMAGE_PREFETCH'
+
+interface CfCachePolicyInput {
+  cacheClass?: 'metadata' | 'image'
+  bypassCloudflareCache?: boolean
+}
+
+interface CfCachePolicyOutput {
+  cacheEverything?: boolean
+  cacheTtl?: number
+  cacheTtlByStatus?: Record<string, number>
+}
+
+interface RequestInitWithCloudflare extends RequestInit {
+  cf?: CfCachePolicyOutput
+}
 
 function resolveHost(input: URL | string): string {
   const url = input instanceof URL ? input : new URL(input)
@@ -186,6 +211,68 @@ function parseRetryAfterMs(headerValue: string | null): number | null {
   return Math.min(ms, MAX_RETRY_AFTER_MS)
 }
 
+export function buildCloudflareCachePolicy(
+  options: CfCachePolicyInput,
+): CfCachePolicyOutput | undefined {
+  if (options.bypassCloudflareCache) {
+    return {
+      cacheEverything: false,
+      cacheTtl: 0,
+      cacheTtlByStatus: {
+        '200-299': 0,
+        '300-499': 0,
+        '500-599': 0,
+      },
+    }
+  }
+
+  if (options.cacheClass === 'image') {
+    return {
+      cacheEverything: true,
+      cacheTtlByStatus: {
+        '200-299': 60 * 60 * 24,
+        '404': 60,
+        '500-599': 0,
+      },
+    }
+  }
+
+  return {
+    cacheEverything: true,
+    cacheTtlByStatus: {
+      '200-299': 120,
+      '404': 15,
+      '500-599': 0,
+    },
+  }
+}
+
+async function consumeEdgeRateLimit(
+  bindingName: string,
+  key: string,
+): Promise<boolean> {
+  const binding = await getCloudflareBinding<CloudflareRateLimitBinding>(
+    bindingName,
+  )
+
+  if (!binding || typeof binding.limit !== 'function') {
+    return false
+  }
+
+  let result: CloudflareRateLimitResult
+  try {
+    result = await binding.limit({ key })
+  } catch {
+    return false
+  }
+
+  if (result?.success === false) {
+    throw new HttpError(429, 'Too many requests. Please try again shortly.')
+  }
+
+  return true
+}
+
 export function isPrefetchRequest(request: Request): boolean {
   const explicit = request.headers.get('x-tsuki-prefetch')
   if (explicit === '1') {
@@ -229,6 +316,26 @@ export function assertWeebcentralApiRateLimit(
   })
 }
 
+export async function enforceWeebcentralApiRateLimit(
+  request: Request,
+  config: ProxyServerConfig = proxyConfig,
+): Promise<void> {
+  const clientId = requestClientId(request)
+  const prefetch = isPrefetchRequest(request)
+  const scope = prefetch ? 'prefetch' : 'interactive'
+  const key = `proxy-scrape:${scope}:${clientId}`
+  const edgeBinding = prefetch
+    ? EDGE_RATE_LIMIT_SCRAPE_PREFETCH_BINDING
+    : EDGE_RATE_LIMIT_SCRAPE_BINDING
+
+  const edgeApplied = await consumeEdgeRateLimit(edgeBinding, key)
+  if (edgeApplied) {
+    return
+  }
+
+  assertWeebcentralApiRateLimit(request, config)
+}
+
 export function assertWeebcentralForceRefreshRateLimit(
   request: Request,
   config: ProxyServerConfig = proxyConfig,
@@ -238,6 +345,24 @@ export function assertWeebcentralForceRefreshRateLimit(
     limit: config.scrapeForceRefreshRateLimitPerMinute,
     windowMs: 60_000,
   })
+}
+
+export async function enforceWeebcentralForceRefreshRateLimit(
+  request: Request,
+  config: ProxyServerConfig = proxyConfig,
+): Promise<void> {
+  const clientId = requestClientId(request)
+  const key = `proxy-scrape-force:${clientId}`
+  const edgeApplied = await consumeEdgeRateLimit(
+    EDGE_RATE_LIMIT_SCRAPE_FORCE_BINDING,
+    key,
+  )
+
+  if (edgeApplied) {
+    return
+  }
+
+  assertWeebcentralForceRefreshRateLimit(request, config)
 }
 
 export function assertImageProxyRateLimit(
@@ -257,12 +382,34 @@ export function assertImageProxyRateLimit(
   })
 }
 
+export async function enforceImageProxyRateLimit(
+  request: Request,
+  config: ProxyServerConfig = proxyConfig,
+): Promise<void> {
+  const clientId = requestClientId(request)
+  const prefetch = isPrefetchRequest(request)
+  const scope = prefetch ? 'prefetch' : 'interactive'
+  const key = `proxy-image:${scope}:${clientId}`
+  const edgeBinding = prefetch
+    ? EDGE_RATE_LIMIT_IMAGE_PREFETCH_BINDING
+    : EDGE_RATE_LIMIT_IMAGE_BINDING
+
+  const edgeApplied = await consumeEdgeRateLimit(edgeBinding, key)
+  if (edgeApplied) {
+    return
+  }
+
+  assertImageProxyRateLimit(request, config)
+}
+
 export async function fetchWithWeebcentralPolicy(
   input: URL | string,
   init: RequestInit,
   options: {
     allowedHostnames: string[]
     maxRedirects?: number
+    cacheClass?: 'metadata' | 'image'
+    bypassCloudflareCache?: boolean
   },
   config: ProxyServerConfig = proxyConfig,
 ): Promise<Response> {
@@ -288,15 +435,29 @@ export async function fetchWithWeebcentralPolicy(
         )
 
         try {
+          const cfCachePolicy = buildCloudflareCachePolicy({
+            cacheClass: options.cacheClass,
+            bypassCloudflareCache: options.bypassCloudflareCache,
+          })
+
+          const requestInit: RequestInitWithCloudflare = {
+            ...init,
+            signal: mergeAbortSignals(
+              timeoutController.signal,
+              init.signal ?? undefined,
+            ),
+          }
+
+          if (cfCachePolicy) {
+            requestInit.cf = {
+              ...(requestInit.cf ?? {}),
+              ...cfCachePolicy,
+            }
+          }
+
           return await fetchWithSafeRedirects(
             input,
-            {
-              ...init,
-              signal: mergeAbortSignals(
-                timeoutController.signal,
-                init.signal ?? undefined,
-              ),
-            },
+            requestInit,
             {
               allowedHostnames: options.allowedHostnames,
               maxRedirects: options.maxRedirects,

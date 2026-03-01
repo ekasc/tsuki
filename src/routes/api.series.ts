@@ -11,14 +11,11 @@ export const Route = createAnyFileRoute('/api/series')({
         )
 
         try {
-          const { assertLocalLibraryEnabled } = await import('#/server/runtime')
-          assertLocalLibraryEnabled()
-
-          const { ensureServerReady } = await import('#/server/bootstrap')
-          const { listLibrarySeries } = await import('#/server/db/repository')
-
-          await ensureServerReady()
-          const payload = listLibrarySeries()
+          const { getLocalLibraryProvider } = await import(
+            '#/server/local-library'
+          )
+          const provider = await getLocalLibraryProvider()
+          const payload = await provider.listSeries()
           return jsonResponse(payload)
         } catch (error) {
           return toApiErrorResponse(error)

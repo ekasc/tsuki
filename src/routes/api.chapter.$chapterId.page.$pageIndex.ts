@@ -19,17 +19,14 @@ export const Route = createAnyFileRoute(
         )
 
         try {
-          const { assertLocalLibraryEnabled } = await import('#/server/runtime')
-          assertLocalLibraryEnabled()
-
-          const { ensureServerReady } = await import('#/server/bootstrap')
+          const { getLocalLibraryProvider } = await import(
+            '#/server/local-library'
+          )
           const { pageOverridePayloadSchema } = await import(
             '#/server/api/validators'
           )
-          const { updatePageOverrides } = await import('#/server/db/repository')
           const { HttpError } = await import('#/server/errors')
 
-          await ensureServerReady()
           const payload = pageOverridePayloadSchema.parse(await request.json())
           const pageIndex = Number.parseInt(params.pageIndex, 10)
 
@@ -37,7 +34,8 @@ export const Route = createAnyFileRoute(
             throw new HttpError(400, 'Invalid page index')
           }
 
-          const updated = updatePageOverrides(
+          const provider = await getLocalLibraryProvider()
+          const updated = await provider.updatePageOverrides(
             params.chapterId,
             pageIndex,
             payload,

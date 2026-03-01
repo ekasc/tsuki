@@ -11,8 +11,10 @@ export const Route = createAnyFileRoute('/api/upload')({
         )
 
         try {
-          const { assertLocalLibraryEnabled } = await import('#/server/runtime')
-          assertLocalLibraryEnabled()
+          const { assertNodeLocalLibraryDriver } = await import(
+            '#/server/runtime-driver'
+          )
+          assertNodeLocalLibraryDriver()
 
           const { ensureServerReady } = await import('#/server/bootstrap')
           const { uploadRequestSchema } = await import(

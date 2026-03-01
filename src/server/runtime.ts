@@ -1,23 +1,14 @@
-import { HttpError } from './errors'
+import {
+  assertLocalLibraryAvailable,
+  resolveLocalLibraryDriver,
+} from './runtime-driver'
 
-const DISABLED_VALUES = new Set(['0', 'false', 'no', 'off'])
+export { assertLocalLibraryAvailable }
 
 export function isLocalLibraryEnabled(): boolean {
-  const raw = process.env.TSUKI_LOCAL_LIBRARY_ENABLED?.trim().toLowerCase()
-  if (!raw) {
-    return true
-  }
-
-  return !DISABLED_VALUES.has(raw)
+  return resolveLocalLibraryDriver() !== 'disabled'
 }
 
 export function assertLocalLibraryEnabled(): void {
-  if (isLocalLibraryEnabled()) {
-    return
-  }
-
-  throw new HttpError(
-    503,
-    'Local library uploads are disabled in this deployment.',
-  )
+  assertLocalLibraryAvailable()
 }
