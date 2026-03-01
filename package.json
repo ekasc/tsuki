@@ -12,7 +12,7 @@
     "verify:release:v1": "node scripts/verify-v1-online-release.mjs",
     "preview": "vite preview",
     "deploy:cloudflare:dry": "VITE_LOCAL_LIBRARY_ENABLED=0 vite build && npx --yes wrangler@4.69.0 deploy --dry-run --config wrangler.jsonc",
-    "deploy:cloudflare": "VITE_LOCAL_LIBRARY_ENABLED=0 vite build && npx --yes wrangler@4.69.0 deploy --config wrangler.jsonc",
+    "deploy:cloudflare": "VITE_LOCAL_LIBRARY_ENABLED=0 vite build && wrangler deploy",
     "test": "vitest run",
     "test:unit": "vitest run",
     "test:type": "tsc --noEmit",
