@@ -570,3 +570,28 @@
     animation: none;
   }
 }
+
+@media (max-width: 768px) {
+  body {
+    background: linear-gradient(
+      180deg,
+      var(--bg-soft) 0%,
+      var(--bg) 70%,
+      color-mix(in oklab, var(--bg), #000 3%) 100%
+    );
+  }
+
+  [data-theme='dark'] body {
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--bg-soft), #000 7%) 0%,
+      var(--bg) 68%,
+      color-mix(in oklab, var(--bg), #000 9%) 100%
+    );
+  }
+
+  .app-canvas::before,
+  .app-canvas::after {
+    display: none;
+  }
+}

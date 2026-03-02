@@ -77,7 +77,6 @@ export const Route = createRootRouteWithContext<AppRouterContext>()({
     ],
     links: [
       { rel: 'stylesheet', href: appCss },
-      { rel: 'icon', href: '/favicon.png', type: 'image/png' },
       {
         rel: 'icon',
         href: '/favicon-32x32.png',
@@ -90,6 +89,7 @@ export const Route = createRootRouteWithContext<AppRouterContext>()({
         type: 'image/png',
         sizes: '16x16',
       },
+      { rel: 'shortcut icon', href: '/favicon-32x32.png', type: 'image/png' },
       {
         rel: 'icon',
         href: '/icon-192.png',
