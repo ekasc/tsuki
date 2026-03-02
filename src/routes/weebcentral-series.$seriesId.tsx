@@ -40,9 +40,7 @@ import {
   upsertSavedWeebcentralSeries,
 } from '#/lib/weebcentral-library'
 
-const createAnyFileRoute = createFileRoute as any
-
-export const Route = createAnyFileRoute('/weebcentral-series/$seriesId')({
+export const Route = createFileRoute('/weebcentral-series/$seriesId')({
   head: ({
     params,
     loaderData,
@@ -224,15 +222,23 @@ function WeebcentralSeriesPage() {
     setHistoryMap({})
   }, [seriesId])
 
-  const chapters = useMemo(() => {
-    const base = [...(series?.chapters ?? [])].sort(
-      (left, right) => left.number - right.number,
-    )
-    return chapterOrder === 'newest' ? [...base].reverse() : base
-  }, [chapterOrder, series?.chapters])
+  const ascendingChapters = useMemo(
+    () =>
+      [...(series?.chapters ?? [])].sort(
+        (left, right) => left.number - right.number,
+      ),
+    [series?.chapters],
+  )
+  const chapters = useMemo(
+    () =>
+      chapterOrder === 'newest'
+        ? [...ascendingChapters].reverse()
+        : ascendingChapters,
+    [ascendingChapters, chapterOrder],
+  )
   const chapterCount = useMemo(
-    () => new Set(chapters.map((chapter) => chapter.id)).size,
-    [chapters],
+    () => new Set(ascendingChapters.map((chapter) => chapter.id)).size,
+    [ascendingChapters],
   )
   const sourceProvider = useMemo(
     () =>
@@ -248,10 +254,16 @@ function WeebcentralSeriesPage() {
     () => remoteProviderLabel(sourceProvider),
     [sourceProvider],
   )
-  const latestReleaseDate = useMemo(
-    () => chapters.find((chapter) => Boolean(chapter.date))?.date ?? null,
-    [chapters],
-  )
+  const latestReleaseDate = useMemo(() => {
+    for (let index = ascendingChapters.length - 1; index >= 0; index -= 1) {
+      const date = ascendingChapters[index]?.date
+      if (date) {
+        return date
+      }
+    }
+
+    return null
+  }, [ascendingChapters])
   const formattedLatestReleaseDate = useMemo(() => {
     if (!latestReleaseDate) {
       return null

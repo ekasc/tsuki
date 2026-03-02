@@ -9,7 +9,9 @@ import {
   isPrefetchRequest,
 } from '../utils/upstream-policy'
 import {
+  errorMessageFromUnknown,
   logProxyEvent,
+  resolveRequestId,
   statusCodeFromError,
   writeProxyMetric,
 } from '../utils/observability'
@@ -28,6 +30,8 @@ export async function proxyImageByEncodedUrl(
   options: { crop?: 'left' | 'right' | null } = {},
 ): Promise<Response> {
   const startedAt = Date.now()
+  const requestPath = new URL(request.url).pathname
+  const requestId = resolveRequestId(request)
   const prefetch = isPrefetchRequest(request)
   await enforceImageProxyRateLimit(request, proxyConfig)
   const decoded = decodeBase64Url(encodedUrl)
@@ -67,6 +71,14 @@ export async function proxyImageByEncodedUrl(
         allowedHostnames,
         maxRedirects: proxyConfig.imageProxyMaxRedirects,
         cacheClass: 'image',
+        telemetry: {
+          route: '/v1/image/$b64',
+          requestId,
+          method: request.method,
+          path: requestPath,
+          provider: 'weebcentral',
+          prefetch,
+        },
       },
       proxyConfig,
     )
@@ -121,6 +133,9 @@ export async function proxyImageByEncodedUrl(
       const durationMs = Date.now() - startedAt
       logProxyEvent('proxy.image.success', {
         route: '/v1/image/$b64',
+        requestId,
+        method: request.method,
+        path: requestPath,
         provider: 'weebcentral',
         status: 200,
         durationMs,
@@ -162,6 +177,9 @@ export async function proxyImageByEncodedUrl(
     const durationMs = Date.now() - startedAt
     logProxyEvent('proxy.image.success', {
       route: '/v1/image/$b64',
+      requestId,
+      method: request.method,
+      path: requestPath,
       provider: 'weebcentral',
       status: 200,
       durationMs,
@@ -188,13 +206,16 @@ export async function proxyImageByEncodedUrl(
     const status = statusCodeFromError(error)
     logProxyEvent('proxy.image.error', {
       route: '/v1/image/$b64',
+      requestId,
+      method: request.method,
+      path: requestPath,
       provider: 'weebcentral',
       status,
       durationMs,
       prefetch,
       cachePolicy: 'image',
       outcome: 'error',
-      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      errorMessage: errorMessageFromUnknown(error),
     })
     await writeProxyMetric('proxy.image', {
       route: '/v1/image/$b64',
@@ -204,7 +225,7 @@ export async function proxyImageByEncodedUrl(
       prefetch,
       cachePolicy: 'image',
       outcome: 'error',
-      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      errorMessage: errorMessageFromUnknown(error),
     })
     throw error
   }

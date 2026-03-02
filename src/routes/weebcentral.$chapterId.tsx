@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 
-const createAnyFileRoute = createFileRoute as any
 import {
   useCallback,
   useEffect,
@@ -50,9 +49,9 @@ import {
 } from '#/lib/reader/pairing'
 import { useTouchDevice, useTouchPortrait } from '#/hooks/use-touch-portrait'
 
-export const Route = createAnyFileRoute('/weebcentral/$chapterId')({
+export const Route = createFileRoute('/weebcentral/$chapterId')({
   headers: () => ({
-    'X-Robots-Tag': 'noindex, follow',
+    'X-Robots-Tag': 'index, follow',
   }),
   head: ({ params }: { params: { chapterId: string } }) => ({
     meta: [
@@ -61,7 +60,7 @@ export const Route = createAnyFileRoute('/weebcentral/$chapterId')({
         name: 'description',
         content: 'Read manga chapters in Tsuki with a clean, distraction-free viewer.',
       },
-      { name: 'robots', content: 'noindex,follow' },
+      { name: 'robots', content: 'index,follow,max-image-preview:large' },
     ],
     links: [
       {

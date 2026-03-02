@@ -29,64 +29,6 @@ function imageClassName(zoomPreset: ZoomPreset) {
   return 'h-full w-auto'
 }
 
-function useStableImageSource(source: string) {
-  const [readySource, setReadySource] = useState(source)
-  const requestVersionRef = useRef(0)
-
-  useEffect(() => {
-    if (source === readySource) {
-      return
-    }
-
-    const requestVersion = requestVersionRef.current + 1
-    requestVersionRef.current = requestVersion
-    let cancelled = false
-    const image = new Image()
-    image.decoding = 'async'
-
-    const commit = () => {
-      if (cancelled || requestVersionRef.current !== requestVersion) {
-        return
-      }
-      setReadySource(source)
-    }
-
-    const onLoad = () => {
-      if (typeof image.decode === 'function') {
-        void image
-          .decode()
-          .catch(() => {
-            // Ignore decode failures and still commit loaded source.
-          })
-          .finally(commit)
-        return
-      }
-
-      commit()
-    }
-
-    const onError = () => {
-      commit()
-    }
-
-    image.addEventListener('load', onLoad)
-    image.addEventListener('error', onError)
-    image.src = source
-
-    if (image.complete && image.naturalWidth > 0) {
-      onLoad()
-    }
-
-    return () => {
-      cancelled = true
-      image.removeEventListener('load', onLoad)
-      image.removeEventListener('error', onError)
-    }
-  }, [readySource, source])
-
-  return readySource
-}
-
 export function PagePane({
   chapterId,
   unit,
@@ -111,7 +53,7 @@ export function PagePane({
     const separator = baseImageUrl.includes('?') ? '&' : '?'
     return `${baseImageUrl}${separator}_r=${retryNonce}`
   }, [baseImageUrl, retryNonce])
-  const readySource = useStableImageSource(resolvedImageUrl)
+  const readySource = resolvedImageUrl
 
   const [imageError, setImageError] = useState(false)
   const retryCountRef = useRef(0)

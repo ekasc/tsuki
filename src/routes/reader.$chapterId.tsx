@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 
-const createAnyFileRoute = createFileRoute as any
 import {
   useCallback,
   useEffect,
@@ -50,7 +49,7 @@ import {
 import { useImagePrefetch } from '#/hooks/use-image-prefetch'
 import { useTouchDevice, useTouchPortrait } from '#/hooks/use-touch-portrait'
 
-export const Route = createAnyFileRoute('/reader/$chapterId')({
+export const Route = createFileRoute('/reader/$chapterId')({
   headers: () => ({
     'X-Robots-Tag': 'noindex, nofollow',
   }),

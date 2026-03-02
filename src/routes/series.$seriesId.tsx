@@ -7,7 +7,6 @@ import {
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 
-const createAnyFileRoute = createFileRoute as any
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Button } from '#/components/ui/button'
@@ -20,7 +19,7 @@ import type { AppRouterContext } from '#/lib/router-context'
 import { loadReadingHistory, upsertReadingHistory } from '#/lib/reading-history'
 import { cn } from '#/lib/utils'
 
-export const Route = createAnyFileRoute('/series/$seriesId')({
+export const Route = createFileRoute('/series/$seriesId')({
   headers: () => ({
     'X-Robots-Tag': 'noindex, nofollow',
   }),

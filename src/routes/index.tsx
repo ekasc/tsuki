@@ -1,7 +1,13 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
+import {
+  Download,
+  EllipsisVertical,
+  Monitor,
+  Share2,
+  Smartphone,
+} from 'lucide-react'
 
-const createAnyFileRoute = createFileRoute as any
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Button } from '#/components/ui/button'
@@ -26,7 +32,7 @@ const HOME_TITLE = 'Tsuki Reader | Old-School Manga Reader'
 const HOME_DESCRIPTION =
   'Tsuki Reader is an online manga reader and image proxy built for smooth right-to-left paging on desktop, phones, and tablets.'
 
-export const Route = createAnyFileRoute('/')({
+export const Route = createFileRoute('/')({
   head: () => ({
     meta: [
       { title: HOME_TITLE },
@@ -76,7 +82,9 @@ function LibraryPage() {
   }, [])
 
   const refreshSideData = useCallback(() => {
-    setHistory(loadReadingHistory().filter((item) => item.readerRoute === 'weebcentral'))
+    setHistory(
+      loadReadingHistory().filter((item) => item.readerRoute === 'weebcentral'),
+    )
     setSavedRemoteSeries(loadSavedWeebcentralSeries())
   }, [])
 
@@ -196,9 +204,7 @@ function LibraryPage() {
         <div className="mt-3 grid gap-4 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
           <div>
             <h1 className="manga-title max-w-4xl text-3xl font-semibold leading-tight text-foreground md:text-5xl">
-              {hasHistory
-                ? 'Continue reading'
-                : 'Read manga'}
+              {hasHistory ? 'Continue reading' : 'Read manga'}
             </h1>
             <p className="manga-subtitle mt-3 max-w-2xl text-sm text-muted-foreground md:text-base">
               {hasHistory
@@ -292,7 +298,9 @@ function LibraryPage() {
                 <p className="text-sm text-muted-foreground">
                   2. Select a chapter
                 </p>
-                <p className="text-sm text-muted-foreground">3. Start reading</p>
+                <p className="text-sm text-muted-foreground">
+                  3. Start reading
+                </p>
                 <p className="pt-1 text-xs text-muted-foreground">
                   No account required.
                 </p>
@@ -449,7 +457,11 @@ function LibraryPage() {
                   size="sm"
                   className="text-destructive hover:text-destructive"
                   onClick={() => {
-                    if (window.confirm(`Are you sure you want to remove ${item.title}?`)) {
+                    if (
+                      window.confirm(
+                        `Are you sure you want to remove ${item.title}?`,
+                      )
+                    ) {
                       removeRemoteSeriesFromLibrary(item.id)
                     }
                   }}
@@ -466,12 +478,76 @@ function LibraryPage() {
         className="exp-surface-soft animate-enter space-y-3"
         style={{ animationDelay: '105ms' }}
       >
+        <span className="issue-label">Install app</span>
+        <h2 className="manga-title text-lg font-semibold text-foreground md:text-xl">
+          Use Tsuki like an app
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          You can add Tsuki to your home screen and open it full-screen like a
+          native app.
+        </p>
+        <div className="grid gap-3 md:grid-cols-3">
+          <article className="rounded border border-border bg-surface p-3">
+            <div className="mb-2 flex items-center gap-2 text-foreground">
+              <Smartphone className="h-4 w-4" aria-hidden />
+              <p className="text-sm font-semibold">iPhone / iPad</p>
+            </div>
+            <ol className="space-y-1 text-xs text-muted-foreground">
+              <li>1. Open Tsuki in Safari.</li>
+              <li className="inline-flex items-center gap-1">
+                2. Tap <Share2 className="h-3.5 w-3.5" aria-hidden /> Share.
+              </li>
+              <li>3. Tap Add to Home Screen.</li>
+              <li>4. Open from your Home Screen.</li>
+            </ol>
+          </article>
+          <article className="rounded border border-border bg-surface p-3">
+            <div className="mb-2 flex items-center gap-2 text-foreground">
+              <Smartphone className="h-4 w-4" aria-hidden />
+              <p className="text-sm font-semibold">Android</p>
+            </div>
+            <ol className="space-y-1 text-xs text-muted-foreground flex flex-col">
+              <li>1. Open Tsuki in Chrome.</li>
+              <li className="inline-flex items-center gap-1">
+                2. Tap <EllipsisVertical className="h-3.5 w-3.5" aria-hidden />
+                menu.
+              </li>
+              <li className="inline-flex items-center gap-1">
+                3. Tap <Download className="h-3.5 w-3.5" aria-hidden /> Install
+                app.
+              </li>
+              <li>4. Launch from your app drawer.</li>
+            </ol>
+          </article>
+          <article className="rounded border border-border bg-surface p-3">
+            <div className="mb-2 flex items-center gap-2 text-foreground">
+              <Monitor className="h-4 w-4" aria-hidden />
+              <p className="text-sm font-semibold">Desktop (PC / Mac)</p>
+            </div>
+            <ol className="space-y-1 text-xs text-muted-foreground">
+              <li>1. Open Tsuki in Chrome or Edge.</li>
+              <li>2. Click the install icon in the address bar.</li>
+              <li>3. Confirm Install.</li>
+              <li>4. Open Tsuki from apps/start menu.</li>
+            </ol>
+          </article>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Tip: once installed, Tsuki opens without browser tabs for a cleaner
+          reader view.
+        </p>
+      </section>
+
+      <section
+        className="exp-surface-soft animate-enter space-y-3"
+        style={{ animationDelay: '115ms' }}
+      >
         <h2 className="manga-title text-lg font-semibold text-foreground md:text-xl">
           About Tsuki Reader
         </h2>
         <p className="text-sm text-muted-foreground">
-          Tsuki is a web manga reader focused on fast page turns, clean typography,
-          and a minimal old-school reading layout.
+          Tsuki is a web manga reader focused on fast page turns, clean
+          typography, and a minimal old-school reading layout.
         </p>
         <p className="text-sm text-muted-foreground">
           This website is an image proxy and reading interface. It does not host

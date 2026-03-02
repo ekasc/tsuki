@@ -39,6 +39,12 @@ test('pwa shell includes manifest and Apple web app metadata', async ({
       name: string
       short_name: string
       theme_color: string
+      icons?: Array<{
+        src: string
+        sizes?: string
+        type?: string
+        purpose?: string
+      }>
     }>
   })
 
@@ -46,6 +52,33 @@ test('pwa shell includes manifest and Apple web app metadata', async ({
   expect(manifest.short_name).toBe('Tsuki')
   expect(manifest.display).toBe('standalone')
   expect(manifest.theme_color).toBe('#1d140d')
+  expect(Array.isArray(manifest.icons)).toBe(true)
+  expect(manifest.icons?.some((icon) => icon.src === '/icon-192.png')).toBe(
+    true,
+  )
+  expect(manifest.icons?.some((icon) => icon.src === '/icon-512.png')).toBe(
+    true,
+  )
+
+  const iconChecks = await page.evaluate(async () => {
+    const iconPaths = ['/icon-192.png', '/icon-512.png', '/apple-touch-icon.png']
+    const responses = await Promise.all(
+      iconPaths.map(async (path) => {
+        const response = await fetch(path)
+        return {
+          path,
+          ok: response.ok,
+          contentType: response.headers.get('content-type') || '',
+        }
+      }),
+    )
+    return responses
+  })
+
+  iconChecks.forEach((result) => {
+    expect(result.ok).toBe(true)
+    expect(result.contentType).toContain('image/png')
+  })
 })
 
 test('standalone detection path updates html dataset flag', async ({

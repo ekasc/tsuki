@@ -13,6 +13,10 @@ export const Route = createAnyFileRoute('/v1/image/$b64')({
         params: { b64: string }
       }) => {
         const { toApiErrorResponse } = await import('#/server/api/http')
+        const { attachRequestIdHeader, resolveRequestId } = await import(
+          '#/server/proxy/utils/observability'
+        )
+        const requestId = resolveRequestId(request)
 
         try {
           const { proxyImageByEncodedUrl } = await import(
@@ -23,9 +27,13 @@ export const Route = createAnyFileRoute('/v1/image/$b64')({
           const cropRaw = requestUrl.searchParams.get('crop')
           const crop = cropRaw === 'left' || cropRaw === 'right' ? cropRaw : null
 
-          return await proxyImageByEncodedUrl(request, params.b64, { crop })
+          const response = await proxyImageByEncodedUrl(request, params.b64, { crop })
+          attachRequestIdHeader(response, requestId)
+          return response
         } catch (error) {
-          return toApiErrorResponse(error)
+          const response = toApiErrorResponse(error)
+          attachRequestIdHeader(response, requestId)
+          return response
         }
       },
     },

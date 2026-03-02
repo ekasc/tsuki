@@ -15,7 +15,10 @@ import {
   seriesCache,
 } from '../server'
 import { encodeBase64Url } from '../utils/base64url'
-import { fetchWithWeebcentralPolicy } from '../utils/upstream-policy'
+import {
+  type UpstreamTelemetryContext,
+  fetchWithWeebcentralPolicy,
+} from '../utils/upstream-policy'
 import type { ChapterDTO, SeriesDTO } from './weebcentral'
 
 const MANGADEX_API_HOST = 'api.mangadex.org'
@@ -246,7 +249,10 @@ async function fetchMangadexJson<TResponse>(
   pathname: string,
   config: ProxyServerConfig,
   searchParams?: URLSearchParams,
-  options?: { bypassCloudflareCache?: boolean },
+  options?: {
+    bypassCloudflareCache?: boolean
+    telemetry?: UpstreamTelemetryContext
+  },
 ): Promise<TResponse> {
   const url = new URL(pathname, MANGADEX_API_ORIGIN)
   if (searchParams) {
@@ -266,6 +272,7 @@ async function fetchMangadexJson<TResponse>(
       maxRedirects: config.imageProxyMaxRedirects,
       cacheClass: 'metadata',
       bypassCloudflareCache: options?.bypassCloudflareCache,
+      telemetry: options?.telemetry,
     },
     config,
   )
@@ -294,10 +301,13 @@ async function fetchMangadexJson<TResponse>(
 async function fetchChapterEntity(
   chapterId: string,
   config: ProxyServerConfig,
+  options?: { telemetry?: UpstreamTelemetryContext },
 ): Promise<MangadexEntity<MangadexChapterAttributes>> {
   const payload = await fetchMangadexJson<
     MangadexSingleResponse<MangadexEntity<MangadexChapterAttributes>>
-  >(`/chapter/${chapterId}`, config)
+  >(`/chapter/${chapterId}`, config, undefined, {
+    telemetry: options?.telemetry,
+  })
 
   if (payload.result !== 'ok' || !payload.data) {
     throw new HttpError(502, 'Invalid MangaDex chapter payload')
@@ -309,8 +319,9 @@ async function fetchChapterEntity(
 async function resolveSeriesIdFromChapterId(
   chapterId: string,
   config: ProxyServerConfig,
+  options?: { telemetry?: UpstreamTelemetryContext },
 ): Promise<string> {
-  const chapter = await fetchChapterEntity(chapterId, config)
+  const chapter = await fetchChapterEntity(chapterId, config, options)
   const seriesId = extractRelationshipId(chapter.relationships, 'manga')
   if (!seriesId) {
     throw new HttpError(502, 'Could not resolve MangaDex series from chapter')
@@ -322,6 +333,7 @@ async function resolveSeriesIdFromChapterId(
 async function resolveSeriesIdFromInput(
   input: string,
   config: ProxyServerConfig,
+  options?: { telemetry?: UpstreamTelemetryContext },
 ): Promise<string> {
   const parsed = parseInput(input)
   if (parsed.seriesId) {
@@ -329,7 +341,7 @@ async function resolveSeriesIdFromInput(
   }
 
   if (parsed.chapterId) {
-    return resolveSeriesIdFromChapterId(parsed.chapterId, config)
+    return resolveSeriesIdFromChapterId(parsed.chapterId, config, options)
   }
 
   throw new HttpError(400, 'Missing MangaDex series ID')
@@ -355,7 +367,7 @@ async function resolveChapterIdFromInput(input: string): Promise<string> {
 async function fetchSeriesDtoBySeriesId(
   seriesId: string,
   config: ProxyServerConfig,
-  options?: { bypassCache?: boolean },
+  options?: { bypassCache?: boolean; telemetry?: UpstreamTelemetryContext },
 ): Promise<SeriesDTO> {
   const cacheKey = `mangadex:series:${seriesId}`
 
@@ -366,6 +378,7 @@ async function fetchSeriesDtoBySeriesId(
       MangadexSingleResponse<MangadexEntity<MangadexMangaAttributes>>
     >(`/manga/${seriesId}`, config, seriesQuery, {
       bypassCloudflareCache: options?.bypassCache,
+      telemetry: options?.telemetry,
     })
 
     if (seriesPayload.result !== 'ok' || !seriesPayload.data) {
@@ -411,6 +424,7 @@ async function fetchSeriesDtoBySeriesId(
         MangadexCollectionResponse<MangadexEntity<MangadexChapterAttributes>>
       >(`/manga/${seriesId}/feed`, config, feedQuery, {
         bypassCloudflareCache: options?.bypassCache,
+        telemetry: options?.telemetry,
       })
 
       if (feedPayload.result !== 'ok' || !Array.isArray(feedPayload.data)) {
@@ -497,10 +511,15 @@ async function fetchSeriesDtoBySeriesId(
 async function fetchChapterPages(
   chapterId: string,
   config: ProxyServerConfig,
+  options?: { telemetry?: UpstreamTelemetryContext },
 ): Promise<string[]> {
   const payload = await fetchMangadexJson<MangadexAtHomeResponse>(
     `/at-home/server/${chapterId}`,
     config,
+    undefined,
+    {
+      telemetry: options?.telemetry,
+    },
   )
 
   const baseUrl = payload.baseUrl
@@ -529,15 +548,16 @@ function toProxiedImagePath(url: string): string {
 export async function getMangaDexSeries(
   input: string,
   config: ProxyServerConfig = proxyConfig,
-  options?: { bypassCache?: boolean },
+  options?: { bypassCache?: boolean; telemetry?: UpstreamTelemetryContext },
 ): Promise<SeriesDTO> {
-  const seriesId = await resolveSeriesIdFromInput(input, config)
+  const seriesId = await resolveSeriesIdFromInput(input, config, options)
   return fetchSeriesDtoBySeriesId(seriesId, config, options)
 }
 
 export async function getMangaDexChapter(
   input: string,
   config: ProxyServerConfig = proxyConfig,
+  options?: { telemetry?: UpstreamTelemetryContext },
 ): Promise<ChapterDTO> {
   const chapterId = await resolveChapterIdFromInput(input)
   const cacheKey = `mangadex:chapter:${chapterId}`
@@ -545,13 +565,13 @@ export async function getMangaDexChapter(
   return chapterCache.getOrSetWithStaleFallback(
     cacheKey,
     async () => {
-      const chapterEntity = await fetchChapterEntity(chapterId, config)
+      const chapterEntity = await fetchChapterEntity(chapterId, config, options)
       const seriesId = extractRelationshipId(chapterEntity.relationships, 'manga')
       if (!seriesId) {
         throw new HttpError(502, 'Could not resolve MangaDex series from chapter')
       }
 
-      const pages = await fetchChapterPages(chapterId, config)
+      const pages = await fetchChapterPages(chapterId, config, options)
       return {
         provider: 'mangadex' as const,
         seriesId: toMangadexSeriesId(seriesId),

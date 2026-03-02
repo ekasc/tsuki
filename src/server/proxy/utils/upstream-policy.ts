@@ -10,6 +10,11 @@ import {
   type CloudflareRateLimitResult,
   getCloudflareBinding,
 } from './cloudflare-bindings'
+import {
+  errorMessageFromUnknown,
+  logProxyEvent,
+  statusCodeFromError,
+} from './observability'
 import { fetchWithSafeRedirects } from './security'
 
 const circuitFailuresByHost = new Map<string, number[]>()
@@ -38,6 +43,15 @@ interface CfCachePolicyOutput {
 
 interface RequestInitWithCloudflare extends RequestInit {
   cf?: CfCachePolicyOutput
+}
+
+export interface UpstreamTelemetryContext {
+  route: string
+  requestId?: string
+  method?: string
+  path?: string
+  provider?: string
+  prefetch?: boolean
 }
 
 function resolveHost(input: URL | string): string {
@@ -410,21 +424,54 @@ export async function fetchWithWeebcentralPolicy(
     maxRedirects?: number
     cacheClass?: 'metadata' | 'image'
     bypassCloudflareCache?: boolean
+    telemetry?: UpstreamTelemetryContext
   },
   config: ProxyServerConfig = proxyConfig,
 ): Promise<Response> {
   const host = resolveHost(input)
   const attempts = Math.max(1, config.upstreamRetryCount + 1)
   const limiter = getUpstreamLimiter(config.upstreamMaxConcurrentRequests)
+  const telemetry = options.telemetry
 
   let latestError: HttpError | null = null
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const attemptStartedAt = Date.now()
+
     assertRateLimit('proxy-upstream:global', {
       limit: config.upstreamGlobalRateLimitPerMinute,
       windowMs: 60_000,
     })
-    assertHostCircuitClosed(host)
+    try {
+      assertHostCircuitClosed(host)
+    } catch (error) {
+      if (telemetry) {
+        logProxyEvent(
+          'proxy.upstream.circuit_open',
+          {
+            route: telemetry.route,
+            requestId: telemetry.requestId,
+            method: telemetry.method,
+            path: telemetry.path,
+            provider: telemetry.provider,
+            upstreamHost: host,
+            prefetch: telemetry.prefetch,
+            cachePolicy: options.cacheClass ?? 'metadata',
+            status: statusCodeFromError(error),
+            durationMs: Date.now() - attemptStartedAt,
+            attempt,
+            maxAttempts: attempts,
+            outcome: 'error',
+            errorMessage: errorMessageFromUnknown(error),
+          },
+          {
+            level: 'warn',
+            sampleRate: 1,
+          },
+        )
+      }
+      throw error
+    }
 
     try {
       const response = await limiter(async () => {
@@ -469,6 +516,25 @@ export async function fetchWithWeebcentralPolicy(
       })
 
       if (response.ok) {
+        if (telemetry) {
+          logProxyEvent('proxy.upstream.ok', {
+            route: telemetry.route,
+            requestId: telemetry.requestId,
+            method: telemetry.method,
+            path: telemetry.path,
+            provider: telemetry.provider,
+            upstreamHost: host,
+            prefetch: telemetry.prefetch,
+            cachePolicy: options.cacheClass ?? 'metadata',
+            status: response.status,
+            durationMs: Date.now() - attemptStartedAt,
+            attempt,
+            maxAttempts: attempts,
+            outcome: 'success',
+          }, {
+            sampleRate: 0.02,
+          })
+        }
         recordHostSuccess(host)
         return response
       }
@@ -490,10 +556,62 @@ export async function fetchWithWeebcentralPolicy(
       }
 
       if (shouldRetryStatus(response.status) && attempt < attempts) {
+        const retryDelayMs = jitteredBackoffMs(config.upstreamRetryBaseDelayMs, attempt)
+        if (telemetry) {
+          logProxyEvent(
+            'proxy.upstream.retry',
+            {
+              route: telemetry.route,
+              requestId: telemetry.requestId,
+              method: telemetry.method,
+              path: telemetry.path,
+              provider: telemetry.provider,
+              upstreamHost: host,
+              prefetch: telemetry.prefetch,
+              cachePolicy: options.cacheClass ?? 'metadata',
+              status: response.status,
+              durationMs: Date.now() - attemptStartedAt,
+              attempt,
+              maxAttempts: attempts,
+              retryDelayMs,
+              outcome: 'error',
+            },
+            {
+              level: 'warn',
+              sampleRate: 1,
+            },
+          )
+        }
         // Release the response body before retrying to avoid socket/resource buildup.
         await response.arrayBuffer().catch(() => undefined)
-        await delay(jitteredBackoffMs(config.upstreamRetryBaseDelayMs, attempt))
+        await delay(retryDelayMs)
         continue
+      }
+
+      if (telemetry) {
+        logProxyEvent(
+          'proxy.upstream.error',
+          {
+            route: telemetry.route,
+            requestId: telemetry.requestId,
+            method: telemetry.method,
+            path: telemetry.path,
+            provider: telemetry.provider,
+            upstreamHost: host,
+            prefetch: telemetry.prefetch,
+            cachePolicy: options.cacheClass ?? 'metadata',
+            status: response.status,
+            durationMs: Date.now() - attemptStartedAt,
+            attempt,
+            maxAttempts: attempts,
+            outcome: 'error',
+            errorMessage: `Upstream request returned status ${response.status}`,
+          },
+          {
+            level: 'warn',
+            sampleRate: 1,
+          },
+        )
       }
 
       return response
@@ -506,8 +624,61 @@ export async function fetchWithWeebcentralPolicy(
       }
 
       if (shouldRetryError(normalized) && attempt < attempts) {
-        await delay(jitteredBackoffMs(config.upstreamRetryBaseDelayMs, attempt))
+        const retryDelayMs = jitteredBackoffMs(config.upstreamRetryBaseDelayMs, attempt)
+        if (telemetry) {
+          logProxyEvent(
+            'proxy.upstream.retry',
+            {
+              route: telemetry.route,
+              requestId: telemetry.requestId,
+              method: telemetry.method,
+              path: telemetry.path,
+              provider: telemetry.provider,
+              upstreamHost: host,
+              prefetch: telemetry.prefetch,
+              cachePolicy: options.cacheClass ?? 'metadata',
+              status: normalized.status,
+              durationMs: Date.now() - attemptStartedAt,
+              attempt,
+              maxAttempts: attempts,
+              retryDelayMs,
+              outcome: 'error',
+              errorMessage: normalized.message,
+            },
+            {
+              level: 'warn',
+              sampleRate: 1,
+            },
+          )
+        }
+        await delay(retryDelayMs)
         continue
+      }
+
+      if (telemetry) {
+        logProxyEvent(
+          'proxy.upstream.error',
+          {
+            route: telemetry.route,
+            requestId: telemetry.requestId,
+            method: telemetry.method,
+            path: telemetry.path,
+            provider: telemetry.provider,
+            upstreamHost: host,
+            prefetch: telemetry.prefetch,
+            cachePolicy: options.cacheClass ?? 'metadata',
+            status: normalized.status,
+            durationMs: Date.now() - attemptStartedAt,
+            attempt,
+            maxAttempts: attempts,
+            outcome: 'error',
+            errorMessage: normalized.message,
+          },
+          {
+            level: 'error',
+            sampleRate: 1,
+          },
+        )
       }
 
       throw normalized

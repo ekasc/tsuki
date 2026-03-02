@@ -9,7 +9,10 @@ import {
     seriesCache,
 } from '../server'
 import { encodeBase64Url } from '../utils/base64url'
-import { fetchWithWeebcentralPolicy } from '../utils/upstream-policy'
+import {
+    type UpstreamTelemetryContext,
+    fetchWithWeebcentralPolicy,
+} from '../utils/upstream-policy'
 
 const CHAPTER_IMAGES_QUERY =
     'is_prev=False&current_page=1&reading_style=long_strip'
@@ -653,6 +656,7 @@ async function fetchTextWithWeebcentralGuards(
         allowedHostnames?: string[]
         cacheClass?: 'metadata' | 'image'
         bypassCloudflareCache?: boolean
+        telemetry?: UpstreamTelemetryContext
     } = {},
 ): Promise<{
     text: string
@@ -671,6 +675,7 @@ async function fetchTextWithWeebcentralGuards(
             maxRedirects: config.imageProxyMaxRedirects,
             cacheClass: options.cacheClass ?? 'metadata',
             bypassCloudflareCache: options.bypassCloudflareCache,
+            telemetry: options.telemetry,
         },
         config,
     )
@@ -697,7 +702,7 @@ async function fetchTextWithWeebcentralGuards(
 async function resolveSeriesIdFromChapterInput(
     parsedInput: ParsedWeebcentralInput,
     config: ProxyServerConfig,
-    options?: { bypassCache?: boolean },
+    options?: { bypassCache?: boolean; telemetry?: UpstreamTelemetryContext },
 ): Promise<string> {
     if (parsedInput.chapterId) {
         const chapterPageUrl =
@@ -709,6 +714,7 @@ async function resolveSeriesIdFromChapterInput(
             {
                 cacheClass: 'metadata',
                 bypassCloudflareCache: options?.bypassCache,
+                telemetry: options?.telemetry,
             },
         )
         const seriesId = extractSeriesIdFromHtml(text)
@@ -731,6 +737,7 @@ async function resolveSeriesIdFromChapterInput(
             {
                 cacheClass: 'metadata',
                 bypassCloudflareCache: options?.bypassCache,
+                telemetry: options?.telemetry,
             },
         )
         const seriesId = extractSeriesIdFromHtml(text)
@@ -748,7 +755,7 @@ async function resolveSeriesIdFromChapterInput(
 async function fetchSeriesDtoBySeriesId(
     seriesId: string,
     config: ProxyServerConfig,
-    options?: { bypassCache?: boolean },
+    options?: { bypassCache?: boolean; telemetry?: UpstreamTelemetryContext },
 ): Promise<SeriesDTO> {
     const cacheKey = `series:v2:${seriesId}`
 
@@ -760,6 +767,7 @@ async function fetchSeriesDtoBySeriesId(
             {
                 cacheClass: 'metadata',
                 bypassCloudflareCache: options?.bypassCache,
+                telemetry: options?.telemetry,
             },
         )
         const chapterListUrl = new URL(
@@ -776,6 +784,7 @@ async function fetchSeriesDtoBySeriesId(
                 {
                     cacheClass: 'metadata',
                     bypassCloudflareCache: options?.bypassCache,
+                    telemetry: options?.telemetry,
                 },
             )
             chapterListHtml = response.text
@@ -833,7 +842,7 @@ async function fetchSeriesDtoBySeriesId(
 async function resolveSeriesFromInput(
     input: string,
     config: ProxyServerConfig,
-    options?: { bypassCache?: boolean },
+    options?: { bypassCache?: boolean; telemetry?: UpstreamTelemetryContext },
 ): Promise<SeriesDTO> {
     const parsed = parseWeebcentralInput(input)
 
@@ -869,6 +878,7 @@ async function resolveSeriesFromInput(
 async function resolveChapterIdFromInput(
     input: string,
     config: ProxyServerConfig,
+    options?: { telemetry?: UpstreamTelemetryContext },
 ): Promise<{
     seriesId: string
     chapterId: string
@@ -876,7 +886,9 @@ async function resolveChapterIdFromInput(
     const parsed = parseWeebcentralInput(input)
 
     if (parsed.chapterId) {
-        const seriesId = await resolveSeriesIdFromChapterInput(parsed, config)
+        const seriesId = await resolveSeriesIdFromChapterInput(parsed, config, {
+            telemetry: options?.telemetry,
+        })
         return {
             seriesId,
             chapterId: parsed.chapterId,
@@ -884,7 +896,9 @@ async function resolveChapterIdFromInput(
     }
 
     if (parsed.seriesId) {
-        const seriesDto = await fetchSeriesDtoBySeriesId(parsed.seriesId, config)
+        const seriesDto = await fetchSeriesDtoBySeriesId(parsed.seriesId, config, {
+            telemetry: options?.telemetry,
+        })
         const firstChapter = seriesDto.chapters[0]
 
         if (!firstChapter) {
@@ -899,7 +913,9 @@ async function resolveChapterIdFromInput(
 
     if (parsed.ambiguousId) {
         try {
-            const seriesId = await resolveSeriesIdFromChapterInput(parsed, config)
+            const seriesId = await resolveSeriesIdFromChapterInput(parsed, config, {
+                telemetry: options?.telemetry,
+            })
             return {
                 seriesId,
                 chapterId: parsed.ambiguousId,
@@ -908,6 +924,7 @@ async function resolveChapterIdFromInput(
             const seriesDto = await fetchSeriesDtoBySeriesId(
                 parsed.ambiguousId,
                 config,
+                { telemetry: options?.telemetry },
             )
             const firstChapter = seriesDto.chapters[0]
 
@@ -928,6 +945,7 @@ async function resolveChapterIdFromInput(
 async function fetchChapterPages(
     chapterId: string,
     config: ProxyServerConfig,
+    options?: { telemetry?: UpstreamTelemetryContext },
 ): Promise<string[]> {
     const chapterImagesUrl = new URL(
         `/chapters/${chapterId}/images?${CHAPTER_IMAGES_QUERY}`,
@@ -946,6 +964,7 @@ async function fetchChapterPages(
             allowedHostnames: config.weebcentralImageHostAllowlist,
             maxRedirects: config.imageProxyMaxRedirects,
             cacheClass: 'metadata',
+            telemetry: options?.telemetry,
         },
         config,
     )
@@ -978,7 +997,7 @@ function toProxiedImagePath(url: string): string {
 export async function getWeebcentralSeries(
     input: string,
     config: ProxyServerConfig = proxyConfig,
-    options?: { bypassCache?: boolean },
+    options?: { bypassCache?: boolean; telemetry?: UpstreamTelemetryContext },
 ): Promise<SeriesDTO> {
     return resolveSeriesFromInput(input, config, options)
 }
@@ -986,14 +1005,15 @@ export async function getWeebcentralSeries(
 export async function getWeebcentralChapter(
     input: string,
     config: ProxyServerConfig = proxyConfig,
+    options?: { telemetry?: UpstreamTelemetryContext },
 ): Promise<ChapterDTO> {
-    const resolved = await resolveChapterIdFromInput(input, config)
+    const resolved = await resolveChapterIdFromInput(input, config, options)
     const cacheKey = `chapter:${resolved.chapterId}`
 
     return chapterCache.getOrSetWithStaleFallback(
         cacheKey,
         async () => {
-            const pages = await fetchChapterPages(resolved.chapterId, config)
+            const pages = await fetchChapterPages(resolved.chapterId, config, options)
 
             return {
                 provider: 'weebcentral' as const,

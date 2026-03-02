@@ -11,7 +11,9 @@ import {
   isPrefetchRequest,
 } from '../utils/upstream-policy'
 import {
+  errorMessageFromUnknown,
   logProxyEvent,
+  resolveRequestId,
   statusCodeFromError,
   writeProxyMetric,
 } from '../utils/observability'
@@ -36,6 +38,8 @@ function readForceRefreshQuery(request: Request): boolean {
 
 export async function getSeriesDtoForRequest(request: Request) {
   const startedAt = Date.now()
+  const requestPath = new URL(request.url).pathname
+  const requestId = resolveRequestId(request)
   const prefetch = isPrefetchRequest(request)
   await enforceWeebcentralApiRateLimit(request, proxyConfig)
   const forceRefresh = readForceRefreshQuery(request)
@@ -51,14 +55,33 @@ export async function getSeriesDtoForRequest(request: Request) {
       provider === 'mangadex'
         ? await getMangaDexSeries(input, proxyConfig, {
             bypassCache: forceRefresh,
+            telemetry: {
+              route: '/v1/weebcentral/series',
+              requestId,
+              method: request.method,
+              path: requestPath,
+              provider,
+              prefetch,
+            },
           })
         : await getWeebcentralSeries(input, proxyConfig, {
             bypassCache: forceRefresh,
+            telemetry: {
+              route: '/v1/weebcentral/series',
+              requestId,
+              method: request.method,
+              path: requestPath,
+              provider,
+              prefetch,
+            },
           })
 
     const durationMs = Date.now() - startedAt
     logProxyEvent('proxy.series.success', {
       route: '/v1/weebcentral/series',
+      requestId,
+      method: request.method,
+      path: requestPath,
       provider,
       status: 200,
       durationMs,
@@ -82,13 +105,16 @@ export async function getSeriesDtoForRequest(request: Request) {
     const status = statusCodeFromError(error)
     logProxyEvent('proxy.series.error', {
       route: '/v1/weebcentral/series',
+      requestId,
+      method: request.method,
+      path: requestPath,
       provider,
       status,
       durationMs,
       prefetch,
       cachePolicy: forceRefresh ? 'bypass' : 'metadata',
       outcome: 'error',
-      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      errorMessage: errorMessageFromUnknown(error),
     })
     await writeProxyMetric('proxy.series', {
       route: '/v1/weebcentral/series',
@@ -98,7 +124,7 @@ export async function getSeriesDtoForRequest(request: Request) {
       prefetch,
       cachePolicy: forceRefresh ? 'bypass' : 'metadata',
       outcome: 'error',
-      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      errorMessage: errorMessageFromUnknown(error),
     })
     throw error
   }
@@ -106,6 +132,8 @@ export async function getSeriesDtoForRequest(request: Request) {
 
 export async function getChapterDtoForRequest(request: Request) {
   const startedAt = Date.now()
+  const requestPath = new URL(request.url).pathname
+  const requestId = resolveRequestId(request)
   const prefetch = isPrefetchRequest(request)
   await enforceWeebcentralApiRateLimit(request, proxyConfig)
   const input = readInputQuery(request)
@@ -115,12 +143,33 @@ export async function getChapterDtoForRequest(request: Request) {
   try {
     const payload =
       provider === 'mangadex'
-        ? await getMangaDexChapter(input, proxyConfig)
-        : await getWeebcentralChapter(input, proxyConfig)
+        ? await getMangaDexChapter(input, proxyConfig, {
+            telemetry: {
+              route: '/v1/weebcentral/chapter',
+              requestId,
+              method: request.method,
+              path: requestPath,
+              provider,
+              prefetch,
+            },
+          })
+        : await getWeebcentralChapter(input, proxyConfig, {
+            telemetry: {
+              route: '/v1/weebcentral/chapter',
+              requestId,
+              method: request.method,
+              path: requestPath,
+              provider,
+              prefetch,
+            },
+          })
 
     const durationMs = Date.now() - startedAt
     logProxyEvent('proxy.chapter.success', {
       route: '/v1/weebcentral/chapter',
+      requestId,
+      method: request.method,
+      path: requestPath,
       provider,
       status: 200,
       durationMs,
@@ -144,13 +193,16 @@ export async function getChapterDtoForRequest(request: Request) {
     const status = statusCodeFromError(error)
     logProxyEvent('proxy.chapter.error', {
       route: '/v1/weebcentral/chapter',
+      requestId,
+      method: request.method,
+      path: requestPath,
       provider,
       status,
       durationMs,
       prefetch,
       cachePolicy: 'metadata',
       outcome: 'error',
-      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      errorMessage: errorMessageFromUnknown(error),
     })
     await writeProxyMetric('proxy.chapter', {
       route: '/v1/weebcentral/chapter',
@@ -160,7 +212,7 @@ export async function getChapterDtoForRequest(request: Request) {
       prefetch,
       cachePolicy: 'metadata',
       outcome: 'error',
-      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      errorMessage: errorMessageFromUnknown(error),
     })
     throw error
   }

@@ -6,9 +6,11 @@ export const Route = createAnyFileRoute('/v1/weebcentral/chapter')({
   server: {
     handlers: {
       GET: async ({ request }: { request: Request }) => {
-        const { jsonResponse, toApiErrorResponse } = await import(
-          '#/server/api/http'
+        const { jsonResponse, toApiErrorResponse } = await import('#/server/api/http')
+        const { attachRequestIdHeader, resolveRequestId } = await import(
+          '#/server/proxy/utils/observability'
         )
+        const requestId = resolveRequestId(request)
 
         try {
           const { getChapterDtoForRequest } = await import(
@@ -16,14 +18,18 @@ export const Route = createAnyFileRoute('/v1/weebcentral/chapter')({
           )
 
           const payload = await getChapterDtoForRequest(request)
-          return jsonResponse(payload, {
+          const response = jsonResponse(payload, {
             headers: {
               'Cache-Control':
                 'public, max-age=30, s-maxage=120, stale-while-revalidate=300',
             },
           })
+          attachRequestIdHeader(response, requestId)
+          return response
         } catch (error) {
-          return toApiErrorResponse(error)
+          const response = toApiErrorResponse(error)
+          attachRequestIdHeader(response, requestId)
+          return response
         }
       },
     },
