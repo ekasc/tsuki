@@ -430,6 +430,32 @@
     background: color-mix(in oklab, var(--surface-soft) 84%, var(--bg) 16%);
   }
 
+  .ui-support-sticky {
+    position: fixed;
+    right: max(0.75rem, calc(var(--safe-right) + 0.75rem));
+    bottom: max(0.75rem, calc(var(--safe-bottom) + 0.75rem));
+    z-index: 45;
+    width: min(
+      14rem,
+      calc(
+        100vw - max(1.5rem, calc(var(--safe-left) + var(--safe-right) + 1.5rem))
+      )
+    );
+    border-radius: 2px;
+    box-shadow: 2px 2px 0 color-mix(in oklab, var(--shadow), transparent 30%);
+    backdrop-filter: blur(4px);
+  }
+
+  @media (max-width: 640px) {
+    .ui-support-sticky {
+      left: max(0.75rem, calc(var(--safe-left) + 0.75rem));
+      right: max(0.75rem, calc(var(--safe-right) + 0.75rem));
+      width: auto;
+      max-width: 17rem;
+      margin-left: auto;
+    }
+  }
+
   .reader-shell-panel {
     border-right: 2px solid var(--border);
     background: color-mix(in oklab, var(--surface) 92%, var(--bg) 8%);

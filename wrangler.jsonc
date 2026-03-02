@@ -12,7 +12,8 @@
     },
     "vars": {
         "TSUKI_LOCAL_LIBRARY_DRIVER": "disabled",
-        "TSUKI_LOCAL_LIBRARY_ENABLED": "0"
+        "TSUKI_LOCAL_LIBRARY_ENABLED": "0",
+        "VITE_SUPPORT_URL": "https://buymeacoffee.com/ekascs"
     },
     "routes": [
         {

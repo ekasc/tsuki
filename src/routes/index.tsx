@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Button } from '#/components/ui/button'
+import { SupportStickyCard } from '#/components/SupportStickyCard'
 import { Input } from '#/components/ui/input'
 import type { ReadingHistoryItem, WeebcentralSeriesDTO } from '#/lib/contracts'
 import { weebcentralSeriesQueryOptions } from '#/lib/query-options'
@@ -554,6 +555,8 @@ function LibraryPage() {
           manga files.
         </p>
       </section>
+
+      <SupportStickyCard />
     </div>
   )
 }

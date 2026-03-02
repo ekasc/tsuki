@@ -29,6 +29,10 @@ This deploys a single Cloudflare Worker that serves the app and API routes.
 Default Cloudflare mode is online-reader focused (`TSUKI_LOCAL_LIBRARY_ENABLED=0`), so local file upload/library APIs are disabled.
 Production domain is configured via `wrangler.jsonc` as `https://tsukireader.com`.
 
+Optional build env:
+
+- `VITE_SUPPORT_URL=https://buymeacoffee.com/<your-handle>` (sticky support card CTA target)
+
 ### GitHub Actions deploy (`main` -> production)
 
 The CI workflow deploys to Cloudflare automatically after all checks pass on pushes to `main`.

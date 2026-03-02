@@ -13,6 +13,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Button } from '#/components/ui/button'
+import { SupportStickyCard } from '#/components/SupportStickyCard'
 import { Input } from '#/components/ui/input'
 import type { WeebcentralSeriesDTO } from '#/lib/contracts'
 import { weebcentralSeriesQueryOptions } from '#/lib/query-options'
@@ -695,6 +696,8 @@ function WeebcentralSeriesPage() {
           </p>
         ) : null}
       </section>
+
+      <SupportStickyCard />
     </div>
   )
 }
