@@ -55,7 +55,7 @@ export const Route = createFileRoute('/reader/$chapterId')({
   }),
   head: () => ({
     meta: [
-      { title: 'Local Reader | Tsuki Reader' },
+      { title: 'Tsuki reader' },
       { name: 'robots', content: 'noindex,nofollow' },
     ],
   }),

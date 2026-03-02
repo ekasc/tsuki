@@ -28,7 +28,7 @@ import {
   removeSavedWeebcentralSeries,
 } from '#/lib/weebcentral-library'
 
-const HOME_TITLE = 'Tsuki Reader | Old-School Manga Reader'
+const HOME_TITLE = 'Tsuki reader'
 const HOME_DESCRIPTION =
   'Tsuki Reader is an online manga reader and image proxy built for smooth right-to-left paging on desktop, phones, and tablets.'
 

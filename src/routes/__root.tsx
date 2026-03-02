@@ -12,7 +12,7 @@ import { ErrorBoundary } from '#/components/ErrorBoundary'
 import { absoluteUrl, DEFAULT_OG_IMAGE_PATH, SITE_URL } from '#/lib/seo'
 import type { AppRouterContext } from '#/lib/router-context'
 
-const TSUKI_DEFAULT_TITLE = 'Tsuki Reader'
+const TSUKI_DEFAULT_TITLE = 'Tsuki reader'
 const TSUKI_DEFAULT_DESCRIPTION =
   'Read manga online in a fast, old-school reader with right-to-left paging, smooth navigation, and no clutter.'
 const TSUKI_JSON_LD = [

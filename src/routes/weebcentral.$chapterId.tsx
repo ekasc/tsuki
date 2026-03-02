@@ -55,7 +55,7 @@ export const Route = createFileRoute('/weebcentral/$chapterId')({
   }),
   head: ({ params }: { params: { chapterId: string } }) => ({
     meta: [
-      { title: 'Reader | Tsuki Reader' },
+      { title: 'Tsuki reader' },
       {
         name: 'description',
         content: 'Read manga chapters in Tsuki with a clean, distraction-free viewer.',

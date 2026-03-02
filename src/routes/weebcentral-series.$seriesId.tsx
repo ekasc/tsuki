@@ -48,8 +48,7 @@ export const Route = createFileRoute('/weebcentral-series/$seriesId')({
     params: { seriesId: string }
     loaderData?: WeebcentralSeriesDTO | null
   }) => {
-    const seriesTitle = loaderData?.title?.trim()
-    const title = seriesTitle ? `${seriesTitle} | Tsuki Reader` : 'Series | Tsuki Reader'
+    const title = 'Tsuki reader'
     const description = truncateDescription(
       loaderData?.description?.trim() ||
         'Browse chapters and continue reading with Tsuki Reader.',

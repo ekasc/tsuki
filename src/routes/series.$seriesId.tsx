@@ -25,7 +25,7 @@ export const Route = createFileRoute('/series/$seriesId')({
   }),
   head: () => ({
     meta: [
-      { title: 'Local Series | Tsuki Reader' },
+      { title: 'Tsuki reader' },
       { name: 'robots', content: 'noindex,nofollow' },
     ],
   }),
