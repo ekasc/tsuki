@@ -17,13 +17,9 @@
     },
     "routes": [
         {
-            "pattern": "tsukireader.com/*",
-            "zone_name": "tsukireader.com"
+            "pattern": "tsukireader.com",
+            "custom_domain": true
         },
-        {
-            "pattern": "www.tsukireader.com/*",
-            "zone_name": "tsukireader.com"
-        }
     ],
     "ratelimits": [
         {
@@ -78,7 +74,8 @@
             "vars": {
                 "TSUKI_LOCAL_LIBRARY_DRIVER": "fixtures",
                 "TSUKI_TEST_FIXTURES": "1",
-                "TSUKI_LOCAL_LIBRARY_ENABLED": "1"
+                "TSUKI_LOCAL_LIBRARY_ENABLED": "1",
+                "VITE_SUPPORT_URL": "https://buymeacoffee.com/ekascs"
             },
             "ratelimits": [
                 {

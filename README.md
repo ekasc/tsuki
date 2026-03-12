@@ -32,6 +32,7 @@ Production domain is configured via `wrangler.jsonc` as `https://tsukireader.com
 Optional build env:
 
 - `VITE_SUPPORT_URL=https://buymeacoffee.com/<your-handle>` (sticky support card CTA target)
+- `TSUKI_IMAGE_HOST_ALLOWLIST=host-a.example.com,host-b.example.com` (optional extra upstream image hosts for proxy allowlist)
 
 ### GitHub Actions deploy (`main` -> production)
 

@@ -62,12 +62,23 @@ function parseIntegerEnv(
   return Math.min(maximum, Math.max(minimum, parsed))
 }
 
-const configuredCdnHosts = parseCsvEnv('WEBCENTRAL_CDN_HOSTS')
+const configuredLegacyCdnHosts = parseCsvEnv('WEBCENTRAL_CDN_HOSTS')
+const configuredImageHosts = parseCsvEnv('TSUKI_IMAGE_HOST_ALLOWLIST')
+const defaultImageHostAllowlist = [
+  'weebcentral.com',
+  'mangadex.org',
+  'mangadex.network',
+  'uploads.mangadex.org',
+]
 
 export const proxyConfig: ProxyServerConfig = {
   weebcentralOrigin: 'https://weebcentral.com',
   weebcentralImageHostAllowlist: Array.from(
-    new Set(['weebcentral.com', ...configuredCdnHosts]),
+    new Set([
+      ...defaultImageHostAllowlist,
+      ...configuredLegacyCdnHosts,
+      ...configuredImageHosts,
+    ]),
   ),
   seriesCacheTtlMs: parseIntegerEnv(
     'WEBCENTRAL_SERIES_CACHE_TTL_MS',

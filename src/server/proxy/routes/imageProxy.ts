@@ -24,6 +24,9 @@ function pickHeader(headers: Headers, key: string): string | null {
   return value
 }
 
+const IMAGE_PROXY_CACHE_CONTROL =
+  'public, max-age=604800, s-maxage=604800, stale-while-revalidate=86400, immutable'
+
 export async function proxyImageByEncodedUrl(
   request: Request,
   encodedUrl: string,
@@ -47,8 +50,35 @@ export async function proxyImageByEncodedUrl(
     decodedUrl.hostname,
     proxyConfig.weebcentralImageHostAllowlist,
   )
+  const upstreamHost = decodedUrl.hostname
 
   if (!isApproved && !isStaticallyAllowed) {
+    const durationMs = Date.now() - startedAt
+    logProxyEvent('proxy.image.blocked_host', {
+      route: '/v1/image/$b64',
+      requestId,
+      method: request.method,
+      path: requestPath,
+      provider: 'weebcentral',
+      upstreamHost,
+      status: 403,
+      durationMs,
+      prefetch,
+      cachePolicy: 'image',
+      outcome: 'error',
+      errorMessage: `Host blocked by allowlist: ${upstreamHost}`,
+    })
+    await writeProxyMetric('proxy.image', {
+      route: '/v1/image/$b64',
+      provider: 'weebcentral',
+      upstreamHost,
+      status: 403,
+      durationMs,
+      prefetch,
+      cachePolicy: 'image',
+      outcome: 'error',
+      errorMessage: `Host blocked by allowlist: ${upstreamHost}`,
+    })
     throw new HttpError(403, 'Upstream host is not allowed')
   }
 
@@ -91,11 +121,7 @@ export async function proxyImageByEncodedUrl(
     }
 
     const headers = new Headers()
-    headers.set(
-      'Cache-Control',
-      pickHeader(upstreamResponse.headers, 'cache-control') ??
-        'public, max-age=604800, s-maxage=604800, immutable',
-    )
+    headers.set('Cache-Control', IMAGE_PROXY_CACHE_CONTROL)
     headers.set('X-Content-Type-Options', 'nosniff')
 
     if (options.crop) {
@@ -137,6 +163,7 @@ export async function proxyImageByEncodedUrl(
         method: request.method,
         path: requestPath,
         provider: 'weebcentral',
+        upstreamHost,
         status: 200,
         durationMs,
         prefetch,
@@ -146,6 +173,7 @@ export async function proxyImageByEncodedUrl(
       await writeProxyMetric('proxy.image', {
         route: '/v1/image/$b64',
         provider: 'weebcentral',
+        upstreamHost,
         status: 200,
         durationMs,
         prefetch,
@@ -181,6 +209,7 @@ export async function proxyImageByEncodedUrl(
       method: request.method,
       path: requestPath,
       provider: 'weebcentral',
+      upstreamHost,
       status: 200,
       durationMs,
       prefetch,
@@ -190,6 +219,7 @@ export async function proxyImageByEncodedUrl(
     await writeProxyMetric('proxy.image', {
       route: '/v1/image/$b64',
       provider: 'weebcentral',
+      upstreamHost,
       status: 200,
       durationMs,
       prefetch,
@@ -210,6 +240,7 @@ export async function proxyImageByEncodedUrl(
       method: request.method,
       path: requestPath,
       provider: 'weebcentral',
+      upstreamHost,
       status,
       durationMs,
       prefetch,
@@ -220,6 +251,7 @@ export async function proxyImageByEncodedUrl(
     await writeProxyMetric('proxy.image', {
       route: '/v1/image/$b64',
       provider: 'weebcentral',
+      upstreamHost,
       status,
       durationMs,
       prefetch,

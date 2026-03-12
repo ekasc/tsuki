@@ -30,7 +30,7 @@ import type {
   WeebcentralSeriesDTO,
   ZoomPreset,
 } from '#/lib/contracts'
-import { setBoundedMapEntry } from '#/lib/bounded-cache'
+import { addBoundedSetEntry, setBoundedMapEntry } from '#/lib/bounded-cache'
 import { resolveApiUrl } from '#/lib/http-client'
 import {
   weebcentralChapterQueryOptions,
@@ -95,8 +95,11 @@ const LEGACY_REMOTE_PROGRESS_STORAGE_KEY = 'suki-remote-progress.v1'
 const prefetchedRemoteChapters = new Map<string, WeebcentralChapterDTO>()
 const prefetchedRemoteSeries = new Map<string, WeebcentralSeriesDTO>()
 const inFlightRemoteChapterPrefetches = new Set<string>()
+const prefetchedRemoteImageUrls = new Set<string>()
+const inFlightRemoteImagePrefetches = new Map<string, HTMLImageElement>()
 const PREFETCHED_REMOTE_CHAPTER_LIMIT = 64
 const PREFETCHED_REMOTE_SERIES_LIMIT = 64
+const PREFETCHED_REMOTE_IMAGE_URL_LIMIT = 1600
 const REMOTE_PAGE_DIMENSIONS_LIMIT = 180
 interface RemotePageDimension {
   width: number
@@ -1519,25 +1522,52 @@ function WeebcentralReaderPage() {
       return
     }
 
-    const images = pagesToWarm.map(({ url, pageIndex }) => {
+    pagesToWarm.forEach(({ url, pageIndex }) => {
+      const resolvedUrl = resolveApiUrl(url)
+      if (
+        prefetchedRemoteImageUrls.has(resolvedUrl) ||
+        inFlightRemoteImagePrefetches.has(resolvedUrl)
+      ) {
+        return
+      }
+
       const image = new Image()
       image.decoding = 'async'
-      image.addEventListener('load', () => {
-        rememberPageDimension(
-          pageIndex,
-          image.naturalWidth,
-          image.naturalHeight,
-        )
-      })
-      image.src = url
-      return image
-    })
+      image.loading = 'eager'
+      inFlightRemoteImagePrefetches.set(resolvedUrl, image)
 
-    return () => {
-      images.forEach((image) => {
-        image.src = ''
-      })
-    }
+      const finalize = (loaded: boolean) => {
+        inFlightRemoteImagePrefetches.delete(resolvedUrl)
+        if (loaded) {
+          addBoundedSetEntry(
+            prefetchedRemoteImageUrls,
+            resolvedUrl,
+            PREFETCHED_REMOTE_IMAGE_URL_LIMIT,
+          )
+        }
+      }
+
+      image.addEventListener(
+        'load',
+        () => {
+          rememberPageDimension(
+            pageIndex,
+            image.naturalWidth,
+            image.naturalHeight,
+          )
+          finalize(true)
+        },
+        { once: true },
+      )
+      image.addEventListener(
+        'error',
+        () => {
+          finalize(false)
+        },
+        { once: true },
+      )
+      image.src = resolvedUrl
+    })
   }, [
     chapter,
     currentTargetPageIndex,
