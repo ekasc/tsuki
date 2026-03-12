@@ -66,6 +66,7 @@ const configuredLegacyCdnHosts = parseCsvEnv('WEBCENTRAL_CDN_HOSTS')
 const configuredImageHosts = parseCsvEnv('TSUKI_IMAGE_HOST_ALLOWLIST')
 const defaultImageHostAllowlist = [
   'weebcentral.com',
+  'planeptune.us',
   'mangadex.org',
   'mangadex.network',
   'uploads.mangadex.org',
@@ -189,11 +190,123 @@ export const chapterCache = new TtlCache<string, ChapterDTO>(
 const approvedImageUrlCache = new TtlCache<string, true>(
   proxyConfig.chapterCacheTtlMs,
 )
+const approvedImageHostCache = new TtlCache<string, true>(
+  proxyConfig.chapterCacheTtlMs,
+)
+const approvedImageHostCacheTtlSeconds = Math.max(
+  60,
+  Math.floor(proxyConfig.chapterCacheTtlMs / 1_000),
+)
+const approvedImageHostCachePrefix =
+  'https://tsuki.internal/__approved-image-host__/'
+
+function normalizeHostname(hostname: string): string {
+  return hostname.trim().toLowerCase()
+}
+
+function extractHostname(url: string): string | null {
+  try {
+    return normalizeHostname(new URL(url).hostname)
+  } catch {
+    return null
+  }
+}
+
+function getSharedApprovedHostCache(): Cache | null {
+  const cacheStorage = (globalThis as { caches?: { default?: Cache } }).caches
+  return cacheStorage?.default ?? null
+}
+
+function createApprovedHostCacheRequest(hostname: string): Request {
+  const normalizedHostname = normalizeHostname(hostname)
+  return new Request(
+    `${approvedImageHostCachePrefix}${encodeURIComponent(normalizedHostname)}`,
+    { method: 'GET' },
+  )
+}
+
+async function persistApprovedImageHost(hostname: string): Promise<void> {
+  const sharedCache = getSharedApprovedHostCache()
+  if (!sharedCache) {
+    return
+  }
+
+  const request = createApprovedHostCacheRequest(hostname)
+  const response = new Response('1', {
+    headers: {
+      'Cache-Control': `public, max-age=${approvedImageHostCacheTtlSeconds}`,
+    },
+  })
+
+  try {
+    await sharedCache.put(request, response)
+  } catch {
+    // Ignore cache write failures; in-memory fallback still works.
+  }
+}
 
 export function rememberApprovedImageUrl(url: string): void {
   approvedImageUrlCache.set(url, true)
+  const hostname = extractHostname(url)
+  if (hostname) {
+    approvedImageHostCache.set(hostname, true)
+  }
 }
 
 export function isApprovedImageUrl(url: string): boolean {
   return approvedImageUrlCache.get(url) === true
+}
+
+export async function rememberApprovedImageHosts(
+  urls: readonly string[],
+): Promise<void> {
+  const hostnames = new Set<string>()
+
+  for (const url of urls) {
+    const hostname = extractHostname(url)
+    if (!hostname) {
+      continue
+    }
+
+    approvedImageHostCache.set(hostname, true)
+    hostnames.add(hostname)
+  }
+
+  if (hostnames.size === 0) {
+    return
+  }
+
+  await Promise.all(
+    Array.from(hostnames, (hostname) => persistApprovedImageHost(hostname)),
+  )
+}
+
+export async function isApprovedImageHost(hostname: string): Promise<boolean> {
+  const normalizedHostname = normalizeHostname(hostname)
+  if (normalizedHostname.length === 0) {
+    return false
+  }
+
+  if (approvedImageHostCache.get(normalizedHostname) === true) {
+    return true
+  }
+
+  const sharedCache = getSharedApprovedHostCache()
+  if (!sharedCache) {
+    return false
+  }
+
+  try {
+    const response = await sharedCache.match(
+      createApprovedHostCacheRequest(normalizedHostname),
+    )
+    if (!response) {
+      return false
+    }
+
+    approvedImageHostCache.set(normalizedHostname, true)
+    return true
+  } catch {
+    return false
+  }
 }

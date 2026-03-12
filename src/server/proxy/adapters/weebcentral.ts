@@ -5,6 +5,7 @@ import type { ProxyServerConfig } from '../server'
 import {
     chapterCache,
     proxyConfig,
+    rememberApprovedImageHosts,
     rememberApprovedImageUrl,
     seriesCache,
 } from '../server'
@@ -983,6 +984,8 @@ async function fetchChapterPages(
         throw new HttpError(502, 'No chapter images found')
     }
 
+    await rememberApprovedImageHosts(imageUrls)
+
     for (const imageUrl of imageUrls) {
         rememberApprovedImageUrl(imageUrl)
     }
@@ -1013,17 +1016,18 @@ export async function getWeebcentralChapter(
     return chapterCache.getOrSetWithStaleFallback(
         cacheKey,
         async () => {
-            const pages = await fetchChapterPages(resolved.chapterId, config, options)
+      const pages = await fetchChapterPages(resolved.chapterId, config, options)
+      const proxiedPages = pages.map((url) => ({
+        url: toProxiedImagePath(url),
+      }))
 
-            return {
-                provider: 'weebcentral' as const,
-                seriesId: resolved.seriesId,
-                chapterId: resolved.chapterId,
-                pages: pages.map((url) => ({
-                    url: toProxiedImagePath(url),
-                })),
-            }
-        },
+      return {
+        provider: 'weebcentral' as const,
+        seriesId: resolved.seriesId,
+        chapterId: resolved.chapterId,
+        pages: proxiedPages,
+      }
+    },
         config.chapterCacheTtlMs,
         config.chapterCacheStaleTtlMs,
     )

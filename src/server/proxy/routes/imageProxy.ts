@@ -1,6 +1,6 @@
 import { HttpError } from '#/server/errors'
 
-import { isApprovedImageUrl, proxyConfig } from '../server'
+import { isApprovedImageHost, isApprovedImageUrl, proxyConfig } from '../server'
 import { decodeBase64Url } from '../utils/base64url'
 import { isHostnameAllowed } from '../utils/security'
 import {
@@ -46,13 +46,14 @@ export async function proxyImageByEncodedUrl(
     throw new HttpError(400, 'Invalid upstream URL')
   }
   const isApproved = isApprovedImageUrl(decoded)
+  const isApprovedHost = await isApprovedImageHost(decodedUrl.hostname)
   const isStaticallyAllowed = isHostnameAllowed(
     decodedUrl.hostname,
     proxyConfig.weebcentralImageHostAllowlist,
   )
   const upstreamHost = decodedUrl.hostname
 
-  if (!isApproved && !isStaticallyAllowed) {
+  if (!isApproved && !isApprovedHost && !isStaticallyAllowed) {
     const durationMs = Date.now() - startedAt
     logProxyEvent('proxy.image.blocked_host', {
       route: '/v1/image/$b64',
@@ -82,7 +83,7 @@ export async function proxyImageByEncodedUrl(
     throw new HttpError(403, 'Upstream host is not allowed')
   }
 
-  const allowedHostnames = isApproved
+  const allowedHostnames = isApproved || isApprovedHost
     ? Array.from(
         new Set([decodedUrl.hostname, ...proxyConfig.weebcentralImageHostAllowlist]),
       )

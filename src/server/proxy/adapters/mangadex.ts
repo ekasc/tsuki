@@ -11,6 +11,7 @@ import type { ProxyServerConfig } from '../server'
 import {
   chapterCache,
   proxyConfig,
+  rememberApprovedImageHosts,
   rememberApprovedImageUrl,
   seriesCache,
 } from '../server'
@@ -533,6 +534,8 @@ async function fetchChapterPages(
   const urls = data.map((fileName) => {
     return `${baseUrl}/data/${chapterHash}/${encodeURIComponent(fileName)}`
   })
+
+  await rememberApprovedImageHosts(urls)
 
   urls.forEach((url) => {
     rememberApprovedImageUrl(url)
