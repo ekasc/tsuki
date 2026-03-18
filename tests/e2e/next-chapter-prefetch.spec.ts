@@ -43,8 +43,8 @@ test('reader prefetches next chapter before transition', async ({ page }) => {
   const totalChapterLinks = await chapterLinks.count()
   expect(totalChapterLinks).toBeGreaterThanOrEqual(2)
 
-  const currentChapterHref = await chapterLinks.first().getAttribute('href')
-  const nextChapterHref = await chapterLinks.nth(1).getAttribute('href')
+  const currentChapterHref = await chapterLinks.nth(1).getAttribute('href')
+  const nextChapterHref = await chapterLinks.first().getAttribute('href')
   expect(currentChapterHref).toBeTruthy()
   expect(nextChapterHref).toBeTruthy()
 
@@ -52,7 +52,7 @@ test('reader prefetches next chapter before transition', async ({ page }) => {
   const nextChapterId = extractChapterIdFromHref(nextChapterHref!)
   const currentRoutePath = `/reader/${currentChapterId}`
 
-  await chapterLinks.first().click()
+  await chapterLinks.nth(1).click()
   await expect(page.getByTestId('reader-paging-container')).toBeVisible()
   await expect(page).toHaveURL(new RegExp(`/reader/${currentChapterId}$`))
 
@@ -108,8 +108,8 @@ test('reader does not prefetch when there is no next chapter', async ({ page }) 
   await openDemoSeries(page)
 
   const chapterLinks = page.getByRole('link', { name: /Chapter/i })
-  const latestChapterHref = await chapterLinks.nth(1).getAttribute('href')
-  const earlierChapterHref = await chapterLinks.first().getAttribute('href')
+  const latestChapterHref = await chapterLinks.first().getAttribute('href')
+  const earlierChapterHref = await chapterLinks.nth(1).getAttribute('href')
   expect(latestChapterHref).toBeTruthy()
   expect(earlierChapterHref).toBeTruthy()
 
@@ -117,7 +117,7 @@ test('reader does not prefetch when there is no next chapter', async ({ page }) 
   const earlierChapterId = extractChapterIdFromHref(earlierChapterHref!)
   const latestRoutePath = `/reader/${latestChapterId}`
 
-  await chapterLinks.nth(1).click()
+  await chapterLinks.first().click()
   await expect(page).toHaveURL(new RegExp(`/reader/${latestChapterId}$`))
   chapterRequestLog.length = 0
 
@@ -154,8 +154,8 @@ test('reader does not duplicate next chapter prefetch during rapid page flips', 
   await openDemoSeries(page)
 
   const chapterLinks = page.getByRole('link', { name: /Chapter/i })
-  const currentChapterHref = await chapterLinks.first().getAttribute('href')
-  const nextChapterHref = await chapterLinks.nth(1).getAttribute('href')
+  const currentChapterHref = await chapterLinks.nth(1).getAttribute('href')
+  const nextChapterHref = await chapterLinks.first().getAttribute('href')
   expect(currentChapterHref).toBeTruthy()
   expect(nextChapterHref).toBeTruthy()
 
@@ -163,7 +163,7 @@ test('reader does not duplicate next chapter prefetch during rapid page flips', 
   const nextChapterId = extractChapterIdFromHref(nextChapterHref!)
   const currentRoutePath = `/reader/${currentChapterId}`
 
-  await chapterLinks.first().click()
+  await chapterLinks.nth(1).click()
   await expect(page).toHaveURL(new RegExp(`/reader/${currentChapterId}$`))
 
   await expect
