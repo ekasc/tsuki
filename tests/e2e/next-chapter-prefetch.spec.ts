@@ -1,14 +1,47 @@
-import { expect, test } from '@playwright/test'
-import { openDemoSeries, primeStorage } from './helpers'
+import { expect, test, type Page } from '@playwright/test'
+import { openDemoSeries, primeStorage, resolveDemoSeriesId } from './helpers'
 
-function extractChapterIdFromHref(href: string): string {
-  const parsed = new URL(href, 'http://127.0.0.1:3100')
-  const segments = parsed.pathname.split('/').filter(Boolean)
-  const chapterId = segments.at(-1)
-  if (!chapterId) {
-    throw new Error(`Could not parse chapter id from href: ${href}`)
+interface SeriesChapterSummary {
+  id: string
+  chapterNumber: number
+  sortIndex: number
+}
+
+interface SeriesDetailResponse {
+  chapters: SeriesChapterSummary[]
+}
+
+async function resolveReaderAdjacency(page: Page) {
+  const demoSeriesId = await resolveDemoSeriesId(page)
+  const response = await page.request.get(`/api/series/${demoSeriesId}`)
+  if (!response.ok()) {
+    throw new Error(`Failed to fetch /api/series/${demoSeriesId} (${response.status()})`)
   }
-  return chapterId
+
+  const detail = (await response.json()) as SeriesDetailResponse
+  const sorted = [...detail.chapters].sort((left, right) => {
+    if (left.chapterNumber !== right.chapterNumber) {
+      return left.chapterNumber - right.chapterNumber
+    }
+
+    return left.sortIndex - right.sortIndex
+  })
+
+  if (sorted.length < 2) {
+    throw new Error('Expected at least 2 chapters in demo series')
+  }
+
+  const currentChapterId = sorted[0]!.id
+  const nextChapterId = sorted[1]!.id
+  const terminalChapterId = sorted[sorted.length - 1]!.id
+  const beforeTerminalChapterId = sorted[sorted.length - 2]!.id
+
+  return {
+    currentChapterId,
+    nextChapterId,
+    terminalChapterId,
+    beforeTerminalChapterId,
+  }
 }
 
 test.beforeEach(async ({ page }, testInfo) => {
@@ -38,21 +71,11 @@ test('reader prefetches next chapter before transition', async ({ page }) => {
 
   await page.goto('/')
   await openDemoSeries(page)
+  const { currentChapterId, nextChapterId } = await resolveReaderAdjacency(page)
 
-  const chapterLinks = page.getByRole('link', { name: /Chapter/i })
-  const totalChapterLinks = await chapterLinks.count()
-  expect(totalChapterLinks).toBeGreaterThanOrEqual(2)
-
-  const currentChapterHref = await chapterLinks.nth(1).getAttribute('href')
-  const nextChapterHref = await chapterLinks.first().getAttribute('href')
-  expect(currentChapterHref).toBeTruthy()
-  expect(nextChapterHref).toBeTruthy()
-
-  const currentChapterId = extractChapterIdFromHref(currentChapterHref!)
-  const nextChapterId = extractChapterIdFromHref(nextChapterHref!)
   const currentRoutePath = `/reader/${currentChapterId}`
 
-  await chapterLinks.nth(1).click()
+  await page.locator(`a[href$="/${currentChapterId}"]`).first().click()
   await expect(page.getByTestId('reader-paging-container')).toBeVisible()
   await expect(page).toHaveURL(new RegExp(`/reader/${currentChapterId}$`))
 
@@ -106,19 +129,12 @@ test('reader does not prefetch when there is no next chapter', async ({ page }) 
 
   await page.goto('/')
   await openDemoSeries(page)
+  const { terminalChapterId, beforeTerminalChapterId } =
+    await resolveReaderAdjacency(page)
+  const terminalRoutePath = `/reader/${terminalChapterId}`
 
-  const chapterLinks = page.getByRole('link', { name: /Chapter/i })
-  const latestChapterHref = await chapterLinks.first().getAttribute('href')
-  const earlierChapterHref = await chapterLinks.nth(1).getAttribute('href')
-  expect(latestChapterHref).toBeTruthy()
-  expect(earlierChapterHref).toBeTruthy()
-
-  const latestChapterId = extractChapterIdFromHref(latestChapterHref!)
-  const earlierChapterId = extractChapterIdFromHref(earlierChapterHref!)
-  const latestRoutePath = `/reader/${latestChapterId}`
-
-  await chapterLinks.first().click()
-  await expect(page).toHaveURL(new RegExp(`/reader/${latestChapterId}$`))
+  await page.locator(`a[href$="/${terminalChapterId}"]`).first().click()
+  await expect(page).toHaveURL(new RegExp(`/reader/${terminalChapterId}$`))
   chapterRequestLog.length = 0
 
   for (let index = 0; index < 6; index += 1) {
@@ -127,7 +143,9 @@ test('reader does not prefetch when there is no next chapter', async ({ page }) 
   }
 
   const unexpectedPrefetchCount = chapterRequestLog.filter(
-    (entry) => entry.id === earlierChapterId && entry.routePath === latestRoutePath,
+    (entry) =>
+      entry.id === beforeTerminalChapterId &&
+      entry.routePath === terminalRoutePath,
   ).length
   expect(unexpectedPrefetchCount).toBe(0)
 })
@@ -152,18 +170,10 @@ test('reader does not duplicate next chapter prefetch during rapid page flips', 
 
   await page.goto('/')
   await openDemoSeries(page)
-
-  const chapterLinks = page.getByRole('link', { name: /Chapter/i })
-  const currentChapterHref = await chapterLinks.nth(1).getAttribute('href')
-  const nextChapterHref = await chapterLinks.first().getAttribute('href')
-  expect(currentChapterHref).toBeTruthy()
-  expect(nextChapterHref).toBeTruthy()
-
-  const currentChapterId = extractChapterIdFromHref(currentChapterHref!)
-  const nextChapterId = extractChapterIdFromHref(nextChapterHref!)
+  const { currentChapterId, nextChapterId } = await resolveReaderAdjacency(page)
   const currentRoutePath = `/reader/${currentChapterId}`
 
-  await chapterLinks.nth(1).click()
+  await page.locator(`a[href$="/${currentChapterId}"]`).first().click()
   await expect(page).toHaveURL(new RegExp(`/reader/${currentChapterId}$`))
 
   await expect
