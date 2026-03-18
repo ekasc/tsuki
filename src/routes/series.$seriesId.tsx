@@ -19,6 +19,12 @@ import type { AppRouterContext } from '#/lib/router-context'
 import { loadReadingHistory, upsertReadingHistory } from '#/lib/reading-history'
 import { cn } from '#/lib/utils'
 
+const LOCAL_SERIES_LOADING_LINES = [
+  'Opening your shelf…',
+  'Stacking chapter cards…',
+  'Indexing page turns…',
+] as const
+
 export const Route = createFileRoute('/series/$seriesId')({
   headers: () => ({
     'X-Robots-Tag': 'noindex, nofollow',
@@ -51,6 +57,7 @@ export const Route = createFileRoute('/series/$seriesId')({
 })
 
 function SeriesPage() {
+  const chapterSearchInputId = 'local-series-chapter-search'
   const params = Route.useParams()
   const loaderSeries = Route.useLoaderData() as SeriesDetail | undefined
   const queryClient = useQueryClient()
@@ -73,6 +80,7 @@ function SeriesPage() {
   )
   const [chapterQuery, setChapterQuery] = useState('')
   const [previewCoverPageIndex, setPreviewCoverPageIndex] = useState(0)
+  const [loadingLineIndex, setLoadingLineIndex] = useState(0)
 
   const loadSeries = useCallback(async () => {
     if (!isSeriesAllowed) {
@@ -202,6 +210,66 @@ function SeriesPage() {
     setPreviewCoverPageIndex(0)
   }, [previewCoverChapterId])
 
+  useEffect(() => {
+    if (!isLoading) {
+      setLoadingLineIndex(0)
+      return
+    }
+
+    const timer = window.setInterval(() => {
+      setLoadingLineIndex(
+        (current) => (current + 1) % LOCAL_SERIES_LOADING_LINES.length,
+      )
+    }, 900)
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [isLoading])
+
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      if (
+        event.key !== '/' ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.repeat
+      ) {
+        return
+      }
+
+      const target = event.target
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName
+        if (
+          target.isContentEditable ||
+          tag === 'INPUT' ||
+          tag === 'TEXTAREA' ||
+          tag === 'SELECT'
+        ) {
+          return
+        }
+      }
+
+      const input = document.getElementById(
+        chapterSearchInputId,
+      ) as HTMLInputElement | null
+      if (!input) {
+        return
+      }
+
+      event.preventDefault()
+      input.focus()
+      input.select()
+    }
+
+    window.addEventListener('keydown', onShortcut)
+    return () => {
+      window.removeEventListener('keydown', onShortcut)
+    }
+  }, [chapterSearchInputId])
+
   return (
     <div className="space-y-5 pb-10">
       <section
@@ -217,7 +285,9 @@ function SeriesPage() {
                 )}
                 alt={`${series?.title ?? 'Series'} cover`}
                 className="h-36 w-24 shrink-0 border border-border object-cover sm:h-32"
-                loading="lazy"
+                loading="eager"
+                fetchPriority="high"
+                decoding="async"
                 onError={() => {
                   if (previewCoverPageIndex === 0) {
                     setPreviewCoverPageIndex(1)
@@ -255,7 +325,12 @@ function SeriesPage() {
                     <span className="manga-stamp">Source: {series.source}</span>
                   </div>
                   <p className="mt-3 text-sm text-muted-foreground">
-                    Pick any chapter below to start.
+                    Start with the next unread chapter, or browse the full list
+                    below.
+                  </p>
+                  <p className="delight-tip mt-2 text-xs text-muted-foreground">
+                    Tip: press <kbd className="delight-kbd">/</kbd> to focus
+                    chapter search.
                   </p>
                 </>
               ) : null}
@@ -266,7 +341,7 @@ function SeriesPage() {
             <Link
               to="/reader/$chapterId"
               params={{ chapterId: nextChapter.id }}
-              className="inline-flex h-10 w-full items-center justify-center border-2 border-primary bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[2px_2px_0_var(--shadow)] sm:w-auto"
+              className="delight-cta inline-flex h-10 w-full items-center justify-center border-2 border-primary bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[2px_2px_0_var(--shadow)] sm:w-auto"
             >
               Continue reading
             </Link>
@@ -275,8 +350,14 @@ function SeriesPage() {
       </section>
 
       {isLoading ? (
-        <section className="exp-surface animate-enter text-sm text-muted-foreground">
-          Loading chapters…
+        <section
+          className="exp-surface animate-enter text-sm text-muted-foreground"
+          role="status"
+          aria-live="polite"
+        >
+          <p className="delight-loading-note">
+            {LOCAL_SERIES_LOADING_LINES[loadingLineIndex]}
+          </p>
         </section>
       ) : null}
 
@@ -293,57 +374,69 @@ function SeriesPage() {
           className="animate-enter space-y-2"
           style={{ animationDelay: '55ms' }}
         >
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant={chapterView === 'grid' ? 'default' : 'soft'}
-              size="icon"
-              className="size-8"
-              onClick={() => setChapterView('grid')}
-              title="Grid view"
-              aria-label="Grid view"
-            >
-              <LayoutGrid className="size-3.5" />
-            </Button>
-            <Button
-              type="button"
-              variant={chapterView === 'list' ? 'default' : 'soft'}
-              size="icon"
-              className="size-8"
-              onClick={() => setChapterView('list')}
-              title="List view"
-              aria-label="List view"
-            >
-              <List className="size-3.5" />
-            </Button>
-            <Button
-              type="button"
-              variant={chapterOrder === 'oldest' ? 'default' : 'soft'}
-              size="icon"
-              className="size-8"
-              onClick={() => setChapterOrder('oldest')}
-              title="Oldest first"
-              aria-label="Oldest first"
-            >
-              <ArrowUpNarrowWide className="size-3.5" />
-            </Button>
-            <Button
-              type="button"
-              variant={chapterOrder === 'newest' ? 'default' : 'soft'}
-              size="icon"
-              className="size-8"
-              onClick={() => setChapterOrder('newest')}
-              title="Newest first"
-              aria-label="Newest first"
-            >
-              <ArrowDownWideNarrow className="size-3.5" />
-            </Button>
-            <Input
-              value={chapterQuery}
-              onChange={(event) => setChapterQuery(event.target.value)}
-              className="h-8 w-full sm:ml-auto sm:max-w-xs"
-              placeholder="Search chapters"
-            />
+          <div className="exp-filter-toolbar">
+            <div className="exp-toolbar-copy">
+              <span className="issue-label">Chapters</span>
+              <p className="text-sm text-foreground">
+                Filter, sort, or switch views.
+              </p>
+              <p className="text-xs">
+                Search by chapter number or title.
+              </p>
+            </div>
+            <div className="exp-filter-actions">
+              <Button
+                type="button"
+                variant={chapterView === 'grid' ? 'default' : 'soft'}
+                size="icon"
+                className="size-8"
+                onClick={() => setChapterView('grid')}
+                title="Grid view"
+                aria-label="Grid view"
+              >
+                <LayoutGrid className="size-3.5" />
+              </Button>
+              <Button
+                type="button"
+                variant={chapterView === 'list' ? 'default' : 'soft'}
+                size="icon"
+                className="size-8"
+                onClick={() => setChapterView('list')}
+                title="List view"
+                aria-label="List view"
+              >
+                <List className="size-3.5" />
+              </Button>
+              <Button
+                type="button"
+                variant={chapterOrder === 'oldest' ? 'default' : 'soft'}
+                size="icon"
+                className="size-8"
+                onClick={() => setChapterOrder('oldest')}
+                title="Oldest first"
+                aria-label="Oldest first"
+              >
+                <ArrowUpNarrowWide className="size-3.5" />
+              </Button>
+              <Button
+                type="button"
+                variant={chapterOrder === 'newest' ? 'default' : 'soft'}
+                size="icon"
+                className="size-8"
+                onClick={() => setChapterOrder('newest')}
+                title="Newest first"
+                aria-label="Newest first"
+              >
+                <ArrowDownWideNarrow className="size-3.5" />
+              </Button>
+              <Input
+                id={chapterSearchInputId}
+                value={chapterQuery}
+                onChange={(event) => setChapterQuery(event.target.value)}
+                className="h-8 w-full sm:w-[18rem]"
+                placeholder="Filter by chapter number or title"
+              />
+            </div>
           </div>
           <div
             className={
@@ -367,12 +460,8 @@ function SeriesPage() {
                     <div className="flex w-full min-w-0 items-center gap-3">
                       <button
                         type="button"
-                        className={cn(
-                          'inline-flex size-5 shrink-0 items-center justify-center border text-xs font-semibold',
-                          completed
-                            ? 'bg-primary/14 text-primary'
-                            : 'bg-surface-soft text-transparent',
-                        )}
+                        className="chapter-toggle"
+                        data-complete={completed ? 'true' : 'false'}
                         onClick={() =>
                           toggleChapterRead(
                             chapter.id,
@@ -419,12 +508,8 @@ function SeriesPage() {
                 >
                   <button
                     type="button"
-                    className={cn(
-                      'inline-flex size-5 shrink-0 items-center justify-center border text-xs font-semibold',
-                      completed
-                        ? 'bg-primary/14 text-primary'
-                        : 'bg-surface-soft text-transparent',
-                    )}
+                    className="chapter-toggle"
+                    data-complete={completed ? 'true' : 'false'}
                     onClick={() =>
                       toggleChapterRead(
                         chapter.id,
@@ -464,7 +549,9 @@ function SeriesPage() {
           </div>
           {filteredChapters.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No chapters found for that search.
+              {chapterQuery.trim().length > 0
+                ? `No chapters matched "${chapterQuery.trim()}". Try a chapter number or a shorter title.`
+                : 'No chapters available yet.'}
             </p>
           ) : null}
         </section>

@@ -41,6 +41,12 @@ import {
   upsertSavedWeebcentralSeries,
 } from '#/lib/weebcentral-library'
 
+const REMOTE_SERIES_LOADING_LINES = [
+  'Fetching chapter map…',
+  'Polishing cover details…',
+  'Preparing your reading queue…',
+] as const
+
 export const Route = createFileRoute('/weebcentral-series/$seriesId')({
   head: ({
     params,
@@ -98,6 +104,7 @@ export const Route = createFileRoute('/weebcentral-series/$seriesId')({
 })
 
 function WeebcentralSeriesPage() {
+  const chapterSearchInputId = 'remote-series-chapter-search'
   const { seriesId } = Route.useParams()
   const loaderSeries = Route.useLoaderData() as WeebcentralSeriesDTO | undefined
   const queryClient = useQueryClient()
@@ -115,6 +122,7 @@ function WeebcentralSeriesPage() {
   const [isSavedInLibrary, setIsSavedInLibrary] = useState(false)
   const [isSyncingMetadata, setIsSyncingMetadata] = useState(false)
   const [syncTimedOut, setSyncTimedOut] = useState(false)
+  const [loadingLineIndex, setLoadingLineIndex] = useState(0)
 
   const loadSeries = useCallback(
     async (forceRefresh = false) => {
@@ -171,6 +179,66 @@ function WeebcentralSeriesPage() {
     const saved = loadSavedWeebcentralSeries()
     setIsSavedInLibrary(saved.some((entry) => entry.id === seriesId))
   }, [seriesId])
+
+  useEffect(() => {
+    if (!isLoading) {
+      setLoadingLineIndex(0)
+      return
+    }
+
+    const timer = window.setInterval(() => {
+      setLoadingLineIndex(
+        (current) => (current + 1) % REMOTE_SERIES_LOADING_LINES.length,
+      )
+    }, 900)
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [isLoading])
+
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      if (
+        event.key !== '/' ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.repeat
+      ) {
+        return
+      }
+
+      const target = event.target
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName
+        if (
+          target.isContentEditable ||
+          tag === 'INPUT' ||
+          tag === 'TEXTAREA' ||
+          tag === 'SELECT'
+        ) {
+          return
+        }
+      }
+
+      const input = document.getElementById(
+        chapterSearchInputId,
+      ) as HTMLInputElement | null
+      if (!input) {
+        return
+      }
+
+      event.preventDefault()
+      input.focus()
+      input.select()
+    }
+
+    window.addEventListener('keydown', onShortcut)
+    return () => {
+      window.removeEventListener('keydown', onShortcut)
+    }
+  }, [chapterSearchInputId])
 
   const syncSeriesMetadata = useCallback(async () => {
     setSyncTimedOut(false)
@@ -348,8 +416,14 @@ function WeebcentralSeriesPage() {
 
   if (isLoading) {
     return (
-      <div className="exp-surface animate-enter text-sm text-muted-foreground">
-        Loading series…
+      <div
+        className="exp-surface animate-enter text-sm text-muted-foreground"
+        role="status"
+        aria-live="polite"
+      >
+        <p className="delight-loading-note">
+          {REMOTE_SERIES_LOADING_LINES[loadingLineIndex]}
+        </p>
       </div>
     )
   }
@@ -375,7 +449,9 @@ function WeebcentralSeriesPage() {
                 src={series.coverUrl}
                 alt={`${series.title} cover`}
                 className="h-44 w-30 shrink-0 border border-border object-cover sm:h-52 sm:w-36 md:h-56 md:w-40"
-                loading="lazy"
+                loading="eager"
+                fetchPriority="high"
+                decoding="async"
               />
             ) : (
               <div className="flex h-44 w-30 shrink-0 items-center justify-center border border-border bg-surface-soft text-xs text-muted-foreground sm:h-52 sm:w-36 md:h-56 md:w-40">
@@ -420,7 +496,12 @@ function WeebcentralSeriesPage() {
                 ) : null}
               </div>
               <p className="mt-3 text-sm text-muted-foreground">
-                Pick any chapter below to start.
+                Start with the next unread chapter, or browse the full chapter
+                list below.
+              </p>
+              <p className="delight-tip mt-2 text-xs text-muted-foreground">
+                Tip: press <kbd className="delight-kbd">/</kbd> to focus chapter
+                search.
               </p>
             </div>
           </div>
@@ -434,7 +515,7 @@ function WeebcentralSeriesPage() {
                   seriesId: series.id,
                   seriesTitle: series.title,
                 }}
-                className="inline-flex h-10 flex-1 items-center justify-center border-2 border-primary bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[2px_2px_0_var(--shadow)] md:flex-none"
+                className="delight-cta inline-flex h-10 flex-1 items-center justify-center border-2 border-primary bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[2px_2px_0_var(--shadow)] md:flex-none"
               >
                 Continue reading
               </Link>
@@ -510,6 +591,22 @@ function WeebcentralSeriesPage() {
                 <History className="size-3.5" />
               </Button>
             </div>
+            {isSyncingMetadata ? (
+              <p className="delight-loading-note w-full text-xs text-muted-foreground md:text-right">
+                Refreshing chapter metadata…
+              </p>
+            ) : null}
+            {!isSyncingMetadata && syncTimedOut ? (
+              <p className="w-full text-xs text-muted-foreground md:text-right">
+                Sync is taking longer than usual. Try again in a moment.
+              </p>
+            ) : null}
+            {!isSyncingMetadata && !syncTimedOut ? (
+              <p className="w-full text-xs text-muted-foreground md:text-right">
+                Save this series, refresh chapter info, or reset your reading
+                progress.
+              </p>
+            ) : null}
           </div>
         </div>
       </section>
@@ -519,57 +616,69 @@ function WeebcentralSeriesPage() {
         style={{ animationDelay: '52ms' }}
       >
         <div className="manga-divider" aria-hidden />
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant={chapterView === 'grid' ? 'default' : 'soft'}
-            size="icon"
-            className="size-8"
-            onClick={() => setChapterView('grid')}
-            title="Grid view"
-            aria-label="Grid view"
-          >
-            <LayoutGrid className="size-3.5" />
-          </Button>
-          <Button
-            type="button"
-            variant={chapterView === 'list' ? 'default' : 'soft'}
-            size="icon"
-            className="size-8"
-            onClick={() => setChapterView('list')}
-            title="List view"
-            aria-label="List view"
-          >
-            <List className="size-3.5" />
-          </Button>
-          <Button
-            type="button"
-            variant={chapterOrder === 'oldest' ? 'default' : 'soft'}
-            size="icon"
-            className="size-8"
-            onClick={() => setChapterOrder('oldest')}
-            title="Oldest first"
-            aria-label="Oldest first"
-          >
-            <ArrowUpNarrowWide className="size-3.5" />
-          </Button>
-          <Button
-            type="button"
-            variant={chapterOrder === 'newest' ? 'default' : 'soft'}
-            size="icon"
-            className="size-8"
-            onClick={() => setChapterOrder('newest')}
-            title="Newest first"
-            aria-label="Newest first"
-          >
-            <ArrowDownWideNarrow className="size-3.5" />
-          </Button>
-          <Input
-            value={chapterQuery}
-            onChange={(event) => setChapterQuery(event.target.value)}
-            className="h-8 w-full sm:ml-auto sm:max-w-xs"
-            placeholder="Search chapters"
-          />
+        <div className="exp-filter-toolbar">
+          <div className="exp-toolbar-copy">
+            <span className="issue-label">Chapters</span>
+            <p className="text-sm text-foreground">
+              Filter, sort, or switch views.
+            </p>
+            <p className="text-xs">
+              Search by chapter number, title, or release date.
+            </p>
+          </div>
+          <div className="exp-filter-actions">
+            <Button
+              type="button"
+              variant={chapterView === 'grid' ? 'default' : 'soft'}
+              size="icon"
+              className="size-8"
+              onClick={() => setChapterView('grid')}
+              title="Grid view"
+              aria-label="Grid view"
+            >
+              <LayoutGrid className="size-3.5" />
+            </Button>
+            <Button
+              type="button"
+              variant={chapterView === 'list' ? 'default' : 'soft'}
+              size="icon"
+              className="size-8"
+              onClick={() => setChapterView('list')}
+              title="List view"
+              aria-label="List view"
+            >
+              <List className="size-3.5" />
+            </Button>
+            <Button
+              type="button"
+              variant={chapterOrder === 'oldest' ? 'default' : 'soft'}
+              size="icon"
+              className="size-8"
+              onClick={() => setChapterOrder('oldest')}
+              title="Oldest first"
+              aria-label="Oldest first"
+            >
+              <ArrowUpNarrowWide className="size-3.5" />
+            </Button>
+            <Button
+              type="button"
+              variant={chapterOrder === 'newest' ? 'default' : 'soft'}
+              size="icon"
+              className="size-8"
+              onClick={() => setChapterOrder('newest')}
+              title="Newest first"
+              aria-label="Newest first"
+            >
+              <ArrowDownWideNarrow className="size-3.5" />
+            </Button>
+            <Input
+              id={chapterSearchInputId}
+              value={chapterQuery}
+              onChange={(event) => setChapterQuery(event.target.value)}
+              className="h-8 w-full sm:w-[18rem]"
+              placeholder="Filter by chapter number or title"
+            />
+          </div>
         </div>
         <div
           className={
@@ -593,12 +702,8 @@ function WeebcentralSeriesPage() {
                   <div className="flex w-full min-w-0 items-center gap-3">
                     <button
                       type="button"
-                      className={cn(
-                        'inline-flex size-5 shrink-0 items-center justify-center border text-xs font-semibold',
-                        completed
-                          ? 'bg-primary/14 text-primary'
-                          : 'bg-surface-soft text-transparent',
-                      )}
+                      className="chapter-toggle"
+                      data-complete={completed ? 'true' : 'false'}
                       onClick={() =>
                         toggleChapterRead(
                           chapter.id,
@@ -649,12 +754,8 @@ function WeebcentralSeriesPage() {
               >
                 <button
                   type="button"
-                  className={cn(
-                    'inline-flex size-5 shrink-0 items-center justify-center border text-xs font-semibold',
-                    completed
-                      ? 'bg-primary/14 text-primary'
-                      : 'bg-surface-soft text-transparent',
-                  )}
+                  className="chapter-toggle"
+                  data-complete={completed ? 'true' : 'false'}
                   onClick={() =>
                     toggleChapterRead(chapter.id, chapter.title, chapter.number)
                   }
@@ -692,7 +793,9 @@ function WeebcentralSeriesPage() {
         </div>
         {filteredChapters.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No chapters found for that search.
+            {chapterQuery.trim().length > 0
+              ? `No chapters matched "${chapterQuery.trim()}". Try a chapter number, title, or shorter search.`
+              : 'No chapters available right now.'}
           </p>
         ) : null}
       </section>

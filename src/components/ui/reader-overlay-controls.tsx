@@ -1,4 +1,5 @@
 import { Button } from '#/components/ui/button'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 interface ReaderTapZoneProps {
   side: 'left' | 'right'
@@ -34,17 +35,23 @@ export function ReaderEdgeArrowButton({
   return (
     <Button
       aria-label={side === 'left' ? 'left-arrow' : 'right-arrow'}
+      variant="soft"
+      size="icon"
       className={
         side === 'left'
-          ? 'absolute left-2 top-1/2 z-20 inline-flex size-11 -translate-y-1/2 border-2 border-border bg-surface/90 p-0 text-base text-foreground hover:bg-surface-soft'
-          : 'absolute right-2 top-1/2 z-20 inline-flex size-11 -translate-y-1/2 border-2 border-border bg-surface/90 p-0 text-base text-foreground hover:bg-surface-soft'
+          ? 'absolute left-4 top-1/2 z-20 inline-flex size-12 -translate-y-1/2 border-2 border-border-strong bg-surface p-0 text-foreground shadow-[2px_2px_0_var(--shadow)] hover:bg-surface-soft md:left-5 md:size-14'
+          : 'absolute right-4 top-1/2 z-20 inline-flex size-12 -translate-y-1/2 border-2 border-border-strong bg-surface p-0 text-foreground shadow-[2px_2px_0_var(--shadow)] hover:bg-surface-soft md:right-5 md:size-14'
       }
       onClick={onActivate}
       onMouseDown={(event) => event.preventDefault()}
       tabIndex={-1}
       type="button"
     >
-      {side === 'left' ? '\u2190' : '\u2192'}
+      {side === 'left' ? (
+        <ChevronLeft className="size-6 text-foreground" aria-hidden />
+      ) : (
+        <ChevronRight className="size-6 text-foreground" aria-hidden />
+      )}
     </Button>
   )
 }

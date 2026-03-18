@@ -14,6 +14,11 @@ const THEME_OPTIONS: Array<{ value: ThemeMode; label: string }> = [
   { value: 'dark', label: 'Dark' },
   { value: 'paper', label: 'Paper' },
 ]
+const THEME_COLOR_BY_MODE: Record<ThemeMode, string> = {
+  light: '#1d140d',
+  dark: '#1c1823',
+  paper: '#181715',
+}
 
 function isThemeMode(value: string | undefined): value is ThemeMode {
   return value === 'light' || value === 'dark' || value === 'paper'
@@ -54,17 +59,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isReaderRoute =
     pathname.startsWith('/reader/') || pathname.startsWith('/weebcentral/')
 
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return
+    }
+
+    const metaThemeColor = document.querySelector<HTMLMetaElement>(
+      'meta[name="theme-color"]',
+    )
+    if (!metaThemeColor) {
+      return
+    }
+
+    metaThemeColor.setAttribute(
+      'content',
+      THEME_COLOR_BY_MODE[selectedTheme] ?? THEME_COLOR_BY_MODE.light,
+    )
+  }, [selectedTheme])
+
   if (isReaderRoute) {
     return <>{children}</>
   }
 
   return (
-    <div className="app-canvas min-h-screen bg-background pb-10 text-foreground">
+    <div className="app-canvas min-h-screen bg-background pb-24 text-foreground md:pb-10">
       <header className="ui-shell-top-safe mx-auto max-w-7xl px-4 md:px-8">
         <div className="exp-toolbar animate-enter flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Link
             to="/"
-            className="group flex items-center gap-2 self-start sm:self-auto"
+            className="group flex items-center gap-2 self-start rounded px-1 py-1 sm:self-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             <span className="inline-flex size-8 items-center justify-center border border-border bg-surface-soft text-primary">
               <BookOpenText className="size-4" />
@@ -74,17 +97,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </span>
           </Link>
 
-          <div className="grid w-full grid-cols-3 gap-1 border border-border bg-surface-soft p-1 sm:w-auto sm:grid-cols-none sm:auto-cols-fr sm:grid-flow-col">
+          <div
+            role="radiogroup"
+            aria-label="Theme mode"
+            className="grid w-auto max-w-full grid-cols-3 gap-1 border border-border bg-surface-soft p-1 sm:grid-cols-none sm:auto-cols-fr sm:grid-flow-col"
+          >
             {THEME_OPTIONS.map((option) => (
               <Button
                 key={option.value}
                 type="button"
                 size="sm"
                 variant={selectedTheme === option.value ? 'default' : 'ghost'}
-                className="h-8 w-full px-2 sm:min-w-16"
+                className="h-11 w-full px-2 sm:min-w-20"
                 disabled={!mounted}
                 onClick={() => setTheme(option.value)}
-                aria-pressed={selectedTheme === option.value}
+                role="radio"
+                aria-checked={selectedTheme === option.value}
                 aria-label={`Switch theme to ${option.label}`}
               >
                 {option.label}
@@ -94,7 +122,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="ui-shell-bottom-safe mx-auto mt-4 max-w-7xl px-4 md:px-8">
+      <main
+        id="main-content"
+        className="ui-shell-bottom-safe mx-auto mt-4 max-w-7xl px-4 md:px-8"
+      >
         {children}
       </main>
 

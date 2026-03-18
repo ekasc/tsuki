@@ -20,7 +20,19 @@ const config = defineConfig({
     tsconfigPaths({ projects: ['./tsconfig.json'] }),
     cloudflare({ viteEnvironment: { name: 'ssr' }, inspectorPort: false }),
     tailwindcss(),
-    tanstackStart(),
+    tanstackStart({
+      router: {
+        codeSplittingOptions: {
+          defaultBehavior: [
+            ['loader'],
+            ['component'],
+            ['pendingComponent'],
+            ['errorComponent'],
+            ['notFoundComponent'],
+          ],
+        },
+      },
+    }),
     viteReact(),
   ],
 })

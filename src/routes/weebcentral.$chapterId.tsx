@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
+import readerCss from '../reader.css?url'
 
 import {
   useCallback,
@@ -67,6 +68,7 @@ export const Route = createFileRoute('/weebcentral/$chapterId')({
         rel: 'canonical',
         href: canonicalUrl(`/weebcentral/${encodeURIComponent(params.chapterId)}`),
       },
+      { rel: 'stylesheet', href: readerCss },
     ],
   }),
   loader: async ({
@@ -114,6 +116,11 @@ const LEGACY_REMOTE_READER_UI_PREFS_KEY = 'suki-remote-reader-ui.v1'
 const REMOTE_READER_SERIES_PRESETS_KEY = 'tsuki-remote-reader-series-presets.v1'
 const LEGACY_REMOTE_READER_SERIES_PRESETS_KEY =
   'suki-remote-reader-series-presets.v1'
+const REMOTE_READER_OPENING_LINES = [
+  'Warming up page turns…',
+  'Pulling chapter pages…',
+  'Locking in your reading lane…',
+] as const
 const useIsomorphicLayoutEffect =
   typeof window === 'undefined' ? useEffect : useLayoutEffect
 
@@ -619,6 +626,13 @@ function WeebcentralReaderPage() {
   const navigate = useNavigate()
   const loaderChapter = Route.useLoaderData() as WeebcentralChapterDTO | undefined
   const queryClient = useQueryClient()
+  const openingLine = useMemo(() => {
+    const seed =
+      params.chapterId.length + (params.chapterId.charCodeAt(0) || 0)
+    return REMOTE_READER_OPENING_LINES[
+      seed % REMOTE_READER_OPENING_LINES.length
+    ]
+  }, [params.chapterId])
 
   const [series, setSeries] = useState<WeebcentralSeriesDTO | null>(null)
   const [chapter, setChapter] = useState<WeebcentralChapterDTO | null>(null)
@@ -2668,8 +2682,12 @@ function WeebcentralReaderPage() {
 
   if (isLoading) {
     return (
-      <div className="border-2 border-border bg-surface p-6 text-muted-foreground">
-        Opening chapter…
+      <div
+        className="border-2 border-border bg-surface p-6 text-muted-foreground"
+        role="status"
+        aria-live="polite"
+      >
+        <p className="delight-loading-note">{openingLine}</p>
       </div>
     )
   }
@@ -2700,7 +2718,7 @@ function WeebcentralReaderPage() {
         <Button
           variant="ghost"
           size="icon"
-          className={`reader-shell-toggle absolute ui-left-safe-offset ui-top-safe-offset z-50 size-12 transition-transform duration-200 md:size-10 ${showReaderChrome || sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'} ${isTouchDevice ? 'hidden' : ''} ${sidebarOpen ? 'md:left-[calc(min(88vw,360px)+12px)]' : ''}`}
+          className={`reader-shell-toggle absolute ui-left-safe-offset ui-top-safe-offset z-50 size-12 text-2xl transition-transform duration-200 md:size-10 ${showReaderChrome || sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'} ${isTouchDevice ? 'hidden' : ''} ${sidebarOpen ? 'md:left-[calc(min(88vw,360px)+12px)]' : ''}`}
           onClick={() => setSidebarOpen((current) => !current)}
           type="button"
         >
@@ -2726,8 +2744,8 @@ function WeebcentralReaderPage() {
         <aside
           className={
             isTouchDevice
-              ? 'reader-shell-panel animate-enter relative z-30 w-full overflow-visible p-3'
-              : `reader-shell-panel animate-enter absolute inset-y-0 left-0 z-40 w-[min(88vw,360px)] overflow-y-auto p-3 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`
+              ? 'reader-shell-panel reader-settings-panel animate-enter relative z-30 w-full overflow-visible p-3'
+              : `reader-shell-panel reader-settings-panel animate-enter absolute inset-y-0 left-0 z-40 w-[min(88vw,360px)] overflow-y-auto p-3 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`
           }
           style={{
             animationDelay: '20ms',
@@ -2737,7 +2755,7 @@ function WeebcentralReaderPage() {
           }}
         >
           {isTouchDevice ? (
-            <div className="mb-2 flex items-center justify-between border border-border bg-surface-soft px-2 py-1.5">
+            <div className="reader-settings-bar mb-2 flex items-center justify-between border border-border bg-surface-soft px-2 py-1.5">
               <span className="text-xs font-semibold text-foreground">
                 Settings
               </span>
@@ -2758,10 +2776,10 @@ function WeebcentralReaderPage() {
           <div
             className={isTouchDevice && mobileSettingsMinimized ? 'hidden' : ''}
           >
-            <div className="space-y-2 text-xs text-muted-foreground">
+            <div className="reader-settings-surface space-y-2 text-xs text-muted-foreground">
               <Link
                 to="/"
-                className="inline-flex border border-border bg-surface-soft px-2 py-1 hover:bg-surface"
+                className="reader-settings-action inline-flex border border-border bg-surface-soft px-2 py-1 hover:bg-surface"
               >
                 Back to home
               </Link>
@@ -2778,18 +2796,22 @@ function WeebcentralReaderPage() {
                   : `Ch ${chapter.chapterId}`}
               </p>
               <p className="text-[11px]">
-                Tip: click left/right side of the page to move.
+                Tip: click/tap sides to turn pages. Press ? for shortcuts.
+              </p>
+              <p className="reader-settings-note">
+                Layout, zoom, and chapter jump controls stay here while you
+                read.
               </p>
             </div>
 
-            <div className="mt-3 flex gap-2">
+            <div className="reader-settings-tabs mt-3 flex gap-2">
               <Button
                 type="button"
                 variant={settingsTab === 'basic' ? 'default' : 'soft'}
                 className="h-8 w-full"
                 onClick={() => setSettingsTab('basic')}
               >
-                Reading
+                Basics
               </Button>
               <Button
                 type="button"
@@ -2797,7 +2819,7 @@ function WeebcentralReaderPage() {
                 className="h-8 w-full"
                 onClick={() => setSettingsTab('advanced')}
               >
-                More settings
+                Advanced
               </Button>
             </div>
 
@@ -2805,8 +2827,8 @@ function WeebcentralReaderPage() {
               <div
                 className={
                   isTouchDevice
-                    ? 'mt-3 grid grid-cols-2 gap-2'
-                    : 'mt-3 grid gap-2'
+                    ? 'reader-settings-grid mt-3 grid grid-cols-2 gap-2'
+                    : 'reader-settings-grid mt-3 grid gap-2'
                 }
               >
                 {isTouchDevice ? (
@@ -2889,6 +2911,9 @@ function WeebcentralReaderPage() {
                     ]}
                   />
                 )}
+                {!isTouchDevice ? (
+                  <p className="reader-settings-heading">Display mode</p>
+                ) : null}
                 {mode === 'double' && isTouchPortrait ? (
                   <p className="col-span-2 px-1 text-xs text-muted-foreground">
                     Portrait on touch screens uses one page at a time.
@@ -2898,11 +2923,10 @@ function WeebcentralReaderPage() {
                 <Button
                   type="button"
                   variant={doublePageOffset ? 'default' : 'soft'}
-                  className="h-9 justify-between px-3"
+                  className="h-9 w-full px-3"
                   onClick={() => setDoublePageOffset((value) => !value)}
                 >
-                  <span>Offset</span>
-                  <span>{doublePageOffset ? 'On' : 'Off'}</span>
+                  Offset: {doublePageOffset ? 'On' : 'Off'}
                 </Button>
 
                 {!isTouchDevice ? (
@@ -2910,21 +2934,19 @@ function WeebcentralReaderPage() {
                     <Button
                       type="button"
                       variant={magnifierEnabled ? 'default' : 'soft'}
-                      className="h-9 justify-between px-3"
+                      className="h-9 w-full px-3"
                       onClick={() => setMagnifierEnabled((value) => !value)}
                     >
-                      <span>Magnifier</span>
-                      <span>{magnifierEnabled ? 'On' : 'Off'}</span>
+                      Magnifier: {magnifierEnabled ? 'On' : 'Off'}
                     </Button>
 
                     <Button
                       type="button"
                       variant={focusMode ? 'default' : 'soft'}
-                      className="h-9 justify-between px-3"
+                      className="h-9 w-full px-3"
                       onClick={() => setFocusMode((value) => !value)}
                     >
-                      <span>Distraction-free mode</span>
-                      <span>{focusMode ? 'On' : 'Off'}</span>
+                      Distraction-free mode: {focusMode ? 'On' : 'Off'}
                     </Button>
                   </>
                 ) : null}
@@ -2944,11 +2966,16 @@ function WeebcentralReaderPage() {
 
                 {orderedSeriesChapters.length ? (
                   <>
+                    <p
+                      className={`reader-settings-heading ${isTouchDevice ? 'col-span-2' : ''}`}
+                    >
+                      Chapter jump
+                    </p>
                     <Input
                       value={chapterFilter}
                       onChange={(event) => setChapterFilter(event.target.value)}
                       className="h-9 min-w-0"
-                      placeholder="Type chapter number..."
+                      placeholder="Jump to a chapter number"
                     />
                     {filteredSeriesChapters.length > 0 ? (
                       <SelectField
@@ -2975,9 +3002,14 @@ function WeebcentralReaderPage() {
                 ) : null}
 
                 <label
-                  className={`text-xs text-muted-foreground ${isTouchDevice ? 'col-span-2' : ''}`}
+                  className={`reader-settings-label text-xs text-muted-foreground ${isTouchDevice ? 'col-span-2' : ''}`}
                 >
-                  {currentTargetPageIndex + 1} / {pages.length}
+                  <span className="reader-settings-heading">
+                    Page progress
+                  </span>
+                  <span>
+                    Page {currentTargetPageIndex + 1} of {pages.length}
+                  </span>
                   <RangeSlider
                     min={0}
                     max={scrubberMax}
@@ -2992,8 +3024,12 @@ function WeebcentralReaderPage() {
               </div>
             ) : (
               <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
-                <label>
-                  Preload ahead pages
+                <p className="reader-settings-note">
+                  Tune how aggressively Tsuki warms nearby pages and hides the
+                  reader chrome.
+                </p>
+                <label className="reader-settings-label">
+                  Pages to preload ahead
                   <Input
                     type="number"
                     min={1}
@@ -3011,8 +3047,8 @@ function WeebcentralReaderPage() {
                     className="mt-1 h-8"
                   />
                 </label>
-                <label>
-                  Preload behind pages
+                <label className="reader-settings-label">
+                  Pages to preload behind
                   <Input
                     type="number"
                     min={0}
@@ -3030,8 +3066,8 @@ function WeebcentralReaderPage() {
                     className="mt-1 h-8"
                   />
                 </label>
-                <label>
-                  Parallel preloads
+                <label className="reader-settings-label">
+                  Max parallel preloads
                   <Input
                     type="number"
                     min={1}
@@ -3049,8 +3085,8 @@ function WeebcentralReaderPage() {
                     className="mt-1 h-8"
                   />
                 </label>
-                <label>
-                  Next chapter prefetch trigger (remaining pages)
+                <label className="reader-settings-label">
+                  Start next chapter warm-up when this many pages remain
                   <Input
                     type="number"
                     min={1}
@@ -3068,8 +3104,8 @@ function WeebcentralReaderPage() {
                     className="mt-1 h-8"
                   />
                 </label>
-                <label>
-                  Next chapter warm pages
+                <label className="reader-settings-label">
+                  Warm pages in the next chapter
                   <Input
                     type="number"
                     min={1}
@@ -3087,8 +3123,8 @@ function WeebcentralReaderPage() {
                     className="mt-1 h-8"
                   />
                 </label>
-                <label>
-                  UI hide delay (ms)
+                <label className="reader-settings-label">
+                  Hide reader controls after (ms)
                   <Input
                     type="number"
                     min={400}
@@ -3107,7 +3143,7 @@ function WeebcentralReaderPage() {
                     className="mt-1 h-8"
                   />
                 </label>
-                <label>
+                <label className="reader-settings-label">
                   Magnifier size (px)
                   <Input
                     type="number"
@@ -3126,8 +3162,8 @@ function WeebcentralReaderPage() {
                     className="mt-1 h-8"
                   />
                 </label>
-                <label>
-                  Magnifier zoom
+                <label className="reader-settings-label">
+                  Magnifier zoom level
                   <Input
                     type="number"
                     min={2}
@@ -3167,12 +3203,12 @@ function WeebcentralReaderPage() {
               >
                 Next chapter
               </Button>
-              <Button
-                variant="ghost"
-                className="w-full border border-border"
-                onClick={() => goToChapter(previousChapterId)}
-                disabled={!previousChapterId}
-              >
+                <Button
+                  variant="ghost"
+                  className="w-full border border-border disabled:!bg-surface-soft disabled:!text-foreground/70 disabled:!opacity-100"
+                  onClick={() => goToChapter(previousChapterId)}
+                  disabled={!previousChapterId}
+                >
                 Previous chapter
               </Button>
             </div>
@@ -3181,12 +3217,12 @@ function WeebcentralReaderPage() {
                 <Button
                   type="button"
                   variant="ghost"
-                  className="mt-2 h-8 border border-border text-xs"
+                  className="reader-shortcut-trigger mt-2 h-8 w-full border border-border text-xs"
                   onClick={() => setShowShortcutHelp((value) => !value)}
                 >
                   {showShortcutHelp
                     ? 'Hide keyboard shortcuts'
-                    : 'Show keyboard shortcuts'}
+                    : 'Keyboard shortcuts'}
                 </Button>
                 {showShortcutHelp ? (
                   <div className="reader-shortcut-sheet mt-2 text-xs">
@@ -3201,15 +3237,19 @@ function WeebcentralReaderPage() {
         </aside>
       ) : null}
 
-      {!fullscreenActive && !focusMode && showReaderChrome && !isTouchDevice ? (
-        <div className="reader-quick-strip absolute right-3 top-3 z-30 hidden flex-wrap gap-2 md:flex">
+      {!fullscreenActive &&
+      !focusMode &&
+      showReaderChrome &&
+      !isTouchDevice &&
+      !sidebarOpen ? (
+        <div className="reader-quick-strip reader-settings-float absolute right-[clamp(0.75rem,6vw,2.75rem)] top-3 z-30 hidden flex-wrap gap-2 md:flex">
           <Button
             type="button"
             variant="soft"
             className="h-9 px-3 text-xs"
             onClick={() => setSidebarOpen((value) => !value)}
           >
-            Settings
+            Reader settings
           </Button>
           <Button
             type="button"
@@ -3219,15 +3259,16 @@ function WeebcentralReaderPage() {
               void toggleFullscreen()
             }}
           >
-            Fullscreen
+            Full screen
           </Button>
         </div>
       ) : null}
 
       {!fullscreenActive &&
-      (showReaderChrome || sidebarOpen) &&
-      !isTouchDevice ? (
-        <div className="reader-chapter-jump absolute bottom-4 right-3 z-30 hidden items-center gap-2 md:flex">
+      showReaderChrome &&
+      !isTouchDevice &&
+      !sidebarOpen ? (
+        <div className="reader-chapter-jump reader-settings-float absolute bottom-4 right-[clamp(0.75rem,6vw,2.75rem)] z-30 hidden items-center gap-2 md:flex">
           <Button
             type="button"
             variant="soft"
@@ -3240,18 +3281,18 @@ function WeebcentralReaderPage() {
           <Button
             type="button"
             variant="soft"
-            className="h-11 px-3 text-xs"
+            className="h-11 px-3 text-xs disabled:!bg-surface-soft disabled:!text-foreground/70 disabled:!opacity-100"
             onClick={() => goToChapter(previousChapterId)}
             disabled={!previousChapterId}
           >
-            Prev chapter
+            Previous chapter
           </Button>
         </div>
       ) : null}
 
       {!fullscreenActive && !focusMode && showReaderChrome && !isTouchDevice ? (
         <div className="reader-key-hints absolute bottom-4 left-1/2 z-20 -translate-x-1/2 text-xs">
-          Tip: click/tap left or right side to move pages.
+          Tip: click/tap sides to turn pages. Press ? for shortcuts.
         </div>
       ) : null}
 
@@ -3419,7 +3460,10 @@ function WeebcentralReaderPage() {
             zoomPreset !== 'actual' ? (
               <ReaderTapZone side="right" onActivate={goPrevious} />
             ) : null}
-            {!fullscreenActive && showReaderChrome && !isTouchDevice ? (
+            {!fullscreenActive &&
+            showReaderChrome &&
+            !isTouchDevice &&
+            !sidebarOpen ? (
               <>
                 <ReaderEdgeArrowButton side="left" onActivate={goNext} />
                 <ReaderEdgeArrowButton side="right" onActivate={goPrevious} />
