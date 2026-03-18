@@ -77,12 +77,12 @@ test('mobile settings expose advanced controls and slider track styling', async 
   await openLocalReader(page)
 
   await expect(
-    page.getByRole('button', { name: 'More settings' }),
+    page.getByRole('button', { name: 'Advanced' }),
   ).toBeVisible()
-  await page.getByRole('button', { name: 'More settings' }).click()
-  await expect(page.getByText('Preload ahead pages')).toBeVisible()
+  await page.getByRole('button', { name: 'Advanced' }).click()
+  await expect(page.getByText('Pages to preload ahead')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Reading' }).click()
+  await page.getByRole('button', { name: 'Basics' }).click()
 
   const scrubber = page.getByTestId('page-scrubber')
   await expect(scrubber).toBeVisible()

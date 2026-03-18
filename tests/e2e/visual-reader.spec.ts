@@ -71,7 +71,7 @@ test('reader double-page baseline', async ({ page }) => {
 test('reader settings panel expanded baseline', async ({ page }) => {
   await openReaderForSnapshot(page, 'light')
 
-  const settingsTitle = page.getByText('Settings').first()
+  const settingsTitle = page.getByRole('button', { name: 'Basics' })
   const hasVisibleSettings =
     (await settingsTitle.count()) > 0 &&
     (await settingsTitle.isVisible().catch(() => false))
@@ -81,7 +81,7 @@ test('reader settings panel expanded baseline', async ({ page }) => {
     await expect(settingsTitle).toBeVisible()
   }
 
-  await expect(page.getByRole('button', { name: 'Reading' })).toBeVisible()
+  await expect(settingsTitle).toBeVisible()
   await expectReaderSnapshot(page, 'reader-settings-expanded.png')
 })
 
