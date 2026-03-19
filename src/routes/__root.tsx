@@ -148,7 +148,18 @@ function RootLayout() {
       defaultTheme="system"
       enableSystem
       storageKey="tsuki-theme-mode.v1"
-      themes={['light', 'dark', 'paper']}
+      themes={[
+        'light',
+        'dark',
+        'paper',
+        'paper-dark',
+        'sakura',
+        'sakura-dark',
+        'ocean',
+        'ocean-dark',
+        'matcha',
+        'matcha-dark',
+      ]}
       disableTransitionOnChange
     >
       <AppShell>

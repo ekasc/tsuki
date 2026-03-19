@@ -13,9 +13,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Button } from '#/components/ui/button'
-import { SupportStickyCard } from '#/components/SupportStickyCard'
 import { Input } from '#/components/ui/input'
-import type { WeebcentralSeriesDTO } from '#/lib/contracts'
+import type { ReadingHistoryItem, WeebcentralSeriesDTO } from '#/lib/contracts'
 import { weebcentralSeriesQueryOptions } from '#/lib/query-options'
 import {
   buildRemoteSeriesSourceUrl,
@@ -113,7 +112,11 @@ function WeebcentralSeriesPage() {
   )
   const [isLoading, setIsLoading] = useState(() => !loaderSeries)
   const [error, setError] = useState<string | null>(null)
-  const [historyMap, setHistoryMap] = useState<Record<string, boolean>>({})
+  const [historyByChapterId, setHistoryByChapterId] = useState<
+    Record<string, ReadingHistoryItem>
+  >(() => ({}))
+  const [latestHistoryEntry, setLatestHistoryEntry] =
+    useState<ReadingHistoryItem | null>(null)
   const [chapterView, setChapterView] = useState<'list' | 'grid'>('list')
   const [chapterOrder, setChapterOrder] = useState<'oldest' | 'newest'>(
     'oldest',
@@ -167,12 +170,15 @@ function WeebcentralSeriesPage() {
         item.readerRoute === 'weebcentral' && item.seriesId === seriesId,
     )
 
-    setHistoryMap(
-      history.reduce<Record<string, boolean>>((acc, item) => {
-        acc[item.chapterId] = Boolean(item.completed)
+    setHistoryByChapterId(
+      history.reduce<Record<string, ReadingHistoryItem>>((acc, item) => {
+        if (!acc[item.chapterId]) {
+          acc[item.chapterId] = item
+        }
         return acc
       }, {}),
     )
+    setLatestHistoryEntry(history[0] ?? null)
   }, [seriesId])
 
   useEffect(() => {
@@ -287,7 +293,8 @@ function WeebcentralSeriesPage() {
 
   const resetSeriesHistory = useCallback(() => {
     clearReadingHistoryForSeries({ seriesId, readerRoute: 'weebcentral' })
-    setHistoryMap({})
+    setHistoryByChapterId({})
+    setLatestHistoryEntry(null)
   }, [seriesId])
 
   const ascendingChapters = useMemo(
@@ -372,10 +379,46 @@ function WeebcentralSeriesPage() {
     },
     [],
   )
-  const nextChapter =
-    chapters.find((chapter) => historyMap[chapter.id] !== true) ??
-    chapters[0] ??
-    null
+  const completedChapterIds = useMemo(() => {
+    return new Set(
+      Object.values(historyByChapterId)
+        .filter((item) => item.completed === true)
+        .map((item) => item.chapterId),
+    )
+  }, [historyByChapterId])
+  const nextChapter = useMemo(() => {
+    const latestChapterId = latestHistoryEntry?.chapterId
+    const latestChapter = latestChapterId
+      ? ascendingChapters.find((chapter) => chapter.id === latestChapterId) ??
+        null
+      : null
+    const firstUnread =
+      ascendingChapters.find((chapter) => !completedChapterIds.has(chapter.id)) ??
+      null
+
+    if (latestHistoryEntry && latestHistoryEntry.completed !== true) {
+      return latestChapter ?? firstUnread ?? ascendingChapters[0] ?? null
+    }
+
+    return firstUnread ?? latestChapter ?? ascendingChapters[0] ?? null
+  }, [ascendingChapters, completedChapterIds, latestHistoryEntry])
+  const latestHistoryLabel = useMemo(() => {
+    if (!latestHistoryEntry) {
+      return null
+    }
+
+    const chapterMeta = ascendingChapters.find(
+      (chapter) => chapter.id === latestHistoryEntry.chapterId,
+    )
+    const chapterLabel = chapterMeta
+      ? formatChapterLabel(chapterMeta.number, chapterMeta.title)
+      : latestHistoryEntry.chapterTitle
+    const pageLabel = `Page ${Math.max(1, latestHistoryEntry.pageIndex + 1)}`
+    const completionLabel =
+      latestHistoryEntry.completed === true ? 'Completed' : 'In progress'
+
+    return `${chapterLabel} · ${pageLabel} · ${completionLabel}`
+  }, [ascendingChapters, formatChapterLabel, latestHistoryEntry])
   const filteredChapters = useMemo(() => {
     const query = chapterQuery.trim().toLowerCase()
     if (!query) {
@@ -393,25 +436,41 @@ function WeebcentralSeriesPage() {
 
   const toggleChapterRead = useCallback(
     (chapterId: string, chapterTitle: string, chapterNumber: number) => {
-      const nextCompleted = historyMap[chapterId] !== true
+      const existingHistory = historyByChapterId[chapterId]
+      const nextCompleted = existingHistory?.completed !== true
+      const nextUpdatedAt = Date.now()
 
       upsertReadingHistory({
         chapterId,
         seriesId,
         seriesTitle: series?.title,
         chapterTitle: formatChapterLabel(chapterNumber, chapterTitle),
-        pageIndex: 0,
-        mode: 'single',
+        pageIndex: existingHistory?.pageIndex ?? 0,
+        mode: existingHistory?.mode ?? 'single',
         readerRoute: 'weebcentral',
         completed: nextCompleted,
+        updatedAt: nextUpdatedAt,
       })
 
-      setHistoryMap((current) => ({
+      const nextItem: ReadingHistoryItem = {
+        chapterId,
+        seriesId,
+        seriesTitle: series?.title,
+        chapterTitle: formatChapterLabel(chapterNumber, chapterTitle),
+        pageIndex: existingHistory?.pageIndex ?? 0,
+        mode: existingHistory?.mode ?? 'single',
+        readerRoute: 'weebcentral',
+        completed: nextCompleted,
+        updatedAt: nextUpdatedAt,
+      }
+
+      setHistoryByChapterId((current) => ({
         ...current,
-        [chapterId]: nextCompleted,
+        [chapterId]: nextItem,
       }))
+      setLatestHistoryEntry(nextItem)
     },
-    [formatChapterLabel, historyMap, series?.title, seriesId],
+    [formatChapterLabel, historyByChapterId, series?.title, seriesId],
   )
 
   if (isLoading) {
@@ -499,6 +558,11 @@ function WeebcentralSeriesPage() {
                 Start with the next unread chapter, or browse the full chapter
                 list below.
               </p>
+              {latestHistoryLabel ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Last read: {latestHistoryLabel}
+                </p>
+              ) : null}
               <p className="delight-tip mt-2 text-xs text-muted-foreground">
                 Tip: press <kbd className="delight-kbd">/</kbd> to focus chapter
                 search.
@@ -688,7 +752,7 @@ function WeebcentralSeriesPage() {
           }
         >
           {filteredChapters.map((chapter) => {
-            const completed = historyMap[chapter.id] === true
+            const completed = historyByChapterId[chapter.id]?.completed === true
 
             if (chapterView === 'grid') {
               return (
@@ -799,8 +863,6 @@ function WeebcentralSeriesPage() {
           </p>
         ) : null}
       </section>
-
-      <SupportStickyCard />
     </div>
   )
 }

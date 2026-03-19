@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
-import type { SeriesDetail } from '#/lib/contracts'
+import type { ReadingHistoryItem, SeriesDetail } from '#/lib/contracts'
 import { resolveApiUrl } from '#/lib/http-client'
 import { isLocalSessionSeriesAllowed } from '#/lib/local-upload-session'
 import { localSeriesQueryOptions } from '#/lib/query-options'
@@ -71,13 +71,15 @@ function SeriesPage() {
   )
   const [isLoading, setIsLoading] = useState(() => !loaderSeries)
   const [error, setError] = useState<string | null>(null)
-  const [completedChapters, setCompletedChapters] = useState<Set<string>>(
-    () => new Set<string>(),
-  )
-  const [chapterView, setChapterView] = useState<'list' | 'grid'>('list')
+  const [historyByChapterId, setHistoryByChapterId] = useState<
+    Record<string, ReadingHistoryItem>
+  >(() => ({}))
+  const [latestHistoryEntry, setLatestHistoryEntry] =
+    useState<ReadingHistoryItem | null>(null)
   const [chapterOrder, setChapterOrder] = useState<'oldest' | 'newest'>(
     'oldest',
   )
+  const [chapterView, setChapterView] = useState<'list' | 'grid'>('list')
   const [chapterQuery, setChapterQuery] = useState('')
   const [previewCoverPageIndex, setPreviewCoverPageIndex] = useState(0)
   const [loadingLineIndex, setLoadingLineIndex] = useState(0)
@@ -117,34 +119,66 @@ function SeriesPage() {
   }, [loadSeries, loaderSeries])
 
   useEffect(() => {
-    const completed = loadReadingHistory()
-      .filter(
-        (item) =>
-          item.readerRoute !== 'weebcentral' &&
-          item.seriesId === params.seriesId &&
-          item.completed,
-      )
-      .map((item) => item.chapterId)
+    const history = loadReadingHistory().filter(
+      (item) =>
+        item.readerRoute !== 'weebcentral' && item.seriesId === params.seriesId,
+    )
 
-    setCompletedChapters(new Set(completed))
+    const latestByChapter = history.reduce<Record<string, ReadingHistoryItem>>(
+      (acc, item) => {
+        if (!acc[item.chapterId]) {
+          acc[item.chapterId] = item
+        }
+        return acc
+      },
+      {},
+    )
+
+    setHistoryByChapterId(latestByChapter)
+    setLatestHistoryEntry(history[0] ?? null)
   }, [params.seriesId])
 
-  const sortedChapters = useMemo(() => {
-    const base = [...(series?.chapters ?? [])].sort((left, right) => {
+  const ascendingChapters = useMemo(() => {
+    return [...(series?.chapters ?? [])].sort((left, right) => {
       if (left.chapterNumber !== right.chapterNumber) {
         return left.chapterNumber - right.chapterNumber
       }
 
       return left.sortIndex - right.sortIndex
     })
+  }, [series?.chapters])
+
+  const sortedChapters = useMemo(() => {
+    const base = ascendingChapters
 
     return chapterOrder === 'newest' ? [...base].reverse() : base
-  }, [chapterOrder, series?.chapters])
+  }, [ascendingChapters, chapterOrder])
 
-  const nextChapter =
-    sortedChapters.find((chapter) => !completedChapters.has(chapter.id)) ??
-    sortedChapters[0] ??
-    null
+  const completedChapters = useMemo(() => {
+    return new Set(
+      Object.values(historyByChapterId)
+        .filter((item) => item.completed === true)
+        .map((item) => item.chapterId),
+    )
+  }, [historyByChapterId])
+
+  const nextChapter = useMemo(() => {
+    const latestChapterId = latestHistoryEntry?.chapterId
+    const latestChapter = latestChapterId
+      ? ascendingChapters.find((chapter) => chapter.id === latestChapterId) ??
+        null
+      : null
+    const firstUnread =
+      ascendingChapters.find((chapter) => !completedChapters.has(chapter.id)) ??
+      null
+
+    if (latestHistoryEntry && latestHistoryEntry.completed !== true) {
+      return latestChapter ?? firstUnread ?? ascendingChapters[0] ?? null
+    }
+
+    return firstUnread ?? latestChapter ?? ascendingChapters[0] ?? null
+  }, [ascendingChapters, completedChapters, latestHistoryEntry])
+
   const filteredChapters = useMemo(() => {
     const query = chapterQuery.trim().toLowerCase()
     if (!query) {
@@ -179,31 +213,59 @@ function SeriesPage() {
     [],
   )
 
+  const latestHistoryLabel = useMemo(() => {
+    if (!latestHistoryEntry) {
+      return null
+    }
+
+    const chapterMeta = ascendingChapters.find(
+      (chapter) => chapter.id === latestHistoryEntry.chapterId,
+    )
+    const chapterLabel = chapterMeta
+      ? formatChapterLabel(chapterMeta.chapterNumber, chapterMeta.title)
+      : latestHistoryEntry.chapterTitle
+    const pageLabel = `Page ${Math.max(1, latestHistoryEntry.pageIndex + 1)}`
+    const completionLabel =
+      latestHistoryEntry.completed === true ? 'Completed' : 'In progress'
+
+    return `${chapterLabel} · ${pageLabel} · ${completionLabel}`
+  }, [ascendingChapters, formatChapterLabel, latestHistoryEntry])
+
   const toggleChapterRead = useCallback(
     (chapterId: string, chapterTitle: string, chapterNumber: number) => {
-      const nextCompleted = !completedChapters.has(chapterId)
+      const existingHistory = historyByChapterId[chapterId]
+      const nextCompleted = existingHistory?.completed !== true
+      const nextUpdatedAt = Date.now()
 
       upsertReadingHistory({
         chapterId,
         seriesId: params.seriesId,
         chapterTitle: formatChapterLabel(chapterNumber, chapterTitle),
-        pageIndex: 0,
-        mode: 'single',
+        pageIndex: existingHistory?.pageIndex ?? 0,
+        mode: existingHistory?.mode ?? 'single',
         readerRoute: 'local',
         completed: nextCompleted,
+        updatedAt: nextUpdatedAt,
       })
 
-      setCompletedChapters((current) => {
-        const next = new Set(current)
-        if (nextCompleted) {
-          next.add(chapterId)
-        } else {
-          next.delete(chapterId)
-        }
-        return next
-      })
+      const nextItem: ReadingHistoryItem = {
+        chapterId,
+        seriesId: params.seriesId,
+        chapterTitle: formatChapterLabel(chapterNumber, chapterTitle),
+        pageIndex: existingHistory?.pageIndex ?? 0,
+        mode: existingHistory?.mode ?? 'single',
+        readerRoute: 'local',
+        completed: nextCompleted,
+        updatedAt: nextUpdatedAt,
+      }
+
+      setHistoryByChapterId((current) => ({
+        ...current,
+        [chapterId]: nextItem,
+      }))
+      setLatestHistoryEntry(nextItem)
     },
-    [completedChapters, formatChapterLabel, params.seriesId],
+    [formatChapterLabel, historyByChapterId, params.seriesId],
   )
 
   useEffect(() => {
@@ -328,6 +390,11 @@ function SeriesPage() {
                     Start with the next unread chapter, or browse the full list
                     below.
                   </p>
+                  {latestHistoryLabel ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Last read: {latestHistoryLabel}
+                    </p>
+                  ) : null}
                   <p className="delight-tip mt-2 text-xs text-muted-foreground">
                     Tip: press <kbd className="delight-kbd">/</kbd> to focus
                     chapter search.

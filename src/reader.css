@@ -48,10 +48,13 @@
   }
 
   .reader-shell-panel {
-    border-right: 2px solid var(--border);
-    background: color-mix(in oklab, var(--surface) 92%, var(--bg) 8%);
-    box-shadow: 3px 0 0 color-mix(in oklab, var(--shadow), transparent 34%);
+    border-right: 1px solid color-mix(in oklab, var(--border), transparent 18%);
+    background: color-mix(in oklab, var(--surface) 96%, var(--bg) 4%);
     color: var(--text);
+  }
+
+  .reader-stage-bg {
+    background: color-mix(in oklab, black 92%, var(--bg) 8%);
   }
 
   .reader-settings-panel {
@@ -59,15 +62,11 @@
   }
 
   .reader-settings-panel::before {
-    content: '';
+    content: none;
     position: absolute;
     inset: 0 0 auto;
     height: 3px;
-    background: linear-gradient(
-      90deg,
-      color-mix(in oklab, var(--accent), transparent 12%) 0,
-      color-mix(in oklab, var(--accent-soft), transparent 42%) 100%
-    );
+    background: color-mix(in oklab, var(--accent), transparent 28%);
     opacity: 0.88;
     pointer-events: none;
   }
@@ -76,9 +75,9 @@
   .reader-settings-float,
   .reader-settings-action {
     border: 1px solid color-mix(in oklab, var(--border), transparent 16%);
-    background: color-mix(in oklab, var(--surface) 92%, var(--bg) 8%);
+    background: color-mix(in oklab, var(--surface) 95%, var(--bg) 5%);
     color: var(--text);
-    box-shadow: 2px 2px 0 color-mix(in oklab, var(--shadow), transparent 26%);
+    box-shadow: none;
   }
 
   .reader-settings-bar {
@@ -150,7 +149,7 @@
   }
 
   .reader-settings-heading::before {
-    content: '';
+    content: none;
     width: 0.55rem;
     height: 0.55rem;
     border-radius: 999px;
@@ -162,6 +161,37 @@
     font-size: 0.72rem;
     line-height: 1.45;
     color: var(--text-soft);
+  }
+
+  .reader-settings-advanced > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    border: 1px solid color-mix(in oklab, var(--border), transparent 16%);
+    background: color-mix(in oklab, var(--surface) 95%, var(--bg) 5%);
+    color: var(--text-soft);
+    padding: 0.45rem 0.55rem;
+    list-style: none;
+  }
+
+  .reader-settings-advanced > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .reader-settings-advanced > summary::after {
+    content: '+';
+    font-size: 0.95rem;
+    line-height: 1;
+    color: var(--text);
+  }
+
+  .reader-settings-advanced[open] > summary::after {
+    content: '-';
+  }
+
+  .reader-settings-advanced > summary:hover {
+    background: color-mix(in oklab, var(--surface-soft) 82%, var(--bg) 18%);
   }
 
   .reader-settings-range {

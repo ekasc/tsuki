@@ -34,21 +34,21 @@ test('theme preference persists across route transitions', async ({ page }) => {
 test('theme remains stable while switching routes quickly', async ({
   page,
 }) => {
-  await primeStorage(page, 'paper')
+  await primeStorage(page, 'ocean-dark')
   await page.goto('/')
-  await expectTheme(page, 'paper')
+  await expectTheme(page, 'ocean-dark')
 
   const demoSeriesId = await resolveDemoSeriesId(page)
 
   for (let index = 0; index < 4; index += 1) {
     await page.goto(`/series/${demoSeriesId}`)
-    await expectTheme(page, 'paper')
+    await expectTheme(page, 'ocean-dark')
     await page.waitForTimeout(80)
-    await expectTheme(page, 'paper')
+    await expectTheme(page, 'ocean-dark')
 
     await page.goto('/')
-    await expectTheme(page, 'paper')
+    await expectTheme(page, 'ocean-dark')
     await page.waitForTimeout(80)
-    await expectTheme(page, 'paper')
+    await expectTheme(page, 'ocean-dark')
   }
 })

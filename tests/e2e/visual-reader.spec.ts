@@ -71,7 +71,7 @@ test('reader double-page baseline', async ({ page }) => {
 test('reader settings panel expanded baseline', async ({ page }) => {
   await openReaderForSnapshot(page, 'light')
 
-  const settingsTitle = page.getByRole('button', { name: 'Basics' })
+  const settingsTitle = page.getByText('Display mode')
   const hasVisibleSettings =
     (await settingsTitle.count()) > 0 &&
     (await settingsTitle.isVisible().catch(() => false))

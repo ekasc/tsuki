@@ -6,12 +6,12 @@ import {
   Monitor,
   Share2,
   Smartphone,
+  Trash2,
 } from 'lucide-react'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Button } from '#/components/ui/button'
-import { SupportStickyCard } from '#/components/SupportStickyCard'
 import { Input } from '#/components/ui/input'
 import type { ReadingHistoryItem, WeebcentralSeriesDTO } from '#/lib/contracts'
 import { weebcentralSeriesQueryOptions } from '#/lib/query-options'
@@ -279,6 +279,8 @@ function LibraryPage() {
           seriesId: item.seriesId,
           seriesTitle: item.seriesTitle ?? remoteMatch?.title ?? 'Series',
           chapterTitle: item.chapterTitle,
+          pageIndex: item.pageIndex,
+          completed: item.completed === true,
           coverUrl: remoteMatch?.coverUrl ?? null,
         }
       })
@@ -386,6 +388,10 @@ function LibraryPage() {
                         {topHistory.seriesTitle}
                       </p>
                     ) : null}
+                    <p className="truncate text-xs text-muted-foreground">
+                      Page {Math.max(1, topHistory.pageIndex + 1)}
+                      {topHistory.completed === true ? ' · Completed' : ''}
+                    </p>
                   </div>
                 </Link>
                 <p className="pt-1 text-xs text-muted-foreground">
@@ -472,7 +478,9 @@ function LibraryPage() {
                     {item.seriesTitle}
                   </p>
                   <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                    Last read: {item.chapterTitle}
+                    Last read: {item.chapterTitle} · Page{' '}
+                    {Math.max(1, item.pageIndex + 1)}
+                    {item.completed ? ' · Completed' : ''}
                   </p>
                 </div>
               </Link>
@@ -597,8 +605,10 @@ function LibraryPage() {
                 </Link>
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="text-destructive hover:text-destructive"
+                  size="icon"
+                  className="size-8 text-destructive/90 hover:text-destructive"
+                  aria-label={`Remove saved series ${item.title}`}
+                  title={`Remove saved series ${item.title}`}
                   onClick={() => {
                     if (
                       window.confirm(
@@ -609,7 +619,7 @@ function LibraryPage() {
                     }
                   }}
                 >
-                  Remove saved series
+                  <Trash2 className="size-4" aria-hidden />
                 </Button>
               </article>
             ))}
@@ -694,8 +704,6 @@ function LibraryPage() {
           </p>
         </details>
       </section>
-
-      <SupportStickyCard />
     </div>
   )
 }

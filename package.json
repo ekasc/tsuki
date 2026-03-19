@@ -75,5 +75,6 @@
     "vite-tsconfig-paths": "5.1.4",
     "vitest": "3.0.5",
     "wrangler": "^4.69.0"
-  }
+  },
+  "packageManager": "pnpm@10.32.1"
 }

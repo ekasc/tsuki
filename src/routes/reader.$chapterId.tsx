@@ -551,7 +551,6 @@ function ReaderPage() {
   const [doublePageOffset, setDoublePageOffset] = useState<boolean>(
     initialUiPrefs.doublePageOffset,
   )
-  const [settingsTab, setSettingsTab] = useState<'basic' | 'advanced'>('basic')
   const [mobileSettingsMinimized, setMobileSettingsMinimized] = useState(false)
   const [preloadAhead, setPreloadAhead] = useState<number>(
     initialUiPrefs.preloadAhead,
@@ -580,7 +579,6 @@ function ReaderPage() {
   const [showReaderChrome, setShowReaderChrome] = useState(false)
   const [focusMode, setFocusMode] = useState(false)
   const [showShortcutHelp, setShowShortcutHelp] = useState(false)
-  const [chapterFilter, setChapterFilter] = useState('')
   const [magnifierFrame, setMagnifierFrame] = useState<{
     x: number
     y: number
@@ -628,6 +626,7 @@ function ReaderPage() {
   const swipeTrackRef = useRef<HTMLDivElement>(null)
   const swipeOffsetRef = useRef(0)
   const swipeDraggingRef = useRef(false)
+  const chapterJumpInteractionRef = useRef(false)
   const isTouchDevice = useTouchDevice()
   const isTouchPortrait = useTouchPortrait()
 
@@ -719,6 +718,17 @@ function ReaderPage() {
       singlePageSteps,
     ],
   )
+  const currentProgressPageIndex = useMemo(() => {
+    const visibleIndexes = currentRenderUnits
+      .map((unit) => unit.pageIndex)
+      .filter((index) => Number.isFinite(index))
+
+    if (visibleIndexes.length === 0) {
+      return currentTargetPageIndex
+    }
+
+    return Math.max(...visibleIndexes)
+  }, [currentRenderUnits, currentTargetPageIndex])
 
   const hudPageLabel = useMemo(() => {
     if (pages.length === 0) {
@@ -780,18 +790,6 @@ function ReaderPage() {
       }),
     [seriesChapters],
   )
-
-  const filteredSeriesChapters = useMemo(() => {
-    const query = chapterFilter.trim()
-    if (!query) {
-      return orderedSeriesChapters
-    }
-
-    return orderedSeriesChapters.filter((chapter) => {
-      const chapterNumber = String(chapter.chapterNumber)
-      return chapterNumber.includes(query)
-    })
-  }, [chapterFilter, orderedSeriesChapters])
 
   const activeSeriesId = chapterPayload?.manifest.seriesId ?? null
 
@@ -1107,10 +1105,6 @@ function ReaderPage() {
     zoomPreset,
   ])
 
-  useEffect(() => {
-    setChapterFilter('')
-  }, [chapterId])
-
   const cycleMode = useCallback(() => {
     setMode((current) => {
       const next: ReaderMode =
@@ -1148,7 +1142,7 @@ function ReaderPage() {
         chapterId,
         {
           chapterId,
-          pageIndex: currentTargetPageIndex,
+          pageIndex: currentProgressPageIndex,
           stepIndex: currentStepIndex,
           mode,
           direction: 'rtl',
@@ -1165,7 +1159,7 @@ function ReaderPage() {
         },
         body: JSON.stringify({
           chapterId,
-          pageIndex: currentTargetPageIndex,
+          pageIndex: currentProgressPageIndex,
           stepIndex: currentStepIndex,
           mode,
           direction: 'rtl',
@@ -1177,9 +1171,9 @@ function ReaderPage() {
         chapterId,
         seriesId: chapterPayload.manifest.seriesId,
         chapterTitle: chapterPayload.manifest.title,
-        pageIndex: currentTargetPageIndex,
+        pageIndex: currentProgressPageIndex,
         mode,
-        completed: currentTargetPageIndex >= maxPageIndex,
+        completed: currentProgressPageIndex >= maxPageIndex,
       })
     }, 220)
 
@@ -1189,8 +1183,8 @@ function ReaderPage() {
   }, [
     chapterId,
     chapterPayload,
+    currentProgressPageIndex,
     currentStepIndex,
-    currentTargetPageIndex,
     maxPageIndex,
     mode,
     zoomPreset,
@@ -1384,14 +1378,14 @@ function ReaderPage() {
     setPendingBoundaryDirection(null)
     setBoundaryNotice(null)
     setShowPageHud(false)
-    persistProgressNow(currentTargetPageIndex, currentStepIndex)
+    persistProgressNow(currentProgressPageIndex, currentStepIndex)
     void navigate({
       to: '/reader/$chapterId',
       params: { chapterId: previousChapterId },
     })
   }, [
+    currentProgressPageIndex,
     currentStepIndex,
-    currentTargetPageIndex,
     navigate,
     persistProgressNow,
     previousChapterId,
@@ -1891,7 +1885,20 @@ function ReaderPage() {
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
-      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) {
+      if (target?.tagName === 'SELECT') {
+        if (
+          event.code === 'ArrowRight' ||
+          event.code === 'ArrowLeft' ||
+          event.code === 'KeyD' ||
+          event.code === 'KeyA'
+        ) {
+          event.preventDefault()
+          event.stopPropagation()
+        }
+        return
+      }
+
+      if (target && ['INPUT', 'TEXTAREA'].includes(target.tagName)) {
         return
       }
 
@@ -2169,7 +2176,7 @@ function ReaderPage() {
 
   if (!chapterPayload) {
     return (
-      <div className="flex h-[100dvh] flex-col items-center justify-center gap-4 bg-black">
+      <div className="reader-stage-bg flex h-[100dvh] flex-col items-center justify-center gap-4">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white/70" />
           <p className="text-sm text-white/60" role="status" aria-live="polite">
@@ -2184,10 +2191,10 @@ function ReaderPage() {
     <div
       className={
         fullscreenActive
-          ? 'fixed inset-0 z-[120] h-[100dvh] overflow-hidden bg-black'
+          ? 'reader-stage-bg fixed inset-0 z-[120] h-[100dvh] overflow-hidden'
           : isTouchDevice
-            ? `relative min-h-[100dvh] overflow-x-hidden overflow-y-auto bg-black ${focusMode ? 'reader-focus-mode' : ''} reader-touch-root`
-            : `relative h-[100dvh] overflow-hidden bg-black ${focusMode ? 'reader-focus-mode' : ''}`
+            ? `reader-stage-bg relative min-h-[100dvh] overflow-x-hidden overflow-y-auto ${focusMode ? 'reader-focus-mode' : ''} reader-touch-root`
+            : `reader-stage-bg relative h-[100dvh] overflow-hidden ${focusMode ? 'reader-focus-mode' : ''}`
       }
       onMouseMove={isTouchDevice ? undefined : handleReaderMouseMove}
       onMouseLeave={() => {
@@ -2201,6 +2208,8 @@ function ReaderPage() {
           className={`reader-shell-toggle absolute ui-left-safe-offset ui-top-safe-offset z-50 size-12 text-2xl transition-transform duration-200 md:size-10 ${showReaderChrome || sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'} ${isTouchDevice ? 'hidden' : ''} ${sidebarOpen ? 'md:left-[calc(min(88vw,360px)+12px)]' : ''}`}
           onClick={() => setSidebarOpen((current) => !current)}
           type="button"
+          aria-label={sidebarOpen ? 'Close settings panel' : 'Open settings panel'}
+          title={sidebarOpen ? 'Close settings panel' : 'Open settings panel'}
         >
           {sidebarOpen ? '\u2039' : '\u203a'}
         </Button>
@@ -2255,11 +2264,11 @@ function ReaderPage() {
 
           {/* Landscape touch: single compact toolbar row */}
           {isTouchDevice && !isTouchPortrait ? (
-            <div className="reader-settings-toolbar flex items-center gap-1.5 overflow-x-auto text-[11px]">
+            <div className="reader-settings-toolbar flex items-center gap-1.5 overflow-x-auto text-xs">
               <Link
                 to="/series/$seriesId"
                 params={{ seriesId: chapterPayload.manifest.seriesId }}
-                className="reader-settings-action shrink-0 border border-border bg-surface-soft px-1.5 py-0.5 text-muted-foreground hover:bg-surface"
+                className="reader-settings-action inline-flex h-8 shrink-0 items-center border border-border bg-surface-soft px-2 text-muted-foreground hover:bg-surface"
               >
                 Series
               </Link>
@@ -2267,7 +2276,8 @@ function ReaderPage() {
                 <Button
                   type="button"
                   variant={mode === 'single' ? 'default' : 'soft'}
-                  className="h-6 px-1.5 text-[11px]"
+                  className="h-8 px-2 text-xs"
+                  aria-label="Switch to single-page mode"
                   onClick={() => {
                     setMode('single')
                     setCurrentSingleStepIndex(
@@ -2284,7 +2294,8 @@ function ReaderPage() {
                 <Button
                   type="button"
                   variant={mode === 'double' ? 'default' : 'soft'}
-                  className="h-6 px-1.5 text-[11px]"
+                  className="h-8 px-2 text-xs"
+                  aria-label="Switch to two-page mode"
                   onClick={() => {
                     setMode('double')
                     setCurrentStepIndex(
@@ -2300,7 +2311,8 @@ function ReaderPage() {
                 <Button
                   type="button"
                   variant={mode === 'scroll' ? 'default' : 'soft'}
-                  className="h-6 px-1.5 text-[11px]"
+                  className="h-8 px-2 text-xs"
+                  aria-label="Switch to scroll mode"
                   onClick={() => {
                     setMode('scroll')
                     setCurrentPageIndex(currentTargetPageIndex)
@@ -2326,8 +2338,10 @@ function ReaderPage() {
               <Button
                 type="button"
                 variant="soft"
-                className="h-6 shrink-0 px-1.5 text-[11px]"
+                className="h-8 shrink-0 px-2 text-xs"
                 onClick={() => void toggleFullscreen()}
+                aria-label="Toggle fullscreen"
+                title="Toggle fullscreen"
               >
                 ⛶
               </Button>
@@ -2362,142 +2376,214 @@ function ReaderPage() {
                   Ch {chapterPayload.manifest.chapterNumber} ·{' '}
                   {chapterPayload.manifest.pageCount}p
                 </p>
-                <p className="text-[11px]">
-                  Tip: click/tap sides to turn pages. Press ? for shortcuts.
-                </p>
-                <p className="reader-settings-note">
-                  Layout, zoom, and chapter jump controls stay here while you
-                  read.
-                </p>
               </div>
 
-              <div className="reader-settings-tabs mt-3 flex gap-2">
-                <Button
-                  type="button"
-                  variant={settingsTab === 'basic' ? 'default' : 'soft'}
-                  className="h-8 w-full"
-                  onClick={() => setSettingsTab('basic')}
-                >
-                  Basics
-                </Button>
-                <Button
-                  type="button"
-                  variant={settingsTab === 'advanced' ? 'default' : 'soft'}
-                  className="h-8 w-full"
-                  onClick={() => setSettingsTab('advanced')}
-                >
-                  Advanced
-                </Button>
-              </div>
-
-              {settingsTab === 'basic' ? (
-                <div
-                  className={
-                    isTouchDevice
-                      ? 'reader-settings-grid mt-3 grid grid-cols-2 gap-2'
-                      : 'reader-settings-grid mt-3 grid gap-2'
-                  }
-                >
-                  {isTouchDevice ? (
-                    <div className="col-span-2 grid grid-cols-3 gap-2">
-                      <Button
-                        type="button"
-                        variant={mode === 'single' ? 'default' : 'soft'}
-                        className="h-9"
-                        onClick={() => {
-                          setMode('single')
-                          setCurrentSingleStepIndex(
-                            findStepIndexByPageIndex(
-                              singlePageSteps,
-                              currentTargetPageIndex,
-                            ),
-                          )
-                          setCurrentPageIndex(currentTargetPageIndex)
-                        }}
-                      >
-                        Single
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={mode === 'double' ? 'default' : 'soft'}
-                        className="h-9"
-                        onClick={() => {
-                          setMode('double')
-                          setCurrentStepIndex(
-                            findStepIndexByPageIndex(
-                              activeDoubleSteps,
-                              currentTargetPageIndex,
-                            ),
-                          )
-                        }}
-                      >
-                        Double
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={mode === 'scroll' ? 'default' : 'soft'}
-                        className="h-9"
-                        onClick={() => {
-                          setMode('scroll')
-                          setCurrentPageIndex(currentTargetPageIndex)
-                        }}
-                      >
-                        Scroll
-                      </Button>
-                    </div>
-                  ) : (
-                    <SelectField
-                      value={mode}
-                      onChange={(event) => {
-                        const nextMode = event.target.value as ReaderMode
-                        setMode(nextMode)
-
-                        if (nextMode === 'double') {
-                          setCurrentStepIndex(
-                            findStepIndexByPageIndex(
-                              activeDoubleSteps,
-                              currentTargetPageIndex,
-                            ),
-                          )
-                        } else if (nextMode === 'single') {
-                          setCurrentSingleStepIndex(
-                            findStepIndexByPageIndex(
-                              singlePageSteps,
-                              currentTargetPageIndex,
-                            ),
-                          )
-                          setCurrentPageIndex(currentTargetPageIndex)
-                        } else {
-                          setCurrentPageIndex(currentTargetPageIndex)
-                        }
+              <div
+                className={
+                  isTouchDevice
+                    ? 'reader-settings-grid mt-3 grid grid-cols-2 gap-2'
+                    : 'reader-settings-grid mt-3 grid gap-2'
+                }
+              >
+                {isTouchDevice ? (
+                  <div className="col-span-2 grid grid-cols-3 gap-2">
+                    <Button
+                      type="button"
+                      variant={mode === 'single' ? 'default' : 'soft'}
+                      className="h-9"
+                      onClick={() => {
+                        setMode('single')
+                        setCurrentSingleStepIndex(
+                          findStepIndexByPageIndex(
+                            singlePageSteps,
+                            currentTargetPageIndex,
+                          ),
+                        )
+                        setCurrentPageIndex(currentTargetPageIndex)
                       }}
-                      options={[
-                        { value: 'single', label: 'Single page' },
-                        { value: 'double', label: 'Two-page spread' },
-                        { value: 'scroll', label: 'Continuous scroll' },
-                      ]}
-                    />
-                  )}
-                  {!isTouchDevice ? (
-                    <p className="reader-settings-heading">Display mode</p>
-                  ) : null}
-                  {mode === 'double' && isTouchPortrait ? (
-                    <p className="col-span-2 px-1 text-xs text-muted-foreground">
-                      Portrait on touch screens uses one page at a time.
+                    >
+                      Single
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={mode === 'double' ? 'default' : 'soft'}
+                      className="h-9"
+                      onClick={() => {
+                        setMode('double')
+                        setCurrentStepIndex(
+                          findStepIndexByPageIndex(
+                            activeDoubleSteps,
+                            currentTargetPageIndex,
+                          ),
+                        )
+                      }}
+                    >
+                      Double
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={mode === 'scroll' ? 'default' : 'soft'}
+                      className="h-9"
+                      onClick={() => {
+                        setMode('scroll')
+                        setCurrentPageIndex(currentTargetPageIndex)
+                      }}
+                    >
+                      Scroll
+                    </Button>
+                  </div>
+                ) : (
+                  <SelectField
+                    value={mode}
+                    aria-label="Display mode"
+                    onChange={(event) => {
+                      const nextMode = event.target.value as ReaderMode
+                      setMode(nextMode)
+
+                      if (nextMode === 'double') {
+                        setCurrentStepIndex(
+                          findStepIndexByPageIndex(
+                            activeDoubleSteps,
+                            currentTargetPageIndex,
+                          ),
+                        )
+                      } else if (nextMode === 'single') {
+                        setCurrentSingleStepIndex(
+                          findStepIndexByPageIndex(
+                            singlePageSteps,
+                            currentTargetPageIndex,
+                          ),
+                        )
+                        setCurrentPageIndex(currentTargetPageIndex)
+                      } else {
+                        setCurrentPageIndex(currentTargetPageIndex)
+                      }
+                    }}
+                    options={[
+                      { value: 'single', label: 'Single page' },
+                      { value: 'double', label: 'Two-page spread' },
+                      { value: 'scroll', label: 'Continuous scroll' },
+                    ]}
+                  />
+                )}
+                {!isTouchDevice ? (
+                  <p className="reader-settings-heading">Display mode</p>
+                ) : null}
+                {mode === 'double' && isTouchPortrait ? (
+                  <p className="col-span-2 px-1 text-xs text-muted-foreground">
+                    Portrait on touch screens uses one page at a time.
+                  </p>
+                ) : null}
+
+                <Button
+                  type="button"
+                  variant={doublePageOffset ? 'default' : 'soft'}
+                  className="h-9 w-full px-3"
+                  onClick={() => setDoublePageOffset((value) => !value)}
+                >
+                  Offset: {doublePageOffset ? 'On' : 'Off'}
+                </Button>
+
+                <SelectField
+                  value={zoomPreset}
+                  aria-label="Zoom preset"
+                  onChange={(event) =>
+                    setZoomPreset(event.target.value as ZoomPreset)
+                  }
+                  className="h-9"
+                  data-testid="zoom-select"
+                  options={[
+                    { value: 'fit-height', label: 'Fit to screen' },
+                    { value: 'fit-width', label: 'Fit to width' },
+                    { value: 'actual', label: 'Actual size' },
+                  ]}
+                />
+
+                {seriesChapters.length > 0 ? (
+                  <>
+                    <p
+                      className={`reader-settings-heading ${isTouchDevice ? 'col-span-2' : ''}`}
+                    >
+                      Chapter jump
                     </p>
-                  ) : null}
+                    {orderedSeriesChapters.length > 0 ? (
+                      <SelectField
+                        value={chapterPayload.manifest.chapterId}
+                        aria-label="Chapter jump"
+                        onPointerDown={() => {
+                          chapterJumpInteractionRef.current = true
+                        }}
+                        onKeyDown={(event) => {
+                          if (
+                            event.key === 'ArrowLeft' ||
+                            event.key === 'ArrowRight'
+                          ) {
+                            chapterJumpInteractionRef.current = false
+                            event.preventDefault()
+                            event.stopPropagation()
+                            return
+                          }
+                          chapterJumpInteractionRef.current = true
+                        }}
+                        onChange={(event) => {
+                          if (!chapterJumpInteractionRef.current) {
+                            return
+                          }
+                          chapterJumpInteractionRef.current = false
+                          const nextId = event.target.value
+                          if (nextId === chapterPayload.manifest.chapterId) {
+                            return
+                          }
+                          persistProgressNow(
+                            currentProgressPageIndex,
+                            currentStepIndex,
+                          )
+                          void navigate({
+                            to: '/reader/$chapterId',
+                            params: { chapterId: nextId },
+                          })
+                        }}
+                        className={`h-9 min-w-0 ${isTouchDevice ? 'col-span-2' : ''}`}
+                        options={orderedSeriesChapters.map((chapter) => ({
+                          value: chapter.id,
+                          label: `Chapter ${chapter.chapterNumber}`,
+                        }))}
+                      />
+                    ) : (
+                      <p className="col-span-2 px-1 text-xs text-muted-foreground">
+                        No chapter found. Try a different number.
+                      </p>
+                    )}
+                  </>
+                ) : null}
 
-                  <Button
-                    type="button"
-                    variant={doublePageOffset ? 'default' : 'soft'}
-                    className="h-9 w-full px-3"
-                    onClick={() => setDoublePageOffset((value) => !value)}
-                  >
-                    Offset: {doublePageOffset ? 'On' : 'Off'}
-                  </Button>
+                <label
+                  className={`reader-settings-label text-xs text-muted-foreground ${isTouchDevice ? 'col-span-2' : ''}`}
+                >
+                  <span>
+                    Page {currentTargetPageIndex + 1} of {pages.length}
+                  </span>
+                  <RangeSlider
+                    min={0}
+                    max={scrubberMax}
+                    value={scrubberValue}
+                    onChange={(event) =>
+                      goToPage(Number.parseInt(event.target.value, 10))
+                    }
+                    className="mt-2 w-full accent-primary"
+                    style={{ transform: 'scaleX(-1)' }}
+                    data-testid="page-scrubber"
+                  />
+                </label>
+              </div>
 
+              <details className="reader-settings-advanced mt-3 text-xs text-muted-foreground">
+                <summary className="font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Advanced tuning
+                </summary>
+                <div className="mt-2 grid gap-2">
                   {!isTouchDevice ? (
-                    <>
+                    <div className="grid gap-2">
                       <Button
                         type="button"
                         variant={magnifierEnabled ? 'default' : 'soft'}
@@ -2506,7 +2592,6 @@ function ReaderPage() {
                       >
                         Magnifier: {magnifierEnabled ? 'On' : 'Off'}
                       </Button>
-
                       <Button
                         type="button"
                         variant={focusMode ? 'default' : 'soft'}
@@ -2515,105 +2600,8 @@ function ReaderPage() {
                       >
                         Distraction-free mode: {focusMode ? 'On' : 'Off'}
                       </Button>
-                    </>
+                    </div>
                   ) : null}
-
-                  <SelectField
-                    value={zoomPreset}
-                    onChange={(event) =>
-                      setZoomPreset(event.target.value as ZoomPreset)
-                    }
-                    className="h-9"
-                    data-testid="zoom-select"
-                    options={[
-                      { value: 'fit-height', label: 'Fit to screen' },
-                      { value: 'fit-width', label: 'Fit to width' },
-                      { value: 'actual', label: 'Actual size' },
-                    ]}
-                  />
-
-                  {seriesChapters.length > 0 ? (
-                    <>
-                      <p
-                        className={`reader-settings-heading ${isTouchDevice ? 'col-span-2' : ''}`}
-                      >
-                        Chapter jump
-                      </p>
-                      <Input
-                        value={chapterFilter}
-                        onChange={(event) =>
-                          setChapterFilter(event.target.value)
-                        }
-                        className="h-9 min-w-0"
-                        placeholder="Jump to a chapter number"
-                      />
-                      {filteredSeriesChapters.length > 0 ? (
-                        <SelectField
-                          value={chapterPayload.manifest.chapterId}
-                          onChange={(event) => {
-                            const nextId = event.target.value
-                            if (nextId === chapterPayload.manifest.chapterId) {
-                              return
-                            }
-                            persistProgressNow(
-                              currentTargetPageIndex,
-                              currentStepIndex,
-                            )
-                            void navigate({
-                              to: '/reader/$chapterId',
-                              params: { chapterId: nextId },
-                            })
-                          }}
-                          className="h-9 min-w-0"
-                          options={filteredSeriesChapters.map((chapter) => ({
-                            value: chapter.id,
-                            label: `Chapter ${chapter.chapterNumber}`,
-                          }))}
-                        />
-                      ) : (
-                        <p className="col-span-2 px-1 text-xs text-muted-foreground">
-                          No chapter found. Try a different number.
-                        </p>
-                      )}
-                    </>
-                  ) : null}
-
-                  <Link
-                    to="/series/$seriesId"
-                    params={{ seriesId: chapterPayload.manifest.seriesId }}
-                    className={`reader-settings-action inline-flex h-9 items-center justify-center border border-border bg-surface-soft text-xs text-muted-foreground hover:text-foreground ${isTouchDevice ? 'col-span-2' : ''}`}
-                  >
-                    Open series page
-                  </Link>
-
-                  <label
-                    className={`reader-settings-label text-xs text-muted-foreground ${isTouchDevice ? 'col-span-2' : ''}`}
-                  >
-                    <span className="reader-settings-heading">
-                      Page progress
-                    </span>
-                    <span>
-                      Page {currentTargetPageIndex + 1} of {pages.length}
-                    </span>
-                    <RangeSlider
-                      min={0}
-                      max={scrubberMax}
-                      value={scrubberValue}
-                      onChange={(event) =>
-                        goToPage(Number.parseInt(event.target.value, 10))
-                      }
-                      className="mt-3 w-full accent-primary"
-                      style={{ transform: 'scaleX(-1)' }}
-                      data-testid="page-scrubber"
-                    />
-                  </label>
-                </div>
-              ) : (
-                <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
-                  <p className="reader-settings-note">
-                    Tune how aggressively Tsuki warms nearby pages and hides the
-                    reader chrome.
-                  </p>
                   <label className="reader-settings-label">
                     Pages to preload ahead
                     <Input
@@ -2769,7 +2757,7 @@ function ReaderPage() {
                     />
                   </label>
                 </div>
-              )}
+              </details>
 
               <div className="mt-3 flex items-center justify-between gap-2">
                 <Button
@@ -2841,59 +2829,6 @@ function ReaderPage() {
             </div>
           ) : null}
         </aside>
-      ) : null}
-
-      {!fullscreenActive &&
-      !focusMode &&
-      showReaderChrome &&
-      !isTouchDevice &&
-      !sidebarOpen ? (
-        <div className="reader-quick-strip reader-settings-float absolute right-[clamp(0.75rem,6vw,2.75rem)] top-3 z-30 hidden flex-wrap gap-2 md:flex">
-          <Button
-            type="button"
-            variant="soft"
-            className="h-9 px-3 text-xs"
-            onClick={() => setSidebarOpen((value) => !value)}
-          >
-            Reader settings
-          </Button>
-          <Button
-            type="button"
-            variant="soft"
-            className="h-9 px-3 text-xs"
-            onClick={() => {
-              void toggleFullscreen()
-            }}
-          >
-            Full screen
-          </Button>
-        </div>
-      ) : null}
-
-      {!fullscreenActive &&
-      showReaderChrome &&
-      !isTouchDevice &&
-      !sidebarOpen ? (
-        <div className="reader-chapter-jump reader-settings-float absolute bottom-4 right-[clamp(0.75rem,6vw,2.75rem)] z-30 hidden items-center gap-2 md:flex">
-          <Button
-            type="button"
-            variant="soft"
-            className="h-11 px-3 text-xs"
-            onClick={goToNextChapter}
-            disabled={!nextChapterId}
-          >
-            Next chapter
-          </Button>
-          <Button
-            type="button"
-            variant="soft"
-            className="h-11 px-3 text-xs disabled:!bg-surface-soft disabled:!text-foreground/70 disabled:!opacity-100"
-            onClick={goToPreviousChapter}
-            disabled={!previousChapterId}
-          >
-            Previous chapter
-          </Button>
-        </div>
       ) : null}
 
       {!fullscreenActive && !focusMode && showReaderChrome && !isTouchDevice ? (
@@ -2982,7 +2917,7 @@ function ReaderPage() {
           </div>
         ) : (
           <div
-            className={`relative ${!fullscreenActive && isTouchDevice ? 'h-[100dvh]' : 'h-full'} bg-black ${focusMode ? 'reader-focus-mode' : ''}`}
+            className={`reader-stage-bg relative ${!fullscreenActive && isTouchDevice ? 'h-[100dvh]' : 'h-full'} ${focusMode ? 'reader-focus-mode' : ''}`}
             ref={viewportRef}
             onMouseMove={isTouchDevice ? undefined : handleReaderMouseMove}
             onClick={handleTouchTapNavigate}

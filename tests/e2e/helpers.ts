@@ -1,6 +1,16 @@
 import { expect, type Page } from '@playwright/test'
 
-export type ThemeMode = 'light' | 'dark' | 'paper'
+export type ThemeMode =
+  | 'light'
+  | 'dark'
+  | 'paper'
+  | 'paper-dark'
+  | 'sakura'
+  | 'sakura-dark'
+  | 'ocean'
+  | 'ocean-dark'
+  | 'matcha'
+  | 'matcha-dark'
 
 interface PrimeStorageOptions {
   theme?: ThemeMode
