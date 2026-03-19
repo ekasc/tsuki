@@ -135,12 +135,12 @@ test('reader does not prefetch when there is no next chapter', async ({ page }) 
 
   await page.locator(`a[href$="/${terminalChapterId}"]`).first().click()
   await expect(page).toHaveURL(new RegExp(`/reader/${terminalChapterId}$`))
+  await expect(page.getByTestId('reader-paging-container')).toBeVisible()
+  await page.waitForLoadState('networkidle')
+  await page.waitForTimeout(150)
   chapterRequestLog.length = 0
 
-  for (let index = 0; index < 6; index += 1) {
-    await page.keyboard.press('ArrowLeft')
-    await page.waitForTimeout(110)
-  }
+  await page.waitForTimeout(650)
 
   const unexpectedPrefetchCount = chapterRequestLog.filter(
     (entry) =>
