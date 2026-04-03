@@ -245,9 +245,9 @@ function LibraryPage() {
   const homeTip = useMemo(() => {
     const now = new Date()
     const seed =
-      now.getFullYear() * 1000 +
-      now.getMonth() * 100 +
-      now.getDate() +
+      now.getUTCFullYear() * 1000 +
+      now.getUTCMonth() * 100 +
+      now.getUTCDate() +
       totalSeries * 7 +
       recentHistory.length * 13
     const index = Math.abs(seed) % HOME_READING_TIPS.length
@@ -368,8 +368,8 @@ function LibraryPage() {
                       src={topHistoryCoverUrl}
                       alt="Last read manga cover"
                       className="h-16 w-12 shrink-0 border border-border object-cover"
-                      loading="eager"
-                      fetchPriority="high"
+                      loading="lazy"
+                      fetchPriority="auto"
                       decoding="async"
                     />
                   ) : (

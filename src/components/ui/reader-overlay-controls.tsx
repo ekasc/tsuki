@@ -3,13 +3,21 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 interface ReaderTapZoneProps {
   side: 'left' | 'right'
+  action: 'next' | 'previous'
   onActivate: () => void
 }
 
-export function ReaderTapZone({ side, onActivate }: ReaderTapZoneProps) {
+export function ReaderTapZone({
+  side,
+  action,
+  onActivate,
+}: ReaderTapZoneProps) {
+  const actionLabel =
+    action === 'next' ? 'Next page tap zone' : 'Previous page tap zone'
+
   return (
     <button
-      aria-label={side === 'left' ? 'left-zone' : 'right-zone'}
+      aria-label={actionLabel}
       className={
         side === 'left'
           ? 'absolute inset-y-0 left-0 z-10 w-1/2 cursor-e-resize border-0 bg-transparent p-0 touch-manipulation'
@@ -25,16 +33,20 @@ export function ReaderTapZone({ side, onActivate }: ReaderTapZoneProps) {
 
 interface ReaderEdgeArrowButtonProps {
   side: 'left' | 'right'
+  action: 'next' | 'previous'
   onActivate: () => void
 }
 
 export function ReaderEdgeArrowButton({
   side,
+  action,
   onActivate,
 }: ReaderEdgeArrowButtonProps) {
+  const actionLabel = action === 'next' ? 'Next page' : 'Previous page'
+
   return (
     <Button
-      aria-label={side === 'left' ? 'left-arrow' : 'right-arrow'}
+      aria-label={actionLabel}
       variant="soft"
       size="icon"
       className={
@@ -44,7 +56,6 @@ export function ReaderEdgeArrowButton({
       }
       onClick={onActivate}
       onMouseDown={(event) => event.preventDefault()}
-      tabIndex={-1}
       type="button"
     >
       {side === 'left' ? (

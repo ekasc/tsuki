@@ -26,6 +26,7 @@ import { RangeSlider } from '#/components/ui/range-slider'
 import { SelectField } from '#/components/ui/select'
 import type {
   ChapterPageManifest,
+  ReaderDirection,
   ReaderMode,
   WeebcentralChapterDTO,
   WeebcentralSeriesDTO,
@@ -142,6 +143,7 @@ function readStorageWithLegacy(key: string, legacyKey: string): string | null {
 interface StoredRemoteProgress {
   pageIndex: number
   mode: ReaderMode
+  direction: ReaderDirection
   zoomPreset: ZoomPreset
 }
 
@@ -178,6 +180,7 @@ const DEFAULT_REMOTE_READER_UI_PREFS: ReaderUiPrefs = {
 interface ReaderSeriesPreset {
   mode: ReaderMode
   zoomPreset: ZoomPreset
+  readingDirection: ReaderDirection
   doublePageOffset: boolean
   magnifierEnabled: boolean
   focusMode: boolean
@@ -215,6 +218,7 @@ function loadReaderSeriesPreset(seriesId: string): ReaderSeriesPreset | null {
         preset.zoomPreset === 'fit-width' || preset.zoomPreset === 'actual'
           ? preset.zoomPreset
           : 'fit-width',
+      readingDirection: preset.readingDirection === 'ltr' ? 'ltr' : 'rtl',
       doublePageOffset: Boolean(preset.doublePageOffset),
       magnifierEnabled: Boolean(preset.magnifierEnabled),
       focusMode: Boolean(preset.focusMode),
@@ -358,6 +362,7 @@ function buildDoublePageStepsWithOffset(
 function expandStepsForPortraitSingle(
   steps: PairingStep[],
   pages: ChapterPageManifest[],
+  readingDirection: ReaderDirection,
 ): PairingStep[] {
   if (steps.length === 0) {
     return []
@@ -386,30 +391,22 @@ function expandStepsForPortraitSingle(
           : inferredByPageIndex.get(unit.pageIndex) === true
 
         if (isSpread) {
-          return [
-            {
-              kind: 'single' as const,
-              anchorPageIndex: unit.pageIndex,
-              units: [
-                {
-                  type: 'page' as const,
-                  pageIndex: unit.pageIndex,
-                  crop: 'right' as const,
-                },
-              ],
-            },
-            {
-              kind: 'single' as const,
-              anchorPageIndex: unit.pageIndex,
-              units: [
-                {
-                  type: 'page' as const,
-                  pageIndex: unit.pageIndex,
-                  crop: 'left' as const,
-                },
-              ],
-            },
-          ]
+          const cropOrder =
+            readingDirection === 'ltr'
+              ? (['left', 'right'] as const)
+              : (['right', 'left'] as const)
+
+          return cropOrder.map((crop) => ({
+            kind: 'single' as const,
+            anchorPageIndex: unit.pageIndex,
+            units: [
+              {
+                type: 'page' as const,
+                pageIndex: unit.pageIndex,
+                crop,
+              },
+            ],
+          }))
         }
       }
 
@@ -427,6 +424,7 @@ function expandStepsForPortraitSingle(
 function buildSinglePageSteps(
   pages: ChapterPageManifest[],
   splitSpreads: boolean,
+  readingDirection: ReaderDirection,
 ): PairingStep[] {
   if (pages.length === 0) {
     return []
@@ -465,20 +463,17 @@ function buildSinglePageSteps(
       return
     }
 
-    // Split spread into two CSS-cropped halves (right half shown first in RTL)
-    steps.push({
-      kind: 'single',
-      anchorPageIndex: page.pageIndex,
-      units: [
-        { type: 'page', pageIndex: page.pageIndex, crop: 'right' as const },
-      ],
-    })
-    steps.push({
-      kind: 'single',
-      anchorPageIndex: page.pageIndex,
-      units: [
-        { type: 'page', pageIndex: page.pageIndex, crop: 'left' as const },
-      ],
+    const cropOrder =
+      readingDirection === 'ltr'
+        ? (['left', 'right'] as const)
+        : (['right', 'left'] as const)
+
+    cropOrder.forEach((crop) => {
+      steps.push({
+        kind: 'single',
+        anchorPageIndex: page.pageIndex,
+        units: [{ type: 'page', pageIndex: page.pageIndex, crop }],
+      })
     })
   })
 
@@ -489,6 +484,7 @@ function getDisplayUnitsForStep(
   step: PairingStep | null,
   pageByIndex: ReadonlyMap<number, ChapterPageManifest>,
   isTouchPortrait: boolean,
+  readingDirection: ReaderDirection,
 ) {
   if (!step) {
     return [] as PairingStep['units']
@@ -497,7 +493,7 @@ function getDisplayUnitsForStep(
   const normalizedUnits =
     step.units.length > 2 ? step.units.slice(0, 2) : step.units
   const renderedUnits =
-    normalizedUnits.length === 2
+    normalizedUnits.length === 2 && readingDirection === 'rtl'
       ? [...normalizedUnits].reverse()
       : normalizedUnits
 
@@ -563,13 +559,28 @@ function loadRemoteProgress(chapterId: string): StoredRemoteProgress | null {
       return null
     }
 
-    const payload = JSON.parse(raw) as Record<string, StoredRemoteProgress>
+    const payload = JSON.parse(raw) as Record<
+      string,
+      Partial<StoredRemoteProgress>
+    >
     const item = payload[chapterId]
     if (!item) {
       return null
     }
 
-    return item
+    return {
+      pageIndex:
+        typeof item.pageIndex === 'number' ? Math.max(0, item.pageIndex) : 0,
+      mode:
+        item.mode === 'double' || item.mode === 'scroll'
+          ? item.mode
+          : 'single',
+      direction: item.direction === 'ltr' ? 'ltr' : 'rtl',
+      zoomPreset:
+        item.zoomPreset === 'fit-width' || item.zoomPreset === 'actual'
+          ? item.zoomPreset
+          : 'fit-width',
+    }
   } catch {
     return null
   }
@@ -651,6 +662,8 @@ function WeebcentralReaderPage() {
   const [zoomPreset, setZoomPreset] = useState<ZoomPreset>(
     initialUiPrefs.zoomPreset,
   )
+  const [readingDirection, setReadingDirection] =
+    useState<ReaderDirection>('rtl')
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(
     initialUiPrefs.sidebarOpen,
   )
@@ -803,12 +816,12 @@ function WeebcentralReaderPage() {
     [doublePageOffset, pages],
   )
   const portraitSingleSteps = useMemo(
-    () => expandStepsForPortraitSingle(twoPageSteps, pages),
-    [pages, twoPageSteps],
+    () => expandStepsForPortraitSingle(twoPageSteps, pages, readingDirection),
+    [pages, readingDirection, twoPageSteps],
   )
   const singlePageSteps = useMemo(
-    () => buildSinglePageSteps(pages, isTouchPortrait),
-    [isTouchPortrait, pages],
+    () => buildSinglePageSteps(pages, isTouchPortrait, readingDirection),
+    [isTouchPortrait, pages, readingDirection],
   )
   const activeDoubleSteps = isTouchPortrait ? portraitSingleSteps : twoPageSteps
   const isSinglePageTouchView =
@@ -857,35 +870,19 @@ function WeebcentralReaderPage() {
       : null
 
   const activeStep = activeDoubleSteps[currentStepIndex] ?? null
-  const stepUnits = activeStep?.units ?? []
-  const normalizedStepUnits =
-    stepUnits.length > 2 ? stepUnits.slice(0, 2) : stepUnits
-  const renderedUnits =
-    normalizedStepUnits.length === 2
-      ? [...normalizedStepUnits].reverse()
-      : normalizedStepUnits
 
   const displayUnits = useMemo(() => {
-    if (
-      mode !== 'double' ||
-      renderedUnits.length <= 1 ||
-      isTouchPortrait ||
-      activeStep?.kind === 'split-spread'
-    ) {
-      return renderedUnits
+    if (mode !== 'double') {
+      return [] as PairingStep['units']
     }
 
-    const spreadUnit = renderedUnits.find((unit) => {
-      const page = pageByIndex.get(unit.pageIndex)
-      if (!page) {
-        return false
-      }
-
-      return page.autoIsSpread || page.aspect >= 0.95
-    })
-
-    return spreadUnit ? [spreadUnit] : renderedUnits
-  }, [activeStep?.kind, isTouchPortrait, mode, pageByIndex, renderedUnits])
+    return getDisplayUnitsForStep(
+      activeStep,
+      pageByIndex,
+      isTouchPortrait,
+      readingDirection,
+    )
+  }, [activeStep, isTouchPortrait, mode, pageByIndex, readingDirection])
 
   const currentRenderUnits = useMemo(
     () =>
@@ -926,6 +923,7 @@ function WeebcentralReaderPage() {
       activeDoubleSteps[currentStepIndex + 1] ?? null,
       pageByIndex,
       isTouchPortrait,
+      readingDirection,
     )
   }, [
     activeDoubleSteps,
@@ -935,6 +933,7 @@ function WeebcentralReaderPage() {
     maxSingleStepIndex,
     mode,
     pageByIndex,
+    readingDirection,
     singlePageSteps,
   ])
 
@@ -951,6 +950,7 @@ function WeebcentralReaderPage() {
       activeDoubleSteps[currentStepIndex - 1] ?? null,
       pageByIndex,
       isTouchPortrait,
+      readingDirection,
     )
   }, [
     activeDoubleSteps,
@@ -959,20 +959,29 @@ function WeebcentralReaderPage() {
     isTouchPortrait,
     mode,
     pageByIndex,
+    readingDirection,
     singlePageSteps,
   ])
   const leftRenderUnits =
     nativePagerVisualLock
       ? currentRenderUnits
-      : nextRenderUnits.length > 0
-        ? nextRenderUnits
-        : currentRenderUnits
+      : readingDirection === 'rtl'
+        ? nextRenderUnits.length > 0
+          ? nextRenderUnits
+          : currentRenderUnits
+        : previousRenderUnits.length > 0
+          ? previousRenderUnits
+          : currentRenderUnits
   const rightRenderUnits =
     nativePagerVisualLock
       ? currentRenderUnits
-      : previousRenderUnits.length > 0
-        ? previousRenderUnits
-        : currentRenderUnits
+      : readingDirection === 'rtl'
+        ? previousRenderUnits.length > 0
+          ? previousRenderUnits
+          : currentRenderUnits
+        : nextRenderUnits.length > 0
+          ? nextRenderUnits
+          : currentRenderUnits
 
   const armNativePagerVisualLock = useCallback((durationMs = 220) => {
     setNativePagerVisualLock(true)
@@ -1081,20 +1090,19 @@ function WeebcentralReaderPage() {
     singlePageSteps.length,
   ])
 
-  const rtlSpreadNumbers = useMemo(() => {
-    const currentNumber = currentTargetPageIndex + 1
-    const rightNumber =
-      currentNumber % 2 === 1 ? currentNumber : currentNumber - 1
-    const leftNumber =
-      rightNumber > 0 && rightNumber + 1 <= pages.length
-        ? rightNumber + 1
-        : null
-
-    return {
-      right: rightNumber > 0 ? rightNumber : null,
-      left: leftNumber,
-    }
-  }, [currentTargetPageIndex, pages.length])
+  const spreadNumbers = useMemo(
+    () => ({
+      left:
+        typeof displayUnits[0]?.pageIndex === 'number'
+          ? displayUnits[0].pageIndex + 1
+          : null,
+      right:
+        typeof displayUnits[1]?.pageIndex === 'number'
+          ? displayUnits[1].pageIndex + 1
+          : null,
+    }),
+    [displayUnits],
+  )
 
   const showPageHudForMoment = useCallback(() => {
     if (!fullscreenActive) {
@@ -1206,6 +1214,7 @@ function WeebcentralReaderPage() {
       saveRemoteProgress(chapter.chapterId, {
         pageIndex,
         mode,
+        direction: readingDirection,
         zoomPreset,
       })
 
@@ -1225,6 +1234,7 @@ function WeebcentralReaderPage() {
     [
       chapter,
       mode,
+      readingDirection,
       search.seriesId,
       search.seriesTitle,
       series?.id,
@@ -1323,7 +1333,7 @@ function WeebcentralReaderPage() {
       )
       setCurrentSingleStepIndex(
         findStepIndexByPageIndex(
-          buildSinglePageSteps(chapterPages, false),
+          buildSinglePageSteps(chapterPages, false, 'rtl'),
           initialPageIndex,
         ),
       )
@@ -1435,6 +1445,8 @@ function WeebcentralReaderPage() {
     }
 
     const preset = loadReaderSeriesPreset(activeSeriesId)
+    setReadingDirection(preset?.readingDirection ?? 'rtl')
+
     if (!preset) {
       return
     }
@@ -1454,6 +1466,7 @@ function WeebcentralReaderPage() {
     saveReaderSeriesPreset(activeSeriesId, {
       mode,
       zoomPreset,
+      readingDirection,
       doublePageOffset,
       magnifierEnabled,
       focusMode,
@@ -1464,6 +1477,7 @@ function WeebcentralReaderPage() {
     focusMode,
     magnifierEnabled,
     mode,
+    readingDirection,
     zoomPreset,
   ])
 
@@ -2108,12 +2122,20 @@ function WeebcentralReaderPage() {
       const index = Math.round(pager.scrollLeft / width)
 
       if (index <= 0) {
-        if (nextRenderUnits.length > 0) {
+        const canNavigateLeft =
+          readingDirection === 'rtl'
+            ? nextRenderUnits.length > 0
+            : previousRenderUnits.length > 0
+        if (canNavigateLeft) {
           suppressTapRef.current = true
           navigatingRef.current = true
           armNativePagerVisualLock()
           flushSync(() => {
-            goNext()
+            if (readingDirection === 'rtl') {
+              goNext()
+            } else {
+              goPrevious()
+            }
           })
           recenterNativePager({ attempts: 1 })
           requestAnimationFrame(() => {
@@ -2124,12 +2146,20 @@ function WeebcentralReaderPage() {
       }
 
       if (index >= 2) {
-        if (previousRenderUnits.length > 0) {
+        const canNavigateRight =
+          readingDirection === 'rtl'
+            ? previousRenderUnits.length > 0
+            : nextRenderUnits.length > 0
+        if (canNavigateRight) {
           suppressTapRef.current = true
           navigatingRef.current = true
           armNativePagerVisualLock()
           flushSync(() => {
-            goPrevious()
+            if (readingDirection === 'rtl') {
+              goPrevious()
+            } else {
+              goNext()
+            }
           })
           recenterNativePager({ attempts: 1 })
           requestAnimationFrame(() => {
@@ -2148,6 +2178,7 @@ function WeebcentralReaderPage() {
     goPrevious,
     nextRenderUnits.length,
     previousRenderUnits.length,
+    readingDirection,
     recenterNativePager,
   ])
 
@@ -2259,9 +2290,17 @@ function WeebcentralReaderPage() {
         suppressTapRef.current = true
 
         if (deltaX > 0) {
-          goNext()
+          if (readingDirection === 'rtl') {
+            goNext()
+          } else {
+            goPrevious()
+          }
         } else {
-          goPrevious()
+          if (readingDirection === 'rtl') {
+            goPrevious()
+          } else {
+            goNext()
+          }
         }
 
         return
@@ -2283,8 +2322,12 @@ function WeebcentralReaderPage() {
       const commit =
         Math.abs(swipeOffsetRef.current) > threshold
           ? swipeOffsetRef.current > 0
-            ? 'next'
-            : 'prev'
+            ? readingDirection === 'rtl'
+              ? 'next'
+              : 'prev'
+            : readingDirection === 'rtl'
+              ? 'prev'
+              : 'next'
           : null
 
       swipeDraggingRef.current = false
@@ -2325,7 +2368,14 @@ function WeebcentralReaderPage() {
         swipeCommitTimeoutRef.current = null
       }, 160)
     },
-    [gallerySwipeEnabled, goNext, goPrevious, isTouchDevice, mode],
+    [
+      gallerySwipeEnabled,
+      goNext,
+      goPrevious,
+      isTouchDevice,
+      mode,
+      readingDirection,
+    ],
   )
 
   const handleReaderTouchCancel = useCallback(() => {
@@ -2526,13 +2576,21 @@ function WeebcentralReaderPage() {
       const tapX = event.clientX - rect.left
 
       if (tapX < rect.width / 2) {
-        goNext()
+        if (readingDirection === 'rtl') {
+          goNext()
+        } else {
+          goPrevious()
+        }
         return
       }
 
-      goPrevious()
+      if (readingDirection === 'rtl') {
+        goPrevious()
+      } else {
+        goNext()
+      }
     },
-    [goNext, goPrevious, isTouchDevice, mode],
+    [goNext, goPrevious, isTouchDevice, mode, readingDirection],
   )
 
   useEffect(() => {
@@ -2558,14 +2616,22 @@ function WeebcentralReaderPage() {
       if (event.code === 'ArrowRight' || event.code === 'KeyD') {
         event.preventDefault()
         blurReaderFocusTarget()
-        goPrevious()
+        if (readingDirection === 'rtl') {
+          goPrevious()
+        } else {
+          goNext()
+        }
         return
       }
 
       if (event.code === 'ArrowLeft' || event.code === 'KeyA') {
         event.preventDefault()
         blurReaderFocusTarget()
-        goNext()
+        if (readingDirection === 'rtl') {
+          goNext()
+        } else {
+          goPrevious()
+        }
         return
       }
 
@@ -2676,6 +2742,7 @@ function WeebcentralReaderPage() {
     magnifierEnabled,
     nextChapterId,
     previousChapterId,
+    readingDirection,
     revealReaderUi,
     toggleFullscreen,
   ])
@@ -2739,7 +2806,7 @@ function WeebcentralReaderPage() {
           type="button"
           variant="soft"
           size="sm"
-          className="absolute ui-right-safe-offset ui-top-safe-offset z-40 h-8 px-2 text-xs"
+          className="absolute ui-right-safe-offset ui-top-safe-offset z-40 h-11 px-3 text-xs"
           onClick={() => {
             void toggleFullscreen()
           }}
@@ -2771,7 +2838,7 @@ function WeebcentralReaderPage() {
                 type="button"
                 variant="soft"
                 size="sm"
-                className="h-7 px-2 text-xs"
+                className="h-11 px-3 text-xs"
                 onClick={() =>
                   setMobileSettingsMinimized((current) => !current)
                 }
@@ -2817,7 +2884,7 @@ function WeebcentralReaderPage() {
                   <Button
                     type="button"
                     variant={mode === 'single' ? 'default' : 'soft'}
-                    className="h-9"
+                    className="h-11"
                     onClick={() => {
                       setMode('single')
                       setCurrentSingleStepIndex(
@@ -2834,7 +2901,7 @@ function WeebcentralReaderPage() {
                   <Button
                     type="button"
                     variant={mode === 'double' ? 'default' : 'soft'}
-                    className="h-9"
+                    className="h-11"
                     onClick={() => {
                       setMode('double')
                       setCurrentStepIndex(
@@ -2850,7 +2917,7 @@ function WeebcentralReaderPage() {
                   <Button
                     type="button"
                     variant={mode === 'scroll' ? 'default' : 'soft'}
-                    className="h-9"
+                    className="h-11"
                     onClick={() => {
                       setMode('scroll')
                       setCurrentPageIndex(currentTargetPageIndex)
@@ -2902,10 +2969,46 @@ function WeebcentralReaderPage() {
                 </p>
               ) : null}
 
+              {isTouchDevice ? (
+                <div className="col-span-2 grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant={readingDirection === 'rtl' ? 'default' : 'soft'}
+                    className="h-11"
+                    onClick={() => setReadingDirection('rtl')}
+                  >
+                    RTL
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={readingDirection === 'ltr' ? 'default' : 'soft'}
+                    className="h-11"
+                    onClick={() => setReadingDirection('ltr')}
+                  >
+                    LTR
+                  </Button>
+                </div>
+              ) : (
+                <SelectField
+                  value={readingDirection}
+                  aria-label="Reading direction"
+                  onChange={(event) =>
+                    setReadingDirection(
+                      event.target.value === 'ltr' ? 'ltr' : 'rtl',
+                    )
+                  }
+                  className="h-11"
+                  options={[
+                    { value: 'rtl', label: 'Right to left' },
+                    { value: 'ltr', label: 'Left to right' },
+                  ]}
+                />
+              )}
+
               <Button
                 type="button"
                 variant={doublePageOffset ? 'default' : 'soft'}
-                className="h-9 w-full px-3"
+                className="h-11 w-full px-3"
                 onClick={() => setDoublePageOffset((value) => !value)}
               >
                 Offset: {doublePageOffset ? 'On' : 'Off'}
@@ -2917,7 +3020,7 @@ function WeebcentralReaderPage() {
                 onChange={(event) =>
                   setZoomPreset(event.target.value as ZoomPreset)
                 }
-                className="h-9"
+                className="h-11"
                 options={[
                   { value: 'fit-height', label: 'Fit to screen' },
                   { value: 'fit-width', label: 'Fit to width' },
@@ -2962,7 +3065,7 @@ function WeebcentralReaderPage() {
                         }
                         goToChapter(nextId)
                       }}
-                      className={`h-9 min-w-0 ${isTouchDevice ? 'col-span-2' : ''}`}
+                      className={`h-11 min-w-0 ${isTouchDevice ? 'col-span-2' : ''}`}
                       options={orderedSeriesChapters.map((entry) => ({
                         value: entry.id,
                         label: `Chapter ${entry.number}`,
@@ -2990,7 +3093,11 @@ function WeebcentralReaderPage() {
                     goToPage(Number.parseInt(event.target.value, 10))
                   }
                   className="mt-2 w-full accent-primary"
-                  style={{ transform: 'scaleX(-1)' }}
+                  style={
+                    readingDirection === 'rtl'
+                      ? { transform: 'scaleX(-1)' }
+                      : undefined
+                  }
                 />
               </label>
             </div>
@@ -3005,7 +3112,7 @@ function WeebcentralReaderPage() {
                     <Button
                       type="button"
                       variant={magnifierEnabled ? 'default' : 'soft'}
-                      className="h-9 w-full px-3"
+                      className="h-11 w-full px-3"
                       onClick={() => setMagnifierEnabled((value) => !value)}
                     >
                       Magnifier: {magnifierEnabled ? 'On' : 'Off'}
@@ -3013,7 +3120,7 @@ function WeebcentralReaderPage() {
                     <Button
                       type="button"
                       variant={focusMode ? 'default' : 'soft'}
-                      className="h-9 w-full px-3"
+                      className="h-11 w-full px-3"
                       onClick={() => setFocusMode((value) => !value)}
                     >
                       Distraction-free mode: {focusMode ? 'On' : 'Off'}
@@ -3036,7 +3143,7 @@ function WeebcentralReaderPage() {
                         ),
                       )
                     }
-                    className="mt-1 h-8"
+                    className="mt-1 min-h-11"
                   />
                 </label>
                 <label className="reader-settings-label">
@@ -3055,7 +3162,7 @@ function WeebcentralReaderPage() {
                         ),
                       )
                     }
-                    className="mt-1 h-8"
+                    className="mt-1 min-h-11"
                   />
                 </label>
                 <label className="reader-settings-label">
@@ -3074,7 +3181,7 @@ function WeebcentralReaderPage() {
                         ),
                       )
                     }
-                    className="mt-1 h-8"
+                    className="mt-1 min-h-11"
                   />
                 </label>
                 <label className="reader-settings-label">
@@ -3093,7 +3200,7 @@ function WeebcentralReaderPage() {
                         ),
                       )
                     }
-                    className="mt-1 h-8"
+                    className="mt-1 min-h-11"
                   />
                 </label>
                 <label className="reader-settings-label">
@@ -3112,7 +3219,7 @@ function WeebcentralReaderPage() {
                         ),
                       )
                     }
-                    className="mt-1 h-8"
+                    className="mt-1 min-h-11"
                   />
                 </label>
                 <label className="reader-settings-label">
@@ -3132,7 +3239,7 @@ function WeebcentralReaderPage() {
                         ),
                       )
                     }
-                    className="mt-1 h-8"
+                    className="mt-1 min-h-11"
                   />
                 </label>
                 <label className="reader-settings-label">
@@ -3151,7 +3258,7 @@ function WeebcentralReaderPage() {
                         ),
                       )
                     }
-                    className="mt-1 h-8"
+                    className="mt-1 min-h-11"
                   />
                 </label>
                 <label className="reader-settings-label">
@@ -3171,7 +3278,7 @@ function WeebcentralReaderPage() {
                         ),
                       )
                     }
-                    className="mt-1 h-8"
+                    className="mt-1 min-h-11"
                   />
                 </label>
               </div>
@@ -3239,11 +3346,11 @@ function WeebcentralReaderPage() {
         mode === 'double' && !isTouchPortrait ? (
           <>
             <div className="pointer-events-none absolute ui-bottom-safe-offset ui-left-safe-offset z-20 text-[10px] font-medium text-white/55">
-              {rtlSpreadNumbers.left ?? ''}
+              {spreadNumbers.left ?? ''}
             </div>
-            {rtlSpreadNumbers.right ? (
+            {spreadNumbers.right ? (
               <div className="pointer-events-none absolute ui-bottom-safe-offset ui-right-safe-offset z-20 text-[10px] font-medium text-white/55">
-                {rtlSpreadNumbers.right}
+                {spreadNumbers.right}
               </div>
             ) : null}
           </>
@@ -3293,6 +3400,7 @@ function WeebcentralReaderPage() {
               zoomPreset={zoomPreset}
               isFullscreen={fullscreenActive}
               resolveImageUrl={(page) => pageUrlMap.get(page.pageIndex)}
+              onImageMeasure={rememberPageDimension}
               onVisiblePageChange={(pageIndex) =>
                 setCurrentPageIndex(pageIndex)
               }
@@ -3392,20 +3500,44 @@ function WeebcentralReaderPage() {
             {!isTouchDevice &&
             !magnifierEnabled &&
             zoomPreset !== 'actual' ? (
-              <ReaderTapZone side="left" onActivate={goNext} />
+              <ReaderTapZone
+                side="left"
+                action={readingDirection === 'rtl' ? 'next' : 'previous'}
+                onActivate={
+                  readingDirection === 'rtl' ? goNext : goPrevious
+                }
+              />
             ) : null}
             {!isTouchDevice &&
             !magnifierEnabled &&
             zoomPreset !== 'actual' ? (
-              <ReaderTapZone side="right" onActivate={goPrevious} />
+              <ReaderTapZone
+                side="right"
+                action={readingDirection === 'rtl' ? 'previous' : 'next'}
+                onActivate={
+                  readingDirection === 'rtl' ? goPrevious : goNext
+                }
+              />
             ) : null}
             {!fullscreenActive &&
             showReaderChrome &&
             !isTouchDevice &&
             !sidebarOpen ? (
               <>
-                <ReaderEdgeArrowButton side="left" onActivate={goNext} />
-                <ReaderEdgeArrowButton side="right" onActivate={goPrevious} />
+                <ReaderEdgeArrowButton
+                  side="left"
+                  action={readingDirection === 'rtl' ? 'next' : 'previous'}
+                  onActivate={
+                    readingDirection === 'rtl' ? goNext : goPrevious
+                  }
+                />
+                <ReaderEdgeArrowButton
+                  side="right"
+                  action={readingDirection === 'rtl' ? 'previous' : 'next'}
+                  onActivate={
+                    readingDirection === 'rtl' ? goPrevious : goNext
+                  }
+                />
               </>
             ) : null}
             {fullscreenActive && showPageHud ? (

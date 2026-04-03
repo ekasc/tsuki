@@ -110,3 +110,23 @@ test('RTL navigation labels map to correct page direction', async ({
   await page.getByRole('button', { name: 'Previous page' }).click()
   await expect(page.getByTestId('position-label')).toHaveText(/^Page 1 \/ \d+$/)
 })
+
+test('continuous scroll renders pages and updates the visible page index', async ({
+  page,
+}) => {
+  await openLocalReader(page)
+
+  await page.getByRole('button', { name: 'Scroll' }).click()
+
+  const scrollContainer = page.getByTestId('reader-scroll-container')
+  await expect(scrollContainer).toBeVisible()
+  await expect(page.getByTestId('scroll-page-container').first()).toBeVisible()
+
+  await scrollContainer.evaluate((element: HTMLDivElement) => {
+    element.scrollTop = Math.max(element.scrollHeight * 0.6, element.clientHeight * 2)
+    element.dispatchEvent(new Event('scroll', { bubbles: true }))
+  })
+  await page.waitForTimeout(800)
+
+  expect(await readCurrentPageNumber(page)).toBeGreaterThan(1)
+})

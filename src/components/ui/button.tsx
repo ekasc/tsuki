@@ -21,10 +21,10 @@ const buttonVariants = cva(
           'border-destructive bg-destructive text-destructive-foreground shadow-[2px_2px_0_var(--shadow)] hover:bg-destructive/92',
       },
       size: {
-        default: 'h-10 px-4',
-        sm: 'h-8 px-3 text-xs',
+        default: 'h-11 px-4',
+        sm: 'h-11 px-3 text-xs',
         lg: 'h-11 px-6',
-        icon: 'size-10 p-0',
+        icon: 'size-11 p-0',
       },
     },
     defaultVariants: {

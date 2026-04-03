@@ -26,6 +26,7 @@ import type {
   ChapterPageManifest,
   ChapterProgress,
   ChapterPayload,
+  ReaderDirection,
   ReaderMode,
   SeriesDetail,
   ZoomPreset,
@@ -148,6 +149,7 @@ const DEFAULT_LOCAL_READER_UI_PREFS: ReaderUiPrefs = {
 interface ReaderSeriesPreset {
   mode: ReaderMode
   zoomPreset: ZoomPreset
+  readingDirection: ReaderDirection
   doublePageOffset: boolean
   magnifierEnabled: boolean
   focusMode: boolean
@@ -185,6 +187,7 @@ function loadReaderSeriesPreset(seriesId: string): ReaderSeriesPreset | null {
         preset.zoomPreset === 'fit-width' || preset.zoomPreset === 'actual'
           ? preset.zoomPreset
           : 'fit-width',
+      readingDirection: preset.readingDirection === 'ltr' ? 'ltr' : 'rtl',
       doublePageOffset: Boolean(preset.doublePageOffset),
       magnifierEnabled: Boolean(preset.magnifierEnabled),
       focusMode: Boolean(preset.focusMode),
@@ -328,6 +331,7 @@ function buildDoublePageStepsWithOffset(
 function expandStepsForPortraitSingle(
   steps: PairingStep[],
   pages: ChapterPageManifest[],
+  readingDirection: ReaderDirection,
 ): PairingStep[] {
   if (steps.length === 0) {
     return []
@@ -356,31 +360,22 @@ function expandStepsForPortraitSingle(
           : inferredByPageIndex.get(unit.pageIndex) === true
 
         if (isSpread) {
-          // Split spread into two CSS-cropped halves
-          return [
-            {
-              kind: 'single' as const,
-              anchorPageIndex: unit.pageIndex,
-              units: [
-                {
-                  type: 'page' as const,
-                  pageIndex: unit.pageIndex,
-                  crop: 'right' as const,
-                },
-              ],
-            },
-            {
-              kind: 'single' as const,
-              anchorPageIndex: unit.pageIndex,
-              units: [
-                {
-                  type: 'page' as const,
-                  pageIndex: unit.pageIndex,
-                  crop: 'left' as const,
-                },
-              ],
-            },
-          ]
+          const cropOrder =
+            readingDirection === 'ltr'
+              ? (['left', 'right'] as const)
+              : (['right', 'left'] as const)
+
+          return cropOrder.map((crop) => ({
+            kind: 'single' as const,
+            anchorPageIndex: unit.pageIndex,
+            units: [
+              {
+                type: 'page' as const,
+                pageIndex: unit.pageIndex,
+                crop,
+              },
+            ],
+          }))
         }
       }
 
@@ -398,6 +393,7 @@ function expandStepsForPortraitSingle(
 function buildSinglePageSteps(
   pages: ChapterPageManifest[],
   splitSpreads: boolean,
+  readingDirection: ReaderDirection,
 ): PairingStep[] {
   if (pages.length === 0) {
     return []
@@ -436,24 +432,58 @@ function buildSinglePageSteps(
       return
     }
 
-    // Split spread into two CSS-cropped halves (right half shown first in RTL)
-    steps.push({
-      kind: 'single',
-      anchorPageIndex: page.pageIndex,
-      units: [
-        { type: 'page', pageIndex: page.pageIndex, crop: 'right' as const },
-      ],
-    })
-    steps.push({
-      kind: 'single',
-      anchorPageIndex: page.pageIndex,
-      units: [
-        { type: 'page', pageIndex: page.pageIndex, crop: 'left' as const },
-      ],
+    const cropOrder =
+      readingDirection === 'ltr'
+        ? (['left', 'right'] as const)
+        : (['right', 'left'] as const)
+
+    cropOrder.forEach((crop) => {
+      steps.push({
+        kind: 'single',
+        anchorPageIndex: page.pageIndex,
+        units: [{ type: 'page', pageIndex: page.pageIndex, crop }],
+      })
     })
   })
 
   return steps
+}
+
+function getDisplayUnitsForStep(
+  step: PairingStep | null,
+  pageByIndex: ReadonlyMap<number, ChapterPageManifest>,
+  isTouchPortrait: boolean,
+  readingDirection: ReaderDirection,
+) {
+  if (!step) {
+    return [] as PairingStep['units']
+  }
+
+  const normalizedUnits =
+    step.units.length > 2 ? step.units.slice(0, 2) : step.units
+  const renderedUnits =
+    normalizedUnits.length === 2 && readingDirection === 'rtl'
+      ? [...normalizedUnits].reverse()
+      : normalizedUnits
+
+  if (
+    renderedUnits.length <= 1 ||
+    isTouchPortrait ||
+    step.kind === 'split-spread'
+  ) {
+    return renderedUnits
+  }
+
+  const spreadUnit = renderedUnits.find((unit) => {
+    const page = pageByIndex.get(unit.pageIndex)
+    if (!page) {
+      return false
+    }
+
+    return page.autoIsSpread || page.aspect >= 0.95
+  })
+
+  return spreadUnit ? [spreadUnit] : renderedUnits
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -545,6 +575,8 @@ function ReaderPage() {
   const [zoomPreset, setZoomPreset] = useState<ZoomPreset>(
     initialUiPrefs.zoomPreset,
   )
+  const [readingDirection, setReadingDirection] =
+    useState<ReaderDirection>('rtl')
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(
     initialUiPrefs.sidebarOpen,
   )
@@ -646,12 +678,12 @@ function ReaderPage() {
     [doublePageOffset, pages],
   )
   const portraitSingleSteps = useMemo(
-    () => expandStepsForPortraitSingle(twoPageSteps, pages),
-    [pages, twoPageSteps],
+    () => expandStepsForPortraitSingle(twoPageSteps, pages, readingDirection),
+    [pages, readingDirection, twoPageSteps],
   )
   const singlePageSteps = useMemo(
-    () => buildSinglePageSteps(pages, isTouchPortrait),
-    [isTouchPortrait, pages],
+    () => buildSinglePageSteps(pages, isTouchPortrait, readingDirection),
+    [isTouchPortrait, pages, readingDirection],
   )
   const activeDoubleSteps = isTouchPortrait ? portraitSingleSteps : twoPageSteps
   const isSinglePageTouchView =
@@ -674,35 +706,19 @@ function ReaderPage() {
   const scrubberValue = currentTargetPageIndex
 
   const activeStep = activeDoubleSteps[currentStepIndex] ?? null
-  const stepUnits = activeStep?.units ?? []
-  const normalizedStepUnits =
-    stepUnits.length > 2 ? stepUnits.slice(0, 2) : stepUnits
-  const renderedUnits =
-    normalizedStepUnits.length === 2
-      ? [...normalizedStepUnits].reverse()
-      : normalizedStepUnits
 
   const displayUnits = useMemo(() => {
-    if (
-      mode !== 'double' ||
-      renderedUnits.length <= 1 ||
-      isTouchPortrait ||
-      activeStep?.kind === 'split-spread'
-    ) {
-      return renderedUnits
+    if (mode !== 'double') {
+      return [] as PairingStep['units']
     }
 
-    const spreadUnit = renderedUnits.find((unit) => {
-      const page = pageByIndex.get(unit.pageIndex)
-      if (!page) {
-        return false
-      }
-
-      return page.autoIsSpread || page.aspect >= 0.95
-    })
-
-    return spreadUnit ? [spreadUnit] : renderedUnits
-  }, [activeStep?.kind, isTouchPortrait, mode, pageByIndex, renderedUnits])
+    return getDisplayUnitsForStep(
+      activeStep,
+      pageByIndex,
+      isTouchPortrait,
+      readingDirection,
+    )
+  }, [activeStep, isTouchPortrait, mode, pageByIndex, readingDirection])
 
   const currentRenderUnits = useMemo(
     () =>
@@ -764,20 +780,19 @@ function ReaderPage() {
     singlePageSteps.length,
   ])
 
-  const rtlSpreadNumbers = useMemo(() => {
-    const currentNumber = currentTargetPageIndex + 1
-    const rightNumber =
-      currentNumber % 2 === 1 ? currentNumber : currentNumber - 1
-    const leftNumber =
-      rightNumber > 0 && rightNumber + 1 <= pages.length
-        ? rightNumber + 1
-        : null
-
-    return {
-      right: rightNumber > 0 ? rightNumber : null,
-      left: leftNumber,
-    }
-  }, [currentTargetPageIndex, pages.length])
+  const spreadNumbers = useMemo(
+    () => ({
+      left:
+        typeof displayUnits[0]?.pageIndex === 'number'
+          ? displayUnits[0].pageIndex + 1
+          : null,
+      right:
+        typeof displayUnits[1]?.pageIndex === 'number'
+          ? displayUnits[1].pageIndex + 1
+          : null,
+    }),
+    [displayUnits],
+  )
 
   const orderedSeriesChapters = useMemo(
     () =>
@@ -954,7 +969,7 @@ function ReaderPage() {
       )
       setCurrentSingleStepIndex(
         findStepIndexByPageIndex(
-          buildSinglePageSteps(payload.manifest.pages, false),
+          buildSinglePageSteps(payload.manifest.pages, false, 'rtl'),
           nextPage,
         ),
       )
@@ -1073,6 +1088,8 @@ function ReaderPage() {
     }
 
     const preset = loadReaderSeriesPreset(activeSeriesId)
+    setReadingDirection(preset?.readingDirection ?? 'rtl')
+
     if (!preset) {
       return
     }
@@ -1092,6 +1109,7 @@ function ReaderPage() {
     saveReaderSeriesPreset(activeSeriesId, {
       mode,
       zoomPreset,
+      readingDirection,
       doublePageOffset,
       magnifierEnabled,
       focusMode,
@@ -1102,6 +1120,7 @@ function ReaderPage() {
     focusMode,
     magnifierEnabled,
     mode,
+    readingDirection,
     zoomPreset,
   ])
 
@@ -1145,7 +1164,7 @@ function ReaderPage() {
           pageIndex: currentProgressPageIndex,
           stepIndex: currentStepIndex,
           mode,
-          direction: 'rtl',
+          direction: readingDirection,
           zoomPreset,
           updatedAt: Date.now(),
         },
@@ -1162,7 +1181,7 @@ function ReaderPage() {
           pageIndex: currentProgressPageIndex,
           stepIndex: currentStepIndex,
           mode,
-          direction: 'rtl',
+          direction: readingDirection,
           zoomPreset,
         }),
       })
@@ -1187,6 +1206,7 @@ function ReaderPage() {
     currentStepIndex,
     maxPageIndex,
     mode,
+    readingDirection,
     zoomPreset,
   ])
 
@@ -1221,7 +1241,7 @@ function ReaderPage() {
           pageIndex,
           stepIndex,
           mode,
-          direction: 'rtl',
+          direction: readingDirection,
           zoomPreset,
         }),
       })
@@ -1234,7 +1254,7 @@ function ReaderPage() {
           pageIndex,
           stepIndex,
           mode,
-          direction: 'rtl',
+          direction: readingDirection,
           zoomPreset,
           updatedAt: Date.now(),
         },
@@ -1250,7 +1270,7 @@ function ReaderPage() {
         completed: pageIndex >= maxPageIndex,
       })
     },
-    [chapterId, chapterPayload, maxPageIndex, mode, zoomPreset],
+    [chapterId, chapterPayload, maxPageIndex, mode, readingDirection, zoomPreset],
   )
 
   const showPageHudForMoment = useCallback(() => {
@@ -1749,9 +1769,17 @@ function ReaderPage() {
         }
         suppressTapRef.current = true
         if (deltaX > 0) {
-          goNext()
+          if (readingDirection === 'rtl') {
+            goNext()
+          } else {
+            goPrevious()
+          }
         } else {
-          goPrevious()
+          if (readingDirection === 'rtl') {
+            goPrevious()
+          } else {
+            goNext()
+          }
         }
         return
       }
@@ -1777,8 +1805,12 @@ function ReaderPage() {
         velocity > velocityThreshold
       const commit = meetsThreshold
         ? swipeOffsetRef.current > 0
-          ? 'next'
-          : 'prev'
+          ? readingDirection === 'rtl'
+            ? 'next'
+            : 'prev'
+          : readingDirection === 'rtl'
+            ? 'prev'
+            : 'next'
         : null
 
       swipeDraggingRef.current = false
@@ -1806,7 +1838,7 @@ function ReaderPage() {
         goPrevious()
       }
     },
-    [goNext, goPrevious, isTouchDevice, mode],
+    [goNext, goPrevious, isTouchDevice, mode, readingDirection],
   )
 
   const handleReaderTouchCancel = useCallback(() => {
@@ -1873,13 +1905,21 @@ function ReaderPage() {
       const tapX = event.clientX - rect.left
 
       if (tapX < rect.width / 2) {
-        goNext()
+        if (readingDirection === 'rtl') {
+          goNext()
+        } else {
+          goPrevious()
+        }
         return
       }
 
-      goPrevious()
+      if (readingDirection === 'rtl') {
+        goPrevious()
+      } else {
+        goNext()
+      }
     },
-    [goNext, goPrevious, isTouchDevice, mode],
+    [goNext, goPrevious, isTouchDevice, mode, readingDirection],
   )
 
   useEffect(() => {
@@ -1905,14 +1945,22 @@ function ReaderPage() {
       if (event.code === 'ArrowRight' || event.code === 'KeyD') {
         event.preventDefault()
         blurReaderFocusTarget()
-        goPrevious()
+        if (readingDirection === 'rtl') {
+          goPrevious()
+        } else {
+          goNext()
+        }
         return
       }
 
       if (event.code === 'ArrowLeft' || event.code === 'KeyA') {
         event.preventDefault()
         blurReaderFocusTarget()
-        goNext()
+        if (readingDirection === 'rtl') {
+          goNext()
+        } else {
+          goPrevious()
+        }
         return
       }
 
@@ -2022,6 +2070,7 @@ function ReaderPage() {
     goToNextChapter,
     goToPreviousChapter,
     magnifierEnabled,
+    readingDirection,
     revealReaderUi,
     toggleFullscreen,
   ])
@@ -2220,7 +2269,7 @@ function ReaderPage() {
           type="button"
           variant="soft"
           size="sm"
-          className="absolute ui-right-safe-offset ui-top-safe-offset z-40 h-8 px-2 text-xs"
+          className="absolute ui-right-safe-offset ui-top-safe-offset z-40 h-11 px-3 text-xs"
           onClick={() => {
             void toggleFullscreen()
           }}
@@ -2252,7 +2301,7 @@ function ReaderPage() {
                 type="button"
                 variant="soft"
                 size="sm"
-                className="h-7 px-2 text-xs"
+                className="h-11 px-3 text-xs"
                 onClick={() =>
                   setMobileSettingsMinimized((current) => !current)
                 }
@@ -2268,7 +2317,7 @@ function ReaderPage() {
               <Link
                 to="/series/$seriesId"
                 params={{ seriesId: chapterPayload.manifest.seriesId }}
-                className="reader-settings-action inline-flex h-8 shrink-0 items-center border border-border bg-surface-soft px-2 text-muted-foreground hover:bg-surface"
+                className="reader-settings-action inline-flex h-11 shrink-0 items-center border border-border bg-surface-soft px-3 text-muted-foreground hover:bg-surface"
               >
                 Series
               </Link>
@@ -2276,7 +2325,7 @@ function ReaderPage() {
                 <Button
                   type="button"
                   variant={mode === 'single' ? 'default' : 'soft'}
-                  className="h-8 px-2 text-xs"
+                  className="h-11 px-3 text-xs"
                   aria-label="Switch to single-page mode"
                   onClick={() => {
                     setMode('single')
@@ -2294,7 +2343,7 @@ function ReaderPage() {
                 <Button
                   type="button"
                   variant={mode === 'double' ? 'default' : 'soft'}
-                  className="h-8 px-2 text-xs"
+                  className="h-11 px-3 text-xs"
                   aria-label="Switch to two-page mode"
                   onClick={() => {
                     setMode('double')
@@ -2311,7 +2360,7 @@ function ReaderPage() {
                 <Button
                   type="button"
                   variant={mode === 'scroll' ? 'default' : 'soft'}
-                  className="h-8 px-2 text-xs"
+                  className="h-11 px-3 text-xs"
                   aria-label="Switch to scroll mode"
                   onClick={() => {
                     setMode('scroll')
@@ -2332,13 +2381,17 @@ function ReaderPage() {
                   goToPage(Number.parseInt(event.target.value, 10))
                 }
                 className="min-w-[80px] flex-1 accent-primary"
-                style={{ transform: 'scaleX(-1)' }}
+                style={
+                  readingDirection === 'rtl'
+                    ? { transform: 'scaleX(-1)' }
+                    : undefined
+                }
                 data-testid="page-scrubber-landscape"
               />
               <Button
                 type="button"
                 variant="soft"
-                className="h-8 shrink-0 px-2 text-xs"
+                className="h-11 shrink-0 px-3 text-xs"
                 onClick={() => void toggleFullscreen()}
                 aria-label="Toggle fullscreen"
                 title="Toggle fullscreen"
@@ -2390,7 +2443,7 @@ function ReaderPage() {
                     <Button
                       type="button"
                       variant={mode === 'single' ? 'default' : 'soft'}
-                      className="h-9"
+                      className="h-11"
                       onClick={() => {
                         setMode('single')
                         setCurrentSingleStepIndex(
@@ -2407,7 +2460,7 @@ function ReaderPage() {
                     <Button
                       type="button"
                       variant={mode === 'double' ? 'default' : 'soft'}
-                      className="h-9"
+                      className="h-11"
                       onClick={() => {
                         setMode('double')
                         setCurrentStepIndex(
@@ -2423,7 +2476,7 @@ function ReaderPage() {
                     <Button
                       type="button"
                       variant={mode === 'scroll' ? 'default' : 'soft'}
-                      className="h-9"
+                      className="h-11"
                       onClick={() => {
                         setMode('scroll')
                         setCurrentPageIndex(currentTargetPageIndex)
@@ -2475,10 +2528,46 @@ function ReaderPage() {
                   </p>
                 ) : null}
 
+                {isTouchDevice ? (
+                  <div className="col-span-2 grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      variant={readingDirection === 'rtl' ? 'default' : 'soft'}
+                      className="h-11"
+                      onClick={() => setReadingDirection('rtl')}
+                    >
+                      RTL
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={readingDirection === 'ltr' ? 'default' : 'soft'}
+                      className="h-11"
+                      onClick={() => setReadingDirection('ltr')}
+                    >
+                      LTR
+                    </Button>
+                  </div>
+                ) : (
+                  <SelectField
+                    value={readingDirection}
+                    aria-label="Reading direction"
+                    onChange={(event) =>
+                      setReadingDirection(
+                        event.target.value === 'ltr' ? 'ltr' : 'rtl',
+                      )
+                    }
+                    className="h-11"
+                    options={[
+                      { value: 'rtl', label: 'Right to left' },
+                      { value: 'ltr', label: 'Left to right' },
+                    ]}
+                  />
+                )}
+
                 <Button
                   type="button"
                   variant={doublePageOffset ? 'default' : 'soft'}
-                  className="h-9 w-full px-3"
+                  className="h-11 w-full px-3"
                   onClick={() => setDoublePageOffset((value) => !value)}
                 >
                   Offset: {doublePageOffset ? 'On' : 'Off'}
@@ -2490,7 +2579,7 @@ function ReaderPage() {
                   onChange={(event) =>
                     setZoomPreset(event.target.value as ZoomPreset)
                   }
-                  className="h-9"
+                  className="h-11"
                   data-testid="zoom-select"
                   options={[
                     { value: 'fit-height', label: 'Fit to screen' },
@@ -2543,7 +2632,7 @@ function ReaderPage() {
                             params: { chapterId: nextId },
                           })
                         }}
-                        className={`h-9 min-w-0 ${isTouchDevice ? 'col-span-2' : ''}`}
+                        className={`h-11 min-w-0 ${isTouchDevice ? 'col-span-2' : ''}`}
                         options={orderedSeriesChapters.map((chapter) => ({
                           value: chapter.id,
                           label: `Chapter ${chapter.chapterNumber}`,
@@ -2563,18 +2652,22 @@ function ReaderPage() {
                   <span>
                     Page {currentTargetPageIndex + 1} of {pages.length}
                   </span>
-                  <RangeSlider
-                    min={0}
-                    max={scrubberMax}
-                    value={scrubberValue}
-                    onChange={(event) =>
-                      goToPage(Number.parseInt(event.target.value, 10))
-                    }
-                    className="mt-2 w-full accent-primary"
-                    style={{ transform: 'scaleX(-1)' }}
-                    data-testid="page-scrubber"
-                  />
-                </label>
+                <RangeSlider
+                  min={0}
+                  max={scrubberMax}
+                  value={scrubberValue}
+                  onChange={(event) =>
+                    goToPage(Number.parseInt(event.target.value, 10))
+                  }
+                  className="mt-2 w-full accent-primary"
+                  style={
+                    readingDirection === 'rtl'
+                      ? { transform: 'scaleX(-1)' }
+                      : undefined
+                  }
+                  data-testid="page-scrubber"
+                />
+              </label>
               </div>
 
               <details className="reader-settings-advanced mt-3 text-xs text-muted-foreground">
@@ -2587,7 +2680,7 @@ function ReaderPage() {
                       <Button
                         type="button"
                         variant={magnifierEnabled ? 'default' : 'soft'}
-                        className="h-9 w-full px-3"
+                        className="h-11 w-full px-3"
                         onClick={() => setMagnifierEnabled((value) => !value)}
                       >
                         Magnifier: {magnifierEnabled ? 'On' : 'Off'}
@@ -2595,7 +2688,7 @@ function ReaderPage() {
                       <Button
                         type="button"
                         variant={focusMode ? 'default' : 'soft'}
-                        className="h-9 w-full px-3"
+                        className="h-11 w-full px-3"
                         onClick={() => setFocusMode((value) => !value)}
                       >
                         Distraction-free mode: {focusMode ? 'On' : 'Off'}
@@ -2618,7 +2711,7 @@ function ReaderPage() {
                           ),
                         )
                       }
-                      className="mt-1 h-8"
+                      className="mt-1 min-h-11"
                     />
                   </label>
                   <label className="reader-settings-label">
@@ -2637,7 +2730,7 @@ function ReaderPage() {
                           ),
                         )
                       }
-                      className="mt-1 h-8"
+                      className="mt-1 min-h-11"
                     />
                   </label>
                   <label className="reader-settings-label">
@@ -2656,7 +2749,7 @@ function ReaderPage() {
                           ),
                         )
                       }
-                      className="mt-1 h-8"
+                      className="mt-1 min-h-11"
                     />
                   </label>
                   <label className="reader-settings-label">
@@ -2675,7 +2768,7 @@ function ReaderPage() {
                           ),
                         )
                       }
-                      className="mt-1 h-8"
+                      className="mt-1 min-h-11"
                     />
                   </label>
                   <label className="reader-settings-label">
@@ -2694,7 +2787,7 @@ function ReaderPage() {
                           ),
                         )
                       }
-                      className="mt-1 h-8"
+                      className="mt-1 min-h-11"
                     />
                   </label>
                   <label className="reader-settings-label">
@@ -2714,7 +2807,7 @@ function ReaderPage() {
                           ),
                         )
                       }
-                      className="mt-1 h-8"
+                      className="mt-1 min-h-11"
                     />
                   </label>
                   <label className="reader-settings-label">
@@ -2733,7 +2826,7 @@ function ReaderPage() {
                           ),
                         )
                       }
-                      className="mt-1 h-8"
+                      className="mt-1 min-h-11"
                     />
                   </label>
                   <label className="reader-settings-label">
@@ -2753,7 +2846,7 @@ function ReaderPage() {
                           ),
                         )
                       }
-                      className="mt-1 h-8"
+                      className="mt-1 min-h-11"
                     />
                   </label>
                 </div>
@@ -2841,11 +2934,11 @@ function ReaderPage() {
         mode === 'double' && !isTouchPortrait ? (
           <>
             <div className="pointer-events-none absolute ui-bottom-safe-offset ui-left-safe-offset z-20 text-[10px] font-medium text-white/55">
-              {rtlSpreadNumbers.left ?? ''}
+              {spreadNumbers.left ?? ''}
             </div>
-            {rtlSpreadNumbers.right ? (
+            {spreadNumbers.right ? (
               <div className="pointer-events-none absolute ui-bottom-safe-offset ui-right-safe-offset z-20 text-[10px] font-medium text-white/55">
-                {rtlSpreadNumbers.right}
+                {spreadNumbers.right}
               </div>
             ) : null}
           </>
@@ -2963,20 +3056,44 @@ function ReaderPage() {
             {!isTouchDevice &&
             !magnifierEnabled &&
             zoomPreset !== 'actual' ? (
-              <ReaderTapZone side="left" onActivate={goNext} />
+              <ReaderTapZone
+                side="left"
+                action={readingDirection === 'rtl' ? 'next' : 'previous'}
+                onActivate={
+                  readingDirection === 'rtl' ? goNext : goPrevious
+                }
+              />
             ) : null}
             {!isTouchDevice &&
             !magnifierEnabled &&
             zoomPreset !== 'actual' ? (
-              <ReaderTapZone side="right" onActivate={goPrevious} />
+              <ReaderTapZone
+                side="right"
+                action={readingDirection === 'rtl' ? 'previous' : 'next'}
+                onActivate={
+                  readingDirection === 'rtl' ? goPrevious : goNext
+                }
+              />
             ) : null}
             {!fullscreenActive &&
             showReaderChrome &&
             !isTouchDevice &&
             !sidebarOpen ? (
               <>
-                <ReaderEdgeArrowButton side="left" onActivate={goNext} />
-                <ReaderEdgeArrowButton side="right" onActivate={goPrevious} />
+                <ReaderEdgeArrowButton
+                  side="left"
+                  action={readingDirection === 'rtl' ? 'next' : 'previous'}
+                  onActivate={
+                    readingDirection === 'rtl' ? goNext : goPrevious
+                  }
+                />
+                <ReaderEdgeArrowButton
+                  side="right"
+                  action={readingDirection === 'rtl' ? 'previous' : 'next'}
+                  onActivate={
+                    readingDirection === 'rtl' ? goPrevious : goNext
+                  }
+                />
               </>
             ) : null}
             {fullscreenActive && showPageHud ? (

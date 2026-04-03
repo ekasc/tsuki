@@ -383,8 +383,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.5rem;
-    height: 2.5rem;
+    width: 2.75rem;
+    height: 2.75rem;
     border: 1px solid color-mix(in oklab, var(--border), transparent 22%);
     background: color-mix(in oklab, var(--surface) 92%, var(--bg) 8%);
     color: var(--text);
@@ -418,8 +418,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.5rem;
-    height: 2.5rem;
+    width: 2.75rem;
+    height: 2.75rem;
     border: 1px solid color-mix(in oklab, var(--border), transparent 22%);
     background: color-mix(in oklab, var(--surface) 92%, var(--bg) 8%);
     color: var(--text);
@@ -496,7 +496,7 @@
   .theme-dock-mode-button {
     border: 1px solid color-mix(in oklab, var(--border), transparent 38%);
     background: color-mix(in oklab, var(--surface) 90%, var(--bg) 10%);
-    min-height: 2rem;
+    min-height: 2.75rem;
     font-size: 0.75rem;
     font-weight: 600;
     color: var(--text-soft);
@@ -510,6 +510,14 @@
     border-color: color-mix(in oklab, var(--active), transparent 34%);
     background: color-mix(in oklab, var(--surface-soft) 70%, var(--active) 30%);
     color: var(--text);
+  }
+
+  .theme-dock-mode-button:focus-visible,
+  .theme-dock-theme-button:focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px color-mix(in oklab, var(--active), transparent 64%),
+      2px 2px 0 color-mix(in oklab, var(--shadow), transparent 25%);
   }
 
   .theme-dock-theme-list {
@@ -527,7 +535,7 @@
     gap: 0.45rem;
     border: 1px solid color-mix(in oklab, var(--border), transparent 38%);
     background: color-mix(in oklab, var(--surface) 90%, var(--bg) 10%);
-    min-height: 1.95rem;
+    min-height: 2.75rem;
     padding: 0.2rem 0.55rem;
     font-size: 0.76rem;
     font-weight: 600;
@@ -1080,8 +1088,8 @@
 
   .theme-support-trigger,
   .theme-dock-trigger {
-    width: 2.25rem;
-    height: 2.25rem;
+    width: 2.75rem;
+    height: 2.75rem;
   }
 
   .theme-dock-panel {

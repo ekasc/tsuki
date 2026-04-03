@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
 import type { ChapterPageManifest, ZoomPreset } from '#/lib/contracts'
@@ -10,6 +10,7 @@ interface ContinuousScrollProps {
   zoomPreset: ZoomPreset
   isFullscreen?: boolean
   resolveImageUrl?: (page: ChapterPageManifest) => string | undefined
+  onImageMeasure?: (pageIndex: number, width: number, height: number) => void
   onVisiblePageChange: (pageIndex: number) => void
 }
 
@@ -19,10 +20,17 @@ export function ContinuousScroll({
   zoomPreset,
   isFullscreen = false,
   resolveImageUrl,
+  onImageMeasure,
   onVisiblePageChange,
 }: ContinuousScrollProps) {
   const parentRef = useRef<HTMLDivElement>(null)
-  const [viewportWidth, setViewportWidth] = useState(720)
+  const [viewportSize, setViewportSize] = useState({
+    width: 720,
+    height: 960,
+  })
+  const [measuredHeights, setMeasuredHeights] = useState<Record<number, number>>(
+    {},
+  )
 
   useEffect(() => {
     const element = parentRef.current
@@ -34,7 +42,10 @@ export function ContinuousScroll({
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0]
       if (entry) {
-        setViewportWidth(Math.max(320, entry.contentRect.width))
+        setViewportSize({
+          width: Math.max(320, entry.contentRect.width),
+          height: Math.max(480, entry.contentRect.height),
+        })
       }
     })
 
@@ -45,31 +56,84 @@ export function ContinuousScroll({
     }
   }, [])
 
-  const heights = useMemo(
-    () =>
-      pages.map((page) => {
-        const safeAspect = page.aspect > 0 ? page.aspect : 0.67
-        return Math.max(240, viewportWidth / safeAspect)
-      }),
-    [pages, viewportWidth],
+  useEffect(() => {
+    setMeasuredHeights({})
+  }, [chapterId])
+
+  const estimatePageHeight = useCallback(
+    (index: number) => {
+      const measuredHeight = measuredHeights[index]
+      if (typeof measuredHeight === 'number') {
+        return measuredHeight
+      }
+
+      const page = pages[index]
+      if (!page) {
+        return viewportSize.height
+      }
+
+      const safeAspect = page.aspect > 0 ? page.aspect : 0.67
+      return Math.max(240, viewportSize.width / safeAspect)
+    },
+    [measuredHeights, pages, viewportSize.height, viewportSize.width],
   )
 
   const virtualizer = useVirtualizer({
     count: pages.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: (index) => heights[index] ?? 460,
-    overscan: 2,
+    estimateSize: estimatePageHeight,
+    overscan: 3,
   })
 
   const virtualItems = virtualizer.getVirtualItems()
 
   useEffect(() => {
-    const firstItem = virtualItems[0]
+    virtualizer.measure()
+  }, [measuredHeights, viewportSize.width, virtualizer])
 
-    if (firstItem) {
-      onVisiblePageChange(firstItem.index)
+  const handleImageMeasure = useCallback(
+    (pageIndex: number, width: number, height: number) => {
+      if (width <= 0 || height <= 0) {
+        return
+      }
+
+      const safeAspect = width / Math.max(height, 1)
+      const nextHeight = Math.max(240, viewportSize.width / safeAspect)
+
+      setMeasuredHeights((current) => {
+        if (current[pageIndex] === nextHeight) {
+          return current
+        }
+
+        return {
+          ...current,
+          [pageIndex]: nextHeight,
+        }
+      })
+
+      onImageMeasure?.(pageIndex, width, height)
+    },
+    [onImageMeasure, viewportSize.width],
+  )
+
+  useEffect(() => {
+    if (virtualItems.length === 0) {
+      return
     }
-  }, [onVisiblePageChange, virtualItems])
+
+    const scrollOffset = virtualizer.scrollOffset ?? 0
+    const viewportMidpoint = scrollOffset + viewportSize.height * 0.5
+    const mostVisibleItem = virtualItems.reduce((closest, item) => {
+      const itemMidpoint = item.start + item.size * 0.5
+      const currentDistance = Math.abs(itemMidpoint - viewportMidpoint)
+      const closestMidpoint = closest.start + closest.size * 0.5
+      const closestDistance = Math.abs(closestMidpoint - viewportMidpoint)
+
+      return currentDistance < closestDistance ? item : closest
+    })
+
+    onVisiblePageChange(mostVisibleItem.index)
+  }, [onVisiblePageChange, viewportSize.height, virtualItems, virtualizer.scrollOffset])
 
   return (
     <div
@@ -90,6 +154,8 @@ export function ContinuousScroll({
           return (
             <div
               key={item.key}
+              ref={virtualizer.measureElement}
+              data-index={item.index}
               style={{
                 position: 'absolute',
                 top: 0,
@@ -104,6 +170,8 @@ export function ContinuousScroll({
                 unit={{ type: 'page', pageIndex: page.pageIndex }}
                 imageUrl={resolveImageUrl?.(page)}
                 zoomPreset={zoomPreset}
+                loading="eager"
+                onImageMeasure={handleImageMeasure}
                 testId="scroll-page-container"
               />
             </div>

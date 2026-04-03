@@ -5,22 +5,15 @@ import { BookOpenText, Coffee, Palette } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { useDeviceProfile } from '#/hooks/use-device-profile'
-
-const DEFAULT_SUPPORT_URL = 'https://www.buymeacoffee.com/'
-
-type ThemePaletteMode = 'classic' | 'paper' | 'sakura' | 'ocean' | 'matcha'
-type ThemeDisplayMode = 'light' | 'dark'
-type ThemeMode =
-  | 'light'
-  | 'dark'
-  | 'paper'
-  | 'paper-dark'
-  | 'sakura'
-  | 'sakura-dark'
-  | 'ocean'
-  | 'ocean-dark'
-  | 'matcha'
-  | 'matcha-dark'
+import {
+  LEGACY_THEME_STORAGE_KEY,
+  isThemeMode,
+  type ThemeDisplayMode,
+  type ThemeMode,
+  type ThemePaletteMode,
+  THEME_COLOR_BY_MODE,
+  THEME_STORAGE_KEY,
+} from '#/lib/theme'
 
 const DISPLAY_MODE_OPTIONS: Array<{ value: ThemeDisplayMode; label: string }> =
   [
@@ -74,34 +67,6 @@ function formatThemeModeLabel(
   return `${paletteLabel} · ${displayMode === 'dark' ? 'Dark' : 'Light'}`
 }
 
-const THEME_COLOR_BY_MODE: Record<ThemeMode, string> = {
-  light: '#1d140d',
-  dark: '#1c1823',
-  paper: '#181715',
-  'paper-dark': '#201c19',
-  sakura: '#3d1f31',
-  'sakura-dark': '#28131f',
-  ocean: '#162331',
-  'ocean-dark': '#102230',
-  matcha: '#22301d',
-  'matcha-dark': '#1a2616',
-}
-
-function isThemeMode(value: string | undefined): value is ThemeMode {
-  return (
-    value === 'light' ||
-    value === 'dark' ||
-    value === 'paper' ||
-    value === 'paper-dark' ||
-    value === 'sakura' ||
-    value === 'sakura-dark' ||
-    value === 'ocean' ||
-    value === 'ocean-dark' ||
-    value === 'matcha' ||
-    value === 'matcha-dark'
-  )
-}
-
 function resolveThemeMode(
   palette: ThemePaletteMode,
   displayMode: ThemeDisplayMode,
@@ -141,22 +106,18 @@ function mapPaletteToLegacyLightTheme(
   return value === 'classic' ? 'light' : value
 }
 
-function resolveSupportUrl(): string {
-  const configured = import.meta.env.VITE_SUPPORT_URL?.trim()
-  if (configured && configured.length > 0) {
-    return configured
-  }
-
-  return DEFAULT_SUPPORT_URL
-}
-
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  supportUrl,
+}: {
+  children: React.ReactNode
+  supportUrl: string
+}) {
   const currentYear = new Date().getFullYear()
   const { theme, resolvedTheme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const [themeDockOpen, setThemeDockOpen] = useState(false)
   const themeDockRef = useRef<HTMLDivElement | null>(null)
-  const supportUrl = resolveSupportUrl()
   const { platform, formFactor, isStandalonePwa } = useDeviceProfile()
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
@@ -172,13 +133,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const nextTheme = window.localStorage.getItem('tsuki-theme-mode.v1')
+      const nextTheme =
+        window.localStorage.getItem(THEME_STORAGE_KEY) ??
+        window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY)
       const nextThemeValue = nextTheme ?? undefined
 
       if (!nextThemeValue) {
-        const legacyTheme = window.localStorage.getItem('suki-theme-mode.v1')
+        const legacyTheme = window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY)
         if (legacyTheme) {
-          window.localStorage.setItem('tsuki-theme-mode.v1', legacyTheme)
+          window.localStorage.setItem(THEME_STORAGE_KEY, legacyTheme)
         }
       }
     }
@@ -257,6 +220,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       'content',
       THEME_COLOR_BY_MODE[selectedTheme] ?? THEME_COLOR_BY_MODE.light,
     )
+
+    document.documentElement.style.colorScheme =
+      selectedTheme.endsWith('-dark') || selectedTheme === 'dark'
+        ? 'dark'
+        : 'light'
   }, [selectedTheme])
 
   const switchDisplayMode = (mode: ThemeDisplayMode) => {
@@ -269,7 +237,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   if (isReaderRoute) {
-    return <>{children}</>
+    return <main id="main-content">{children}</main>
   }
 
   return (
@@ -329,12 +297,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </div>
 
                   <p className="theme-dock-heading mt-3">Theme</p>
-                  <ul className="theme-dock-theme-list">
+                  <ul
+                    className="theme-dock-theme-list"
+                    role="radiogroup"
+                    aria-label="Theme palette"
+                  >
                     {THEME_OPTIONS.map((option) => (
                       <li key={option.value}>
                         <button
                           type="button"
                           className="theme-dock-theme-button"
+                          role="radio"
+                          aria-checked={selectedThemePalette === option.value}
                           data-active={selectedThemePalette === option.value}
                           onClick={() => switchThemePalette(option.value)}
                         >

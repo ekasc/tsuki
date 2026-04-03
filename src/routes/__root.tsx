@@ -10,11 +10,13 @@ import appCss from '../styles.css?url'
 import { AppShell } from '#/components/AppShell'
 import { ErrorBoundary } from '#/components/ErrorBoundary'
 import { absoluteUrl, DEFAULT_OG_IMAGE_PATH, SITE_URL } from '#/lib/seo'
+import { getThemeBootstrapScript, THEME_COLOR_BY_MODE } from '#/lib/theme'
 import type { AppRouterContext } from '#/lib/router-context'
 
 const TSUKI_DEFAULT_TITLE = 'Tsuki reader'
 const TSUKI_DEFAULT_DESCRIPTION =
   'Read manga online in a fast, old-school reader with right-to-left paging, smooth navigation, and no clutter.'
+const TSUKI_DEFAULT_SUPPORT_URL = 'https://www.buymeacoffee.com/'
 const TSUKI_JSON_LD = [
   {
     '@context': 'https://schema.org',
@@ -36,6 +38,12 @@ const TSUKI_JSON_LD = [
 ]
 
 export const Route = createRootRouteWithContext<AppRouterContext>()({
+  loader: () => ({
+    supportUrl:
+      process.env.VITE_SUPPORT_URL?.trim() ||
+      import.meta.env.VITE_SUPPORT_URL?.trim() ||
+      TSUKI_DEFAULT_SUPPORT_URL,
+  }),
   head: () => ({
     meta: [
       { charSet: 'utf-8' },
@@ -54,8 +62,7 @@ export const Route = createRootRouteWithContext<AppRouterContext>()({
       { name: 'application-name', content: TSUKI_DEFAULT_TITLE },
       { name: 'apple-mobile-web-app-title', content: TSUKI_DEFAULT_TITLE },
       { name: 'mobile-web-app-capable', content: 'yes' },
-      { name: 'theme-color', content: '#1d140d' },
-      { name: 'apple-mobile-web-app-capable', content: 'yes' },
+      { name: 'theme-color', content: THEME_COLOR_BY_MODE.light },
       {
         name: 'apple-mobile-web-app-status-bar-style',
         content: 'black-translucent',
@@ -126,6 +133,9 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <head>
         <HeadContent />
         <script
+          dangerouslySetInnerHTML={{ __html: getThemeBootstrapScript() }}
+        />
+        <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(TSUKI_JSON_LD) }}
         />
@@ -142,6 +152,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 }
 
 function RootLayout() {
+  const { supportUrl } = Route.useLoaderData()
+
   return (
     <ThemeProvider
       attribute="data-theme"
@@ -162,7 +174,7 @@ function RootLayout() {
       ]}
       disableTransitionOnChange
     >
-      <AppShell>
+      <AppShell supportUrl={supportUrl}>
         <ErrorBoundary>
           <Outlet />
         </ErrorBoundary>

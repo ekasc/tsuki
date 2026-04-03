@@ -133,11 +133,32 @@ test('desktop tap zones disable while magnifier is enabled', async ({ page }) =>
   await page.getByRole('combobox').first().selectOption('single')
   await rewindToStart(page)
 
-  await expect(page.getByLabel('left-zone')).toHaveCount(1)
-  await expect(page.getByLabel('right-zone')).toHaveCount(1)
+  await expect(page.getByLabel('Next page tap zone')).toHaveCount(1)
+  await expect(page.getByLabel('Previous page tap zone')).toHaveCount(1)
 
   await page.keyboard.press('KeyZ')
 
-  await expect(page.getByLabel('left-zone')).toHaveCount(0)
-  await expect(page.getByLabel('right-zone')).toHaveCount(0)
+  await expect(page.getByLabel('Next page tap zone')).toHaveCount(0)
+  await expect(page.getByLabel('Previous page tap zone')).toHaveCount(0)
+})
+
+test('LTR mode flips keyboard arrow direction', async ({ page }) => {
+  await page.goto('/')
+  await page.evaluate(() => localStorage.removeItem('tsuki-history.v1'))
+  await openDemoSeries(page)
+  await page
+    .getByRole('link', { name: /Chapter/i })
+    .first()
+    .click()
+
+  await page.mouse.move(100, 100)
+  await page.getByRole('combobox').first().selectOption('single')
+  await rewindToStart(page)
+  await page.getByLabel('Reading direction').selectOption('ltr')
+
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByTestId('position-label')).toHaveText(/^Page 2 \/ \d+$/)
+
+  await page.keyboard.press('ArrowLeft')
+  await expect(page.getByTestId('position-label')).toHaveText(/^Page 1 \/ \d+$/)
 })
