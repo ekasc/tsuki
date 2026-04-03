@@ -62,6 +62,7 @@ export const Route = createRootRouteWithContext<AppRouterContext>()({
       { name: 'application-name', content: TSUKI_DEFAULT_TITLE },
       { name: 'apple-mobile-web-app-title', content: TSUKI_DEFAULT_TITLE },
       { name: 'mobile-web-app-capable', content: 'yes' },
+      { name: 'apple-mobile-web-app-capable', content: 'yes' },
       { name: 'theme-color', content: THEME_COLOR_BY_MODE.light },
       {
         name: 'apple-mobile-web-app-status-bar-style',
