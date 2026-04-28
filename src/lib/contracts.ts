@@ -1,12 +1,12 @@
 import type { RemoteProvider } from './remote-provider'
 
-export type ConnectorSource = 'demo' | 'local-upload' | 'custom-stub'
+export type SeriesSource = 'demo' | 'local-upload'
 
 export interface LibrarySeries {
   id: string
   title: string
   description: string | null
-  source: ConnectorSource
+  source: SeriesSource
   chapterCount: number
   coverChapterId: string | null
   coverPageIndex: number | null
@@ -24,7 +24,7 @@ export interface SeriesDetail {
   id: string
   title: string
   description: string | null
-  source: ConnectorSource
+  source: SeriesSource
   chapters: SeriesChapterSummary[]
 }
 

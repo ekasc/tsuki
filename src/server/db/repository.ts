@@ -7,6 +7,7 @@ import type {
   ChapterProgress,
   LibrarySeries,
   SeriesDetail,
+  SeriesSource,
   ZoomPreset,
 } from '#/lib/contracts'
 
@@ -17,7 +18,7 @@ interface CreateSeriesInput {
   id?: string
   title: string
   description: string | null
-  source: 'demo' | 'local-upload' | 'custom-stub'
+  source: SeriesSource
 }
 
 interface CreateChapterInput {

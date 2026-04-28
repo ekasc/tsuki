@@ -36,6 +36,62 @@ function readForceRefreshQuery(request: Request): boolean {
   return url.searchParams.get('force') === '1'
 }
 
+interface ProxyTraceContext {
+  route: string
+  metricName: string
+  request: Request
+  requestPath: string
+  requestId: string
+  provider: string
+  prefetch: boolean
+  cachePolicy: string
+  startedAt: number
+}
+
+async function traceProxy<T>(
+  operation: () => Promise<T>,
+  ctx: ProxyTraceContext,
+): Promise<T> {
+  try {
+    const result = await operation()
+    const durationMs = Date.now() - ctx.startedAt
+    const base = {
+      route: ctx.route,
+      requestId: ctx.requestId,
+      method: ctx.request.method,
+      path: ctx.requestPath,
+      provider: ctx.provider,
+      status: 200,
+      durationMs,
+      prefetch: ctx.prefetch,
+      cachePolicy: ctx.cachePolicy,
+      outcome: 'success' as const,
+    }
+    logProxyEvent(`${ctx.metricName}.success`, base)
+    await writeProxyMetric(ctx.metricName, base)
+    return result
+  } catch (error) {
+    const durationMs = Date.now() - ctx.startedAt
+    const status = statusCodeFromError(error)
+    const base = {
+      route: ctx.route,
+      requestId: ctx.requestId,
+      method: ctx.request.method,
+      path: ctx.requestPath,
+      provider: ctx.provider,
+      status,
+      durationMs,
+      prefetch: ctx.prefetch,
+      cachePolicy: ctx.cachePolicy,
+      outcome: 'error' as const,
+      errorMessage: errorMessageFromUnknown(error),
+    }
+    logProxyEvent(`${ctx.metricName}.error`, base)
+    await writeProxyMetric(ctx.metricName, base)
+    throw error
+  }
+}
+
 export async function getSeriesDtoForRequest(request: Request) {
   const startedAt = Date.now()
   const requestPath = new URL(request.url).pathname
@@ -47,87 +103,39 @@ export async function getSeriesDtoForRequest(request: Request) {
     await enforceWeebcentralForceRefreshRateLimit(request, proxyConfig)
   }
   const input = readInputQuery(request)
-
   const provider = detectRemoteProviderFromInput(input)
-
-  try {
-    const payload =
-      provider === 'mangadex'
-        ? await getMangaDexSeries(input, proxyConfig, {
-            bypassCache: forceRefresh,
-            telemetry: {
-              route: '/v1/weebcentral/series',
-              requestId,
-              method: request.method,
-              path: requestPath,
-              provider,
-              prefetch,
-            },
-          })
-        : await getWeebcentralSeries(input, proxyConfig, {
-            bypassCache: forceRefresh,
-            telemetry: {
-              route: '/v1/weebcentral/series',
-              requestId,
-              method: request.method,
-              path: requestPath,
-              provider,
-              prefetch,
-            },
-          })
-
-    const durationMs = Date.now() - startedAt
-    logProxyEvent('proxy.series.success', {
-      route: '/v1/weebcentral/series',
-      requestId,
-      method: request.method,
-      path: requestPath,
-      provider,
-      status: 200,
-      durationMs,
-      prefetch,
-      cachePolicy: forceRefresh ? 'bypass' : 'metadata',
-      outcome: 'success',
-    })
-    await writeProxyMetric('proxy.series', {
-      route: '/v1/weebcentral/series',
-      provider,
-      status: 200,
-      durationMs,
-      prefetch,
-      cachePolicy: forceRefresh ? 'bypass' : 'metadata',
-      outcome: 'success',
-    })
-
-    return payload
-  } catch (error) {
-    const durationMs = Date.now() - startedAt
-    const status = statusCodeFromError(error)
-    logProxyEvent('proxy.series.error', {
-      route: '/v1/weebcentral/series',
-      requestId,
-      method: request.method,
-      path: requestPath,
-      provider,
-      status,
-      durationMs,
-      prefetch,
-      cachePolicy: forceRefresh ? 'bypass' : 'metadata',
-      outcome: 'error',
-      errorMessage: errorMessageFromUnknown(error),
-    })
-    await writeProxyMetric('proxy.series', {
-      route: '/v1/weebcentral/series',
-      provider,
-      status,
-      durationMs,
-      prefetch,
-      cachePolicy: forceRefresh ? 'bypass' : 'metadata',
-      outcome: 'error',
-      errorMessage: errorMessageFromUnknown(error),
-    })
-    throw error
+  const telemetry = {
+    route: '/v1/weebcentral/series',
+    requestId,
+    method: request.method,
+    path: requestPath,
+    provider,
+    prefetch,
   }
+
+  return traceProxy(
+    () =>
+      provider === 'mangadex'
+        ? getMangaDexSeries(input, proxyConfig, {
+            bypassCache: forceRefresh,
+            telemetry,
+          })
+        : getWeebcentralSeries(input, proxyConfig, {
+            bypassCache: forceRefresh,
+            telemetry,
+          }),
+    {
+      route: '/v1/weebcentral/series',
+      metricName: 'proxy.series',
+      request,
+      requestPath,
+      requestId,
+      provider,
+      prefetch,
+      cachePolicy: forceRefresh ? 'bypass' : 'metadata',
+      startedAt,
+    },
+  )
 }
 
 export async function getChapterDtoForRequest(request: Request) {
@@ -137,83 +145,31 @@ export async function getChapterDtoForRequest(request: Request) {
   const prefetch = isPrefetchRequest(request)
   await enforceWeebcentralApiRateLimit(request, proxyConfig)
   const input = readInputQuery(request)
-
   const provider = detectRemoteProviderFromInput(input)
-
-  try {
-    const payload =
-      provider === 'mangadex'
-        ? await getMangaDexChapter(input, proxyConfig, {
-            telemetry: {
-              route: '/v1/weebcentral/chapter',
-              requestId,
-              method: request.method,
-              path: requestPath,
-              provider,
-              prefetch,
-            },
-          })
-        : await getWeebcentralChapter(input, proxyConfig, {
-            telemetry: {
-              route: '/v1/weebcentral/chapter',
-              requestId,
-              method: request.method,
-              path: requestPath,
-              provider,
-              prefetch,
-            },
-          })
-
-    const durationMs = Date.now() - startedAt
-    logProxyEvent('proxy.chapter.success', {
-      route: '/v1/weebcentral/chapter',
-      requestId,
-      method: request.method,
-      path: requestPath,
-      provider,
-      status: 200,
-      durationMs,
-      prefetch,
-      cachePolicy: 'metadata',
-      outcome: 'success',
-    })
-    await writeProxyMetric('proxy.chapter', {
-      route: '/v1/weebcentral/chapter',
-      provider,
-      status: 200,
-      durationMs,
-      prefetch,
-      cachePolicy: 'metadata',
-      outcome: 'success',
-    })
-
-    return payload
-  } catch (error) {
-    const durationMs = Date.now() - startedAt
-    const status = statusCodeFromError(error)
-    logProxyEvent('proxy.chapter.error', {
-      route: '/v1/weebcentral/chapter',
-      requestId,
-      method: request.method,
-      path: requestPath,
-      provider,
-      status,
-      durationMs,
-      prefetch,
-      cachePolicy: 'metadata',
-      outcome: 'error',
-      errorMessage: errorMessageFromUnknown(error),
-    })
-    await writeProxyMetric('proxy.chapter', {
-      route: '/v1/weebcentral/chapter',
-      provider,
-      status,
-      durationMs,
-      prefetch,
-      cachePolicy: 'metadata',
-      outcome: 'error',
-      errorMessage: errorMessageFromUnknown(error),
-    })
-    throw error
+  const telemetry = {
+    route: '/v1/weebcentral/chapter',
+    requestId,
+    method: request.method,
+    path: requestPath,
+    provider,
+    prefetch,
   }
+
+  return traceProxy(
+    () =>
+      provider === 'mangadex'
+        ? getMangaDexChapter(input, proxyConfig, { telemetry })
+        : getWeebcentralChapter(input, proxyConfig, { telemetry }),
+    {
+      route: '/v1/weebcentral/chapter',
+      metricName: 'proxy.chapter',
+      request,
+      requestPath,
+      requestId,
+      provider,
+      prefetch,
+      cachePolicy: 'metadata',
+      startedAt,
+    },
+  )
 }
