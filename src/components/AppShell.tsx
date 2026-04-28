@@ -139,7 +139,9 @@ export function AppShell({
       const nextThemeValue = nextTheme ?? undefined
 
       if (!nextThemeValue) {
-        const legacyTheme = window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY)
+        const legacyTheme = window.localStorage.getItem(
+          LEGACY_THEME_STORAGE_KEY,
+        )
         if (legacyTheme) {
           window.localStorage.setItem(THEME_STORAGE_KEY, legacyTheme)
         }
@@ -242,17 +244,18 @@ export function AppShell({
 
   return (
     <div className="app-canvas min-h-screen bg-background pb-24 text-foreground md:pb-10">
-      <header className="ui-shell-top-safe mx-auto max-w-7xl px-4 md:px-8">
-        <div className="exp-toolbar top-toolbar animate-enter flex items-center justify-between gap-3">
+      <header className="ui-shell-top-safe mx-auto max-w-3xl px-4 md:px-8">
+        <div className="exp-toolbar flex items-center justify-between gap-3">
           <Link
             to="/"
-            className="group flex items-center gap-2 self-start rounded px-1 py-1 sm:self-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="vt-logo group flex items-center gap-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-koten"
           >
-            <span className="inline-flex size-8 items-center justify-center border border-border bg-surface-soft text-primary">
-              <BookOpenText className="size-4" />
-            </span>
-            <span className="manga-title text-sm font-semibold tracking-tight">
-              Tsuki Reader
+            <BookOpenText
+              className="size-[18px] text-[var(--koten)]"
+              aria-hidden
+            />
+            <span className="manga-title text-[15px] font-extrabold tracking-tight">
+              Tsuki
             </span>
           </Link>
 
@@ -275,7 +278,9 @@ export function AppShell({
                   className="theme-dock-panel animate-enter"
                 >
                   <p className="theme-dock-heading">Mode</p>
-                  <p className="theme-dock-subline">Reading mood: {selectedThemeLabel}</p>
+                  <p className="theme-dock-subline">
+                    Reading mood: {selectedThemeLabel}
+                  </p>
                   <div
                     className="theme-dock-mode-row"
                     role="radiogroup"
@@ -333,7 +338,9 @@ export function AppShell({
               <button
                 type="button"
                 className="theme-dock-trigger"
-                aria-label={themeDockOpen ? 'Close theme controls' : 'Open theme controls'}
+                aria-label={
+                  themeDockOpen ? 'Close theme controls' : 'Open theme controls'
+                }
                 aria-expanded={themeDockOpen}
                 aria-controls="theme-dock-panel"
                 data-open={themeDockOpen}
@@ -348,12 +355,12 @@ export function AppShell({
 
       <main
         id="main-content"
-        className="ui-shell-bottom-safe mx-auto mt-4 max-w-7xl px-4 md:px-8"
+        className="ui-shell-bottom-safe mx-auto mt-4 max-w-3xl px-4 md:px-8"
       >
         {children}
       </main>
 
-      <footer className="ui-shell-bottom-safe mx-auto mt-6 max-w-7xl px-4 pb-6 text-xs text-muted-foreground md:px-8">
+      <footer className="ui-shell-bottom-safe mx-auto mt-6 max-w-3xl px-4 pb-6 text-xs text-muted-foreground md:px-8">
         <div className="border-t border-border/60 pt-3">
           <p>
             Tsuki is an image proxy/reader UI. This website does not host manga
@@ -380,7 +387,9 @@ export function AppShell({
             </a>
             .
           </p>
-          <p className="mt-1">© {currentYear} Tsuki Reader. All rights reserved.</p>
+          <p className="mt-1">
+            © {currentYear} Tsuki Reader. All rights reserved.
+          </p>
         </div>
       </footer>
     </div>

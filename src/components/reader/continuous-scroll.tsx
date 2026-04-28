@@ -28,9 +28,9 @@ export function ContinuousScroll({
     width: 720,
     height: 960,
   })
-  const [measuredHeights, setMeasuredHeights] = useState<Record<number, number>>(
-    {},
-  )
+  const [measuredHeights, setMeasuredHeights] = useState<
+    Record<number, number>
+  >({})
 
   useEffect(() => {
     const element = parentRef.current
@@ -133,12 +133,18 @@ export function ContinuousScroll({
     })
 
     onVisiblePageChange(mostVisibleItem.index)
-  }, [onVisiblePageChange, viewportSize.height, virtualItems, virtualizer.scrollOffset])
+  }, [
+    onVisiblePageChange,
+    viewportSize.height,
+    virtualItems,
+    virtualizer.scrollOffset,
+  ])
 
   return (
     <div
       ref={parentRef}
       className={`${isFullscreen ? 'h-[100dvh]' : 'h-[72vh]'} overflow-auto bg-black`}
+      style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}
       data-testid="reader-scroll-container"
     >
       <div

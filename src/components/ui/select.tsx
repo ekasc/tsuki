@@ -2,8 +2,7 @@ import type * as React from 'react'
 
 import { cn } from '#/lib/utils'
 
-export interface SelectProps
-  extends React.SelectHTMLAttributes<HTMLSelectElement> {}
+export interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {}
 
 export interface SelectOption {
   value: string
@@ -18,7 +17,7 @@ export function Select({ className, children, ...props }: SelectProps) {
   return (
     <select
       className={cn(
-        'h-11 w-full border-2 border-border bg-surface px-3 text-sm text-foreground outline-none transition-colors duration-150 hover:bg-surface-soft focus:border-ring focus-visible:ring-2 focus-visible:ring-ring/30',
+        'h-10 w-full border border-border bg-surface px-3 text-sm text-foreground outline-none transition-colors duration-150 hover:bg-washi focus:border-koten/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-koten/40',
         className,
       )}
       {...props}

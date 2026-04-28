@@ -51,8 +51,8 @@ export function ReaderEdgeArrowButton({
       size="icon"
       className={
         side === 'left'
-          ? 'absolute left-4 top-1/2 z-20 inline-flex size-12 -translate-y-1/2 border-2 border-border-strong bg-surface p-0 text-foreground shadow-[2px_2px_0_var(--shadow)] hover:bg-surface-soft md:left-5 md:size-14'
-          : 'absolute right-4 top-1/2 z-20 inline-flex size-12 -translate-y-1/2 border-2 border-border-strong bg-surface p-0 text-foreground shadow-[2px_2px_0_var(--shadow)] hover:bg-surface-soft md:right-5 md:size-14'
+          ? 'absolute left-4 top-1/2 z-20 inline-flex size-12 -translate-y-1/2 border border-border bg-surface p-0 text-foreground hover:bg-washi md:left-5 md:size-14'
+          : 'absolute right-4 top-1/2 z-20 inline-flex size-12 -translate-y-1/2 border border-border bg-surface p-0 text-foreground hover:bg-washi md:right-5 md:size-14'
       }
       onClick={onActivate}
       onMouseDown={(event) => event.preventDefault()}

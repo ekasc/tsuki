@@ -29,6 +29,11 @@
 
   --color-ring: var(--active);
 
+  --color-koten: var(--koten);
+  --color-sumi: var(--sumi);
+  --color-washi: var(--washi);
+  --color-shelf: var(--shelf);
+
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
 
@@ -39,6 +44,23 @@
 }
 
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *, [data-theme='paper-dark'], [data-theme='paper-dark'] *, [data-theme='sakura-dark'], [data-theme='sakura-dark'] *, [data-theme='ocean-dark'], [data-theme='ocean-dark'] *, [data-theme='matcha-dark'], [data-theme='matcha-dark'] *));
+
+/*
+  ──────────────────────────────────────────────
+  Tsuki — Japanese bookshop aesthetic
+  ──────────────────────────────────────────────
+  Not a dashboard. Not a card stack.
+  A warm shelf with good light and clear type.
+
+  Design principles:
+  1. Typography carries hierarchy — headings are big, body breathes
+  2. Whitespace creates rooms, not boxes
+  3. Borders and containers are for interactive things only (inputs, cards, popovers)
+  4. Accent color (koten) is reserved for: primary CTAs, active/focus, section stamps
+  5. Hover = warmth. Surface shifts to washi. Text shifts to koten. No shadows, no lifts.
+  6. The shelf edge (manga-divider) is a physical wooden divider between sections
+  7. Cover art is large and prominent — manga covers are the hook of the medium
+*/
 
 :root {
   --bg: #efe6d3;
@@ -56,6 +78,10 @@
   --destructive: #b3261e;
   --destructive-foreground: #fff7f5;
   --shadow: rgba(36, 24, 12, 0.44);
+  --koten: #ac1d12;
+  --sumi: #17120d;
+  --washi: #f6efdd;
+  --shelf: #d4c4a6;
   --radius: 2px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
@@ -79,6 +105,10 @@
   --destructive: #d98478;
   --destructive-foreground: #21181c;
   --shadow: rgba(0, 0, 0, 0.42);
+  --koten: #c86b5d;
+  --sumi: #e8e3d8;
+  --washi: #191620;
+  --shelf: #3d3548;
 }
 
 :root[data-theme='paper'] {
@@ -97,6 +127,10 @@
   --destructive: #a32a22;
   --destructive-foreground: #fff9f8;
   --shadow: rgba(29, 29, 27, 0.36);
+  --koten: #9d1d14;
+  --sumi: #1d1d1b;
+  --washi: #f8f5ee;
+  --shelf: #d6d0c5;
 }
 
 :root[data-theme='paper-dark'] {
@@ -115,6 +149,10 @@
   --destructive: #d08d7a;
   --destructive-foreground: #211716;
   --shadow: rgba(0, 0, 0, 0.42);
+  --koten: #bf7860;
+  --sumi: #ece7da;
+  --washi: #181614;
+  --shelf: #3a3430;
 }
 
 :root[data-theme='sakura'] {
@@ -133,6 +171,10 @@
   --destructive: #b93a48;
   --destructive-foreground: #fff6f7;
   --shadow: rgba(55, 26, 40, 0.36);
+  --koten: #ad3f68;
+  --sumi: #21151b;
+  --washi: #fbf1f4;
+  --shelf: #d9bfc8;
 }
 
 :root[data-theme='sakura-dark'] {
@@ -151,6 +193,10 @@
   --destructive: #d4878b;
   --destructive-foreground: #24151a;
   --shadow: rgba(0, 0, 0, 0.44);
+  --koten: #c4789d;
+  --sumi: #f0dfe8;
+  --washi: #1f151c;
+  --shelf: #42304a;
 }
 
 :root[data-theme='ocean'] {
@@ -169,6 +215,10 @@
   --destructive: #aa3a46;
   --destructive-foreground: #fff5f5;
   --shadow: rgba(15, 34, 48, 0.34);
+  --koten: #1e5d8a;
+  --sumi: #111c26;
+  --washi: #e8f1f8;
+  --shelf: #b4c8d8;
 }
 
 :root[data-theme='ocean-dark'] {
@@ -187,6 +237,10 @@
   --destructive: #d9868c;
   --destructive-foreground: #21171a;
   --shadow: rgba(0, 0, 0, 0.42);
+  --koten: #65a5cf;
+  --sumi: #ddeaf3;
+  --washi: #12202c;
+  --shelf: #2d4858;
 }
 
 :root[data-theme='matcha'] {
@@ -205,6 +259,10 @@
   --destructive: #985133;
   --destructive-foreground: #fff8f3;
   --shadow: rgba(25, 35, 20, 0.34);
+  --koten: #5b7d3a;
+  --sumi: #171f14;
+  --washi: #f1f4e6;
+  --shelf: #c4d0aa;
 }
 
 :root[data-theme='matcha-dark'] {
@@ -223,7 +281,13 @@
   --destructive: #cc956e;
   --destructive-foreground: #241b16;
   --shadow: rgba(0, 0, 0, 0.42);
+  --koten: #98b46a;
+  --sumi: #e2ebd8;
+  --washi: #172116;
+  --shelf: #3a4e36;
 }
+
+/* ── Base ── */
 
 @layer base {
   * {
@@ -241,8 +305,14 @@
     margin: 0;
     @apply bg-background text-foreground antialiased;
     font-family:
-      'Yu Gothic UI', 'Hiragino Kaku Gothic ProN', 'Segoe UI', sans-serif;
+      'DM Sans',
+      'Segoe UI',
+      'Helvetica Neue',
+      system-ui,
+      -apple-system,
+      sans-serif;
     background: var(--bg);
+    -webkit-font-smoothing: antialiased;
   }
 
   :is(
@@ -263,7 +333,14 @@
   h5,
   h6 {
     font-family: 'Yu Mincho', 'Hiragino Mincho ProN', 'Times New Roman', serif;
-    letter-spacing: -0.01em;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  h1 {
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
   }
 
   a {
@@ -277,7 +354,6 @@
     top: 0.75rem;
     z-index: 60;
     transform: translateY(-180%);
-    border: 2px solid var(--border-strong);
     background: var(--surface);
     color: var(--text);
     padding: 0.5rem 0.75rem;
@@ -287,10 +363,8 @@
 
   .skip-link:focus-visible {
     transform: translateY(0);
-    outline: none;
-    box-shadow:
-      0 0 0 2px color-mix(in oklab, var(--active), transparent 70%),
-      2px 2px 0 color-mix(in oklab, var(--shadow), transparent 35%);
+    outline: 2px solid var(--koten);
+    outline-offset: 2px;
   }
 
   button,
@@ -300,6 +374,8 @@
     font: inherit;
   }
 }
+
+/* ── Components ── */
 
 @layer components {
   .app-canvas {
@@ -315,55 +391,26 @@
     padding-bottom: max(1.25rem, calc(var(--safe-bottom) + 0.75rem));
   }
 
-  .app-canvas::before {
-    content: none;
-    position: fixed;
-    inset: 0;
-    z-index: -2;
-    pointer-events: none;
-    background: none;
-  }
-
+  .app-canvas::before,
   .app-canvas::after {
     content: none;
     position: fixed;
     inset: 0;
-    z-index: -1;
     pointer-events: none;
     background: none;
   }
 
-  .exp-toolbar,
-  .exp-hero,
-  .exp-surface,
-  .exp-surface-soft {
-    position: relative;
-    overflow: hidden;
-    border: 2px solid var(--border);
-    border-radius: 2px;
-    background: color-mix(in oklab, var(--surface) 92%, var(--bg) 8%);
-    box-shadow:
-      3px 3px 0 color-mix(in oklab, var(--shadow), transparent 18%),
-      inset 0 1px 0 color-mix(in oklab, var(--surface), transparent 24%);
-  }
-
-  .exp-toolbar::before,
-  .exp-hero::before,
-  .exp-surface::before,
-  .exp-surface-soft::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
-    height: 3px;
-    background: color-mix(in oklab, var(--accent), transparent 18%);
-    opacity: 0.65;
-    pointer-events: none;
-  }
+  /* ── Header toolbar ── */
+  /* No more card-like toolbar — just a clean flex bar */
 
   .exp-toolbar {
-    @apply px-3 py-2;
+    position: relative;
+    z-index: 90;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
   }
 
   .top-toolbar {
@@ -375,38 +422,32 @@
   .top-toolbar-actions {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.5rem;
     margin-left: auto;
   }
+
+  /* ── Theme dock ── */
 
   .theme-support-trigger {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.75rem;
-    height: 2.75rem;
-    border: 1px solid color-mix(in oklab, var(--border), transparent 22%);
-    background: color-mix(in oklab, var(--surface) 92%, var(--bg) 8%);
-    color: var(--text);
-    font-size: 1rem;
+    width: 2.25rem;
+    height: 2.25rem;
+    background: transparent;
+    color: var(--text-soft);
+    font-size: 0.9rem;
     line-height: 1;
-    box-shadow: 2px 2px 0 color-mix(in oklab, var(--shadow), transparent 25%);
-    transition:
-      background-color 140ms ease,
-      border-color 140ms ease,
-      transform 140ms ease;
+    transition: color var(--duration-instant) ease;
   }
 
   .theme-support-trigger:hover {
-    background: color-mix(in oklab, var(--surface-soft) 78%, var(--surface) 22%);
-    transform: translateY(-1px);
+    color: var(--text);
   }
 
   .theme-support-trigger:focus-visible {
-    outline: none;
-    box-shadow:
-      0 0 0 2px color-mix(in oklab, var(--active), transparent 64%),
-      2px 2px 0 color-mix(in oklab, var(--shadow), transparent 25%);
+    outline: 2px solid var(--koten);
+    outline-offset: 2px;
   }
 
   .theme-dock {
@@ -418,26 +459,22 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.75rem;
-    height: 2.75rem;
-    border: 1px solid color-mix(in oklab, var(--border), transparent 22%);
-    background: color-mix(in oklab, var(--surface) 92%, var(--bg) 8%);
-    color: var(--text);
-    box-shadow: 2px 2px 0 color-mix(in oklab, var(--shadow), transparent 25%);
-    transition:
-      background-color 140ms ease,
-      border-color 140ms ease,
-      transform 140ms ease;
+    gap: 0.35rem;
+    height: 2.25rem;
+    padding: 0 0.6rem;
+    background: transparent;
+    color: var(--text-soft);
+    font-size: 0.78rem;
+    font-weight: 600;
+    transition: color var(--duration-instant) ease;
   }
 
   .theme-dock-trigger[data-open='true'] {
-    border-color: color-mix(in oklab, var(--active), transparent 32%);
-    background: color-mix(in oklab, var(--surface-soft) 72%, var(--active) 28%);
-    transform: translateY(-1px);
+    color: var(--text);
   }
 
   .theme-dock-trigger svg {
-    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition: transform var(--duration-fast) var(--ease-out-quint);
   }
 
   .theme-dock-trigger[data-open='true'] svg {
@@ -445,15 +482,12 @@
   }
 
   .theme-dock-trigger:hover {
-    background: color-mix(in oklab, var(--surface-soft) 78%, var(--surface) 22%);
-    transform: translateY(-1px);
+    color: var(--text);
   }
 
   .theme-dock-trigger:focus-visible {
-    outline: none;
-    box-shadow:
-      0 0 0 2px color-mix(in oklab, var(--active), transparent 64%),
-      2px 2px 0 color-mix(in oklab, var(--shadow), transparent 25%);
+    outline: 2px solid var(--koten);
+    outline-offset: 2px;
   }
 
   .theme-dock-panel {
@@ -461,63 +495,63 @@
     right: 0;
     top: calc(100% + 0.5rem);
     width: min(16rem, calc(100vw - 1.5rem));
-    border: 1px solid color-mix(in oklab, var(--border), transparent 24%);
-    background: color-mix(in oklab, var(--surface) 94%, var(--bg) 6%);
-    padding: 0.6rem;
-    box-shadow:
-      0 14px 24px -20px color-mix(in oklab, var(--shadow), transparent 4%),
-      2px 2px 0 color-mix(in oklab, var(--shadow), transparent 20%);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    padding: 0.65rem;
+    box-shadow: 0 12px 32px -8px var(--shadow);
     z-index: 120;
     transform-origin: top right;
-    animation: theme-dock-pop 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: theme-dock-pop var(--duration-normal) var(--ease-out-quint) both;
+
+    @starting-style {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+    }
   }
 
   .theme-dock-heading {
     margin: 0 0 0.35rem;
-    font-size: 0.62rem;
+    font-size: 0.6rem;
     font-weight: 700;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--text-soft);
   }
 
   .theme-dock-subline {
     margin: -0.05rem 0 0.45rem;
-    font-size: 0.7rem;
-    color: color-mix(in oklab, var(--text-soft), var(--accent) 22%);
+    font-size: 0.68rem;
+    color: var(--text-soft);
   }
 
   .theme-dock-mode-row {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.32rem;
+    gap: 0.3rem;
   }
 
   .theme-dock-mode-button {
-    border: 1px solid color-mix(in oklab, var(--border), transparent 38%);
-    background: color-mix(in oklab, var(--surface) 90%, var(--bg) 10%);
-    min-height: 2.75rem;
+    border-radius: var(--radius);
+    background: var(--surface-soft);
+    min-height: 2.4rem;
     font-size: 0.75rem;
     font-weight: 600;
     color: var(--text-soft);
     transition:
-      border-color 140ms ease,
       background-color 140ms ease,
       color 140ms ease;
   }
 
   .theme-dock-mode-button[data-active='true'] {
-    border-color: color-mix(in oklab, var(--active), transparent 34%);
-    background: color-mix(in oklab, var(--surface-soft) 70%, var(--active) 30%);
-    color: var(--text);
+    background: var(--koten);
+    color: var(--active-contrast);
   }
 
   .theme-dock-mode-button:focus-visible,
   .theme-dock-theme-button:focus-visible {
-    outline: none;
-    box-shadow:
-      0 0 0 2px color-mix(in oklab, var(--active), transparent 64%),
-      2px 2px 0 color-mix(in oklab, var(--shadow), transparent 25%);
+    outline: 2px solid var(--koten);
+    outline-offset: 2px;
   }
 
   .theme-dock-theme-list {
@@ -525,89 +559,142 @@
     padding: 0;
     list-style: none;
     display: grid;
-    gap: 0.28rem;
+    gap: 0.25rem;
   }
 
   .theme-dock-theme-button {
     width: 100%;
     display: inline-flex;
     align-items: center;
-    gap: 0.45rem;
-    border: 1px solid color-mix(in oklab, var(--border), transparent 38%);
-    background: color-mix(in oklab, var(--surface) 90%, var(--bg) 10%);
-    min-height: 2.75rem;
+    gap: 0.5rem;
+    border-radius: var(--radius);
+    background: var(--surface-soft);
+    min-height: 2.4rem;
     padding: 0.2rem 0.55rem;
     font-size: 0.76rem;
     font-weight: 600;
     color: var(--text-soft);
     text-align: left;
     transition:
-      border-color 140ms ease,
       background-color 140ms ease,
       color 140ms ease,
       transform 140ms ease;
   }
 
   .theme-dock-theme-button[data-active='true'] {
-    border-color: color-mix(in oklab, var(--active), transparent 34%);
-    background: color-mix(in oklab, var(--surface-soft) 70%, var(--active) 30%);
+    background: var(--surface);
     color: var(--text);
+    box-shadow: inset 0 0 0 1px var(--koten);
   }
 
   .theme-dock-theme-button:hover {
-    transform: translateX(1px);
+    background: var(--washi);
+    color: var(--text);
+    transform: translateX(2px);
   }
 
   .theme-dock-swatch {
-    width: 0.52rem;
-    height: 0.52rem;
+    width: 0.6rem;
+    height: 0.6rem;
     border-radius: 999px;
-    border: 1px solid color-mix(in oklab, #000, transparent 42%);
     flex: 0 0 auto;
     transition: transform 140ms ease;
   }
 
   .theme-dock-theme-button:hover .theme-dock-swatch {
-    transform: scale(1.14);
+    transform: scale(1.2);
   }
 
+  /* ── Section label — hanko seal ── */
+
+  .issue-label {
+    display: inline-flex;
+    align-items: center;
+    color: var(--koten);
+    font-family:
+      'DM Sans',
+      'Segoe UI',
+      'Helvetica Neue',
+      system-ui,
+      -apple-system,
+      sans-serif;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    transition: opacity var(--duration-normal) var(--ease-out-quart);
+
+    @starting-style {
+      opacity: 0;
+    }
+  }
+
+  .issue-label::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 1px;
+    background: var(--koten);
+    margin-right: 0.4em;
+  }
+
+  /* ── Typography ── */
+
+  .manga-title {
+    font-family: 'Yu Mincho', 'Hiragino Mincho ProN', 'Times New Roman', serif;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  /* ── No more: .exp-hero, .exp-surface, .exp-surface-soft as card wrappers ── */
+  /* These classes exist in markup but now render as plain containers with no visual treatment */
+
   .exp-hero {
-    @apply p-6 md:p-8;
+    /* Intentionally left empty — no card treatment */
   }
 
   .exp-surface,
   .exp-surface-soft {
-    @apply p-4 md:p-5;
+    /* Intentionally left empty — no card treatment */
   }
 
-  .exp-surface-soft {
-    background: color-mix(in oklab, var(--surface-soft) 80%, var(--bg) 20%);
-    border-width: 1px;
-    box-shadow: none;
+  /* ── Divider — shelf edge ── */
+
+  .manga-divider {
+    height: 1px;
+    width: 100%;
+    background: var(--shelf);
+    margin: 0;
   }
 
-  .exp-surface-soft::before {
-    height: 2px;
-    opacity: 0.42;
-  }
+  /* ── Stamp badge ── */
 
-  .exp-note {
-    display: flex;
-    flex-wrap: wrap;
+  .manga-stamp {
+    display: inline-flex;
     align-items: center;
-    gap: 0.45rem;
-    border: 1px solid color-mix(in oklab, var(--accent), transparent 68%);
-    background: color-mix(in oklab, var(--accent-soft) 72%, var(--surface) 28%);
-    padding: 0.65rem 0.8rem;
-    color: color-mix(in oklab, var(--text) 86%, var(--accent) 14%);
+    gap: 0.25rem;
+    background: var(--surface-soft);
+    padding: 0.18rem 0.5rem;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-soft);
   }
+
+  /* ── Kicker label ── */
+
+  .exp-kicker {
+    @apply text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground;
+  }
+
+  /* ── Inline stat ── */
 
   .exp-inline-stat {
     display: inline-flex;
-    align-items: center;
-    gap: 0.32rem;
-    border-bottom: 1px solid color-mix(in oklab, var(--accent), transparent 62%);
-    padding-bottom: 0.08rem;
+    align-items: baseline;
+    gap: 0.25rem;
     font-size: 0.78rem;
     color: var(--text-soft);
   }
@@ -616,161 +703,8 @@
     color: var(--text);
   }
 
-  .exp-filter-toolbar {
-    display: grid;
-    gap: 0.65rem;
-  }
-
-  .exp-filter-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.45rem;
-  }
-
-  .exp-toolbar-copy {
-    display: flex;
-    min-width: 0;
-    flex: 1 1 14rem;
-    flex-direction: column;
-    gap: 0.18rem;
-  }
-
-  .exp-toolbar-copy p:last-child {
-    color: var(--text-soft);
-  }
-
-  .exp-kicker {
-    @apply text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground;
-  }
-
-  .manga-title {
-    font-family: 'Yu Mincho', 'Hiragino Mincho ProN', 'Times New Roman', serif;
-    letter-spacing: -0.01em;
-    text-transform: uppercase;
-    overflow-wrap: anywhere;
-    text-wrap: balance;
-  }
-
-  .manga-subtitle {
-    font-family:
-      'Yu Gothic UI', 'Hiragino Kaku Gothic ProN', 'Segoe UI', sans-serif;
-    letter-spacing: 0.01em;
-  }
-
-  .manga-stamp {
-    display: inline-flex;
-    align-items: center;
-    border: 1px solid color-mix(in oklab, var(--border), transparent 18%);
-    background: color-mix(in oklab, var(--surface-soft) 82%, var(--bg) 18%);
-    padding: 0.18rem 0.5rem;
-    font-size: 0.68rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text-soft);
-  }
-
-  .issue-label {
-    display: inline-flex;
-    align-items: center;
-    border: 2px solid var(--border);
-    background: color-mix(in oklab, var(--surface-soft) 90%, var(--bg) 10%);
-    padding: 0.24rem 0.62rem;
-    line-height: 1;
-    font-size: 0.64rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--text-soft);
-  }
-
-  :is(
-      [data-theme='dark'],
-      [data-theme='paper-dark'],
-      [data-theme='sakura-dark'],
-      [data-theme='ocean-dark'],
-      [data-theme='matcha-dark']
-    )
-    .issue-label {
-    border-width: 1px;
-  }
-
-  .manga-divider {
-    height: 2px;
-    width: 100%;
-    background: color-mix(in oklab, var(--border), transparent 14%);
-    opacity: 0.78;
-  }
-
-  .exp-chip {
-    display: inline-flex;
-    align-items: center;
-    border: 1px solid var(--border);
-    background: color-mix(in oklab, var(--surface-soft) 84%, var(--bg) 16%);
-    padding: 0.22rem 0.6rem;
-    font-size: 0.72rem;
-    color: var(--text-soft);
-  }
-
-  .exp-back-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    border: 1px solid var(--border);
-    background: color-mix(in oklab, var(--surface-soft) 84%, var(--bg) 16%);
-    padding: 0.32rem 0.62rem;
-    font-size: 0.72rem;
-    color: var(--text-soft);
-    transition: background-color 150ms ease;
-  }
-
-  .exp-back-link:hover {
-    background: color-mix(in oklab, var(--surface) 88%, var(--accent-soft) 12%);
-    color: var(--text);
-  }
-
-  .exp-dropzone {
-    @apply relative overflow-hidden border-2 border-dashed px-4 py-6 text-center;
-    border-color: color-mix(in oklab, var(--border), transparent 16%);
-    background: color-mix(in oklab, var(--surface-soft) 78%, var(--bg) 22%);
-  }
-
-  .exp-history-item {
-    @apply inline-flex items-center gap-2 border px-3 py-2 text-sm;
-    border-color: color-mix(in oklab, var(--border), transparent 24%);
-    background: color-mix(in oklab, var(--surface) 88%, var(--bg) 12%);
-    transition:
-      background-color 150ms ease,
-      transform 170ms cubic-bezier(0.22, 1, 0.36, 1),
-      box-shadow 170ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  .exp-history-item:hover {
-    background: color-mix(in oklab, var(--surface-soft) 85%, var(--bg) 15%);
-    transform: translateY(-1px);
-  }
-
-  .exp-list-link,
-  .exp-row {
-    position: relative;
-    overflow: hidden;
-    min-width: 0;
-    border: 1px solid color-mix(in oklab, var(--border), transparent 28%);
-    background: color-mix(in oklab, var(--surface) 90%, var(--bg) 10%);
-    transition:
-      background-color 170ms ease,
-      transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
-      box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  .exp-list-link::before,
-  .exp-row::before {
-    content: '';
-    position: absolute;
-    inset: 0 auto 0 0;
-    width: 0;
-    background: color-mix(in oklab, var(--accent), transparent 32%);
-    opacity: 0.9;
-    transition: width 180ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
+  /* ── List rows ── */
+  /* Spring hover spine is defined in the Animations section below */
 
   .exp-list-link {
     @apply flex items-center justify-between gap-3 px-3 py-2.5;
@@ -780,158 +714,113 @@
     @apply flex items-center gap-3 px-3 py-3;
   }
 
-  .exp-list-link:hover,
-  .exp-row:hover {
-    background: color-mix(in oklab, var(--surface-soft) 84%, var(--bg) 16%);
-    transform: translateY(-1px);
-    box-shadow: 0 10px 18px -18px color-mix(in oklab, var(--shadow), transparent 8%);
+  /* ── History item ── */
+
+  .exp-history-item {
+    @apply inline-flex items-center gap-2 px-3 py-2 text-sm;
+    transition: background-color 150ms ease;
   }
 
-  .exp-list-link:hover::before,
-  .exp-list-link:focus-visible::before,
-  .exp-row:hover::before,
-  .exp-row:focus-within::before {
-    width: 4px;
+  .exp-history-item:hover {
+    background: var(--washi);
   }
 
-  .exp-details-panel {
-    border: 1px solid color-mix(in oklab, var(--border), transparent 24%);
-    background: color-mix(in oklab, var(--surface) 93%, var(--bg) 7%);
-    transition:
-      background-color 180ms ease,
-      transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
+  /* ── Filter toolbar ── */
 
-  .exp-details-panel[open] {
-    background: color-mix(in oklab, var(--surface-soft) 44%, var(--surface) 56%);
-  }
-
-  .exp-details-summary {
-    display: flex;
-    list-style: none;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    cursor: pointer;
-    font-size: 0.92rem;
-    font-weight: 600;
-    color: var(--text);
-  }
-
-  .exp-details-summary::-webkit-details-marker {
-    display: none;
-  }
-
-  .exp-details-summary::after {
-    content: '+';
-    flex: none;
-    border: 1px solid color-mix(in oklab, var(--border), transparent 24%);
-    background: color-mix(in oklab, var(--surface-soft) 82%, var(--bg) 18%);
-    width: 1.4rem;
-    height: 1.4rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.95rem;
-    line-height: 1;
-    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  .exp-details-panel[open] .exp-details-summary::after {
-    transform: rotate(45deg);
-  }
-
-  .exp-details-grid {
+  .exp-filter-toolbar {
     display: grid;
-    gap: 0.75rem;
+    gap: 0.65rem;
   }
 
-  .exp-guide-card {
-    border: 1px solid color-mix(in oklab, var(--border), transparent 24%);
-    background: color-mix(in oklab, var(--surface-soft) 88%, var(--bg) 12%);
-    transition:
-      transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
-      background-color 180ms ease;
+  .exp-filter-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
   }
 
-  .exp-guide-card:hover {
-    transform: translateY(-1px);
+  .exp-toolbar-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 14rem;
+    flex-direction: column;
+    gap: 0.15rem;
   }
+
+  .exp-toolbar-copy p:last-child {
+    color: var(--text-soft);
+  }
+
+  /* ── Note callout ── */
+
+  .exp-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    background: var(--washi);
+    padding: 0.65rem 0.8rem;
+    color: var(--text);
+    font-size: 0.88rem;
+  }
+
+  /* ── Chapter toggle ── */
 
   .chapter-toggle {
     display: inline-flex;
-    width: 1.35rem;
-    height: 1.35rem;
+    width: 1.3rem;
+    height: 1.3rem;
     flex: none;
     align-items: center;
     justify-content: center;
-    border: 1px solid color-mix(in oklab, var(--border), transparent 18%);
-    font-size: 0.75rem;
+    background: var(--surface-soft);
+    color: transparent;
+    font-size: 0.7rem;
     font-weight: 700;
     line-height: 1;
     transition:
-      transform 150ms cubic-bezier(0.22, 1, 0.36, 1),
       background-color 150ms ease,
-      color 150ms ease,
-      box-shadow 150ms ease;
+      color 150ms ease;
   }
 
   .chapter-toggle[data-complete='true'] {
-    background: color-mix(in oklab, var(--accent-soft) 78%, var(--surface) 22%);
-    color: color-mix(in oklab, var(--accent) 72%, var(--text) 28%);
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent), transparent 62%);
+    background: var(--accent-soft);
+    color: var(--accent);
   }
 
   .chapter-toggle[data-complete='false'] {
-    background: color-mix(in oklab, var(--surface-soft) 78%, var(--bg) 22%);
+    background: var(--surface-soft);
     color: transparent;
   }
 
-  .chapter-toggle:hover,
-  .chapter-toggle:focus-visible {
-    transform: translateY(-1px);
+  .chapter-toggle:hover {
+    background: var(--washi);
   }
 
-  .delight-cta {
-    position: relative;
-    overflow: hidden;
-    transition:
-      transform 170ms cubic-bezier(0.22, 1, 0.36, 1),
-      box-shadow 170ms cubic-bezier(0.22, 1, 0.36, 1),
-      background-color 160ms ease;
-  }
+  /* ── CTA ── */
+  /* CTA animations defined in the Animations section below — ink-wipe, press effect */
 
-  .delight-cta:hover {
-    transform: translateY(-1px);
-    box-shadow:
-      3px 3px 0 color-mix(in oklab, var(--shadow), transparent 22%),
-      inset 0 1px 0 color-mix(in oklab, var(--surface), transparent 38%);
-  }
-
-  .delight-cta:active {
-    transform: translateY(0);
-    box-shadow: 2px 2px 0 color-mix(in oklab, var(--shadow), transparent 28%);
-  }
+  /* ── Tip ── */
 
   .delight-tip {
     display: inline-flex;
-    align-items: center;
-    border-left: 2px solid color-mix(in oklab, var(--accent), transparent 30%);
-    padding-left: 0.55rem;
+    align-items: baseline;
+    border-left: 2px solid var(--koten);
+    padding-left: 0.5rem;
+    opacity: 0.75;
   }
 
   .delight-kbd {
     display: inline-flex;
-    min-width: 1.25rem;
+    min-width: 1.2rem;
     align-items: center;
     justify-content: center;
-    border: 1px solid color-mix(in oklab, var(--border), transparent 28%);
-    background: color-mix(in oklab, var(--surface-soft) 82%, var(--bg) 18%);
-    padding: 0.05rem 0.3rem;
-    line-height: 1.1;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      'Liberation Mono', 'Courier New', monospace;
-    font-size: 0.72rem;
+    background: var(--washi);
+    padding: 0.03rem 0.25rem;
+    line-height: 1.15;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+      monospace;
+    font-size: 0.7rem;
     color: var(--text);
   }
 
@@ -943,12 +832,102 @@
 
   .delight-loading-note::before {
     content: '';
-    width: 0.42rem;
-    height: 0.42rem;
+    width: 0.4rem;
+    height: 0.4rem;
     border-radius: 999px;
-    background: color-mix(in oklab, var(--accent), transparent 20%);
-    box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent-soft), transparent 45%);
+    background: var(--koten);
     animation: delight-pulse 900ms ease-out infinite;
+  }
+
+  /* ── Details / collapsible ── */
+
+  .exp-details-panel {
+    background: transparent;
+    transition: background-color 180ms ease;
+  }
+
+  .exp-details-panel[open] {
+    background: var(--washi);
+  }
+
+  .exp-details-summary {
+    display: flex;
+    list-style: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    cursor: pointer;
+    padding: 0.65rem 0;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .exp-details-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .exp-details-summary::after {
+    content: '+';
+    flex: none;
+    font-size: 0.9rem;
+    line-height: 1;
+    color: var(--text-soft);
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .exp-details-panel[open] .exp-details-summary::after {
+    transform: rotate(45deg);
+  }
+
+  .exp-details-grid {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .exp-guide-card {
+    background: var(--washi);
+  }
+
+  /* ── Back link ── */
+
+  .exp-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: var(--text-soft);
+    font-size: 0.82rem;
+    font-weight: 500;
+    transition: color 150ms ease;
+  }
+
+  .exp-back-link:hover {
+    color: var(--koten);
+  }
+
+  /* ── Chip ── */
+
+  .exp-chip {
+    display: inline-flex;
+    align-items: center;
+    background: var(--washi);
+    padding: 0.22rem 0.6rem;
+    font-size: 0.72rem;
+    color: var(--text-soft);
+  }
+
+  /* ── Dropzone ── */
+
+  .exp-dropzone {
+    @apply relative overflow-hidden border border-dashed px-4 py-6 text-center;
+    background: var(--washi);
+  }
+
+  /* ── Deferred ── */
+
+  .deferred-section {
+    content-visibility: auto;
+    contain-intrinsic-size: 700px;
   }
 
   .support-coffee-icon {
@@ -957,13 +936,10 @@
 
   .theme-support-trigger:hover .support-coffee-icon,
   .theme-support-trigger:focus-visible .support-coffee-icon {
-    transform: rotate(-10deg) translateY(-1px);
+    transform: rotate(-10deg);
   }
 
-  .deferred-section {
-    content-visibility: auto;
-    contain-intrinsic-size: 700px;
-  }
+  /* ── Responsive ── */
 
   @media (min-width: 640px) {
     .exp-filter-toolbar {
@@ -977,17 +953,109 @@
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
   }
-
 }
+
+/* ── Animations ── */
+/*
+  Living Library animation system.
+  Every motion follows the bookshop aesthetic — warm, deliberate, unhurried.
+  Spring easing via cubic-bezier approximations (no JS animation library needed).
+  All animations respect prefers-reduced-motion.
+*/
+
+/* ── Custom properties for animation ── */
+
+@property --ink-wipe {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 100%;
+}
+
+/* ── Easing tokens ── */
+
+:root {
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --spring-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --spring-gentle: cubic-bezier(0.22, 1.2, 0.36, 1);
+  --duration-instant: 100ms;
+  --duration-fast: 180ms;
+  --duration-normal: 280ms;
+  --duration-slow: 420ms;
+  --duration-entrance: 500ms;
+}
+
+/* ── Keyframes ── */
 
 @keyframes enter-fade-up {
   from {
     opacity: 0;
     transform: translateY(8px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes enter-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes ink-wipe-in {
+  from {
+    --ink-wipe: 0%;
+    clip-path: inset(0 100% 0 0);
+  }
+
+  to {
+    --ink-wipe: 100%;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes koten-dot-enter {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes heading-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.06);
   }
 }
 
@@ -1008,51 +1076,342 @@
     opacity: 0;
     transform: translateY(-4px) scale(0.98);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
 }
 
-.animate-enter {
-  animation: enter-fade-up 180ms ease-out both;
-  animation-delay: var(--enter-delay, 0ms);
+@keyframes theme-dock-close {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+@keyframes cta-press {
+  0% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(0.97);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* ── Image decode fade-in ── */
+/*
+  Cover images start at opacity 0 and fade in when loaded.
+  Prevents the flash of alt text before images render.
+*/
+
+.img-decode {
+  opacity: 0;
+  transition: opacity var(--duration-normal) var(--ease-out-quart);
+}
+
+.img-decode[data-loaded='true'] {
+  opacity: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-enter {
+  .img-decode {
+    opacity: 1;
+    transition: none;
+  }
+}
+
+/* ── Orchestration: staggered entrance ── */
+
+.animate-enter {
+  animation: enter-fade-up var(--duration-entrance) var(--ease-out-quint) both;
+  animation-delay: var(--enter-delay, 0ms);
+}
+
+.animate-enter-heading {
+  animation: heading-slide-in var(--duration-slow) var(--ease-out-quart) both;
+  animation-delay: var(--enter-delay, 60ms);
+}
+
+.animate-enter-scale {
+  animation: enter-scale-in var(--duration-normal) var(--spring-gentle) both;
+  animation-delay: var(--enter-delay, 0ms);
+}
+
+/* ── Ink-wipe CTA ── */
+/*
+  The primary call-to-action wipes in from left to right like a brush stroke.
+  The background reveals via clip-path, creating a hanko-stamp feel.
+*/
+
+.delight-cta {
+  position: relative;
+  overflow: hidden;
+  transition: opacity var(--duration-fast) ease;
+}
+
+.delight-cta:active {
+  animation: cta-press var(--duration-fast) var(--ease-out-quart);
+  opacity: 0.92;
+}
+
+/* ── Koten dot (issue-label ::before) entrance ── */
+
+.issue-label::before {
+  animation: koten-dot-enter var(--duration-normal) var(--spring-bounce) both;
+  animation-delay: var(--enter-delay, 0ms);
+}
+
+/* ── Breathing theme swatch ── */
+/*
+  The active theme swatch gently pulses to indicate live-ness.
+  Very subtle — 6% scale delta over 3 seconds.
+*/
+
+.theme-dock-theme-button[data-active='true'] .theme-dock-swatch {
+  animation: breathe 3s var(--ease-in-out) infinite;
+}
+
+/* ── Chapter row spring hover ── */
+
+.exp-list-link,
+.exp-row {
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  transition:
+    background-color var(--duration-fast) ease,
+    color var(--duration-fast) ease;
+}
+
+.exp-list-link::before,
+.exp-row::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--koten);
+  opacity: 0;
+  transition:
+    width var(--duration-normal) var(--spring-gentle),
+    opacity var(--duration-normal) ease;
+}
+
+.exp-list-link {
+  @apply flex items-center justify-between gap-3 px-3 py-2.5;
+}
+
+.exp-row {
+  @apply flex items-center gap-3 px-3 py-3;
+}
+
+.exp-list-link:hover,
+.exp-row:hover {
+  background: var(--washi);
+}
+
+.exp-list-link:hover::before,
+.exp-list-link:focus-visible::before,
+.exp-row:hover::before,
+.exp-row:focus-within::before {
+  width: 3px;
+  opacity: 0.7;
+}
+
+/* ── Cover hover ── */
+/*
+  Manga covers expand slightly on hover with a spring overshoot.
+  Applied via a reusable utility class.
+*/
+
+.cover-hover {
+  transition:
+    transform var(--duration-normal) var(--spring-gentle),
+    box-shadow var(--duration-normal) ease;
+}
+
+.cover-hover:hover {
+  transform: scale(1.03);
+  box-shadow: 0 4px 16px -4px var(--shadow);
+}
+
+/* ── Scroll-driven section reveals ── */
+/*
+  Sections with .scroll-reveal fade in as they enter the viewport.
+  Uses animation-timeline: view() for Chrome/Edge/Safari.
+  Firefox falls back to the existing animate-enter class.
+*/
+
+@supports (animation-timeline: view()) {
+  .scroll-reveal {
+    animation: enter-fade-up var(--duration-entrance) var(--ease-out-quint) both;
+    animation-timeline: view();
+    animation-range: entry 5% entry 35%;
+  }
+}
+
+/* ── Theme dock exit animation ── */
+
+.theme-dock-panel[data-closing='true'] {
+  animation: theme-dock-close 140ms var(--ease-out-expo) both;
+}
+
+/* ── Reduced motion ── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-enter,
+  .animate-enter-heading,
+  .animate-enter-scale {
     animation: none;
   }
 
-  .exp-history-item,
-  .exp-list-link,
-  .exp-row,
-  .exp-guide-card,
-  .chapter-toggle {
+  .delight-cta:active {
+    animation: none;
+  }
+
+  .issue-label::before {
+    animation: none;
+  }
+
+  .theme-dock-theme-button[data-active='true'] .theme-dock-swatch {
+    animation: none;
+  }
+
+  .cover-hover {
     transition: none;
   }
 
-  .delight-loading-note::before {
-    animation: none;
-    opacity: 0.8;
+  .cover-hover:hover {
     transform: none;
   }
 
-  .delight-cta,
-  .support-coffee-icon {
-    transition: none;
+  @supports (animation-timeline: view()) {
+    .scroll-reveal {
+      animation: none;
+    }
   }
 
-  .theme-dock-trigger svg,
-  .theme-dock-theme-button,
-  .theme-dock-swatch {
-    transition: none;
-  }
-
-  .theme-dock-panel {
+  .theme-dock-panel[data-closing='true'] {
     animation: none;
   }
+}
 
+/* ── View Transitions ── */
+/*
+  Cover images morph between the library and series detail pages.
+  The page shell cross-fades. The logo holds position.
+  Entry animations are suppressed during view transitions to prevent
+  the double-fade flicker (view transition fade + animate-enter fade).
+*/
+
+::view-transition-old(root) {
+  animation: 160ms ease-out both vt-fade-out;
+}
+
+::view-transition-new(root) {
+  animation: 200ms var(--ease-out-quint) both vt-fade-in;
+}
+
+::view-transition-group(root) {
+  animation-duration: 200ms;
+}
+
+/* Cover morph: smooth size + position interpolation */
+::view-transition-group(*:not(root)) {
+  animation-duration: 320ms;
+  animation-timing-function: var(--ease-out-quint);
+}
+
+::view-transition-old(*:not(root)) {
+  animation: 280ms ease-out both vt-fade-out;
+  object-fit: cover;
+}
+
+::view-transition-new(*:not(root)) {
+  animation: 320ms var(--ease-out-quint) both vt-fade-in;
+  object-fit: cover;
+}
+
+/* Logo stays in place — no morph */
+.vt-logo {
+  view-transition-name: tsuki-logo;
+}
+
+::view-transition-group(tsuki-logo) {
+  animation-duration: 200ms;
+  animation-timing-function: var(--ease-out-quart);
+}
+
+/*
+  During an active view transition, suppress entry animations.
+  This prevents the double-fade flicker: view-transition fades the page in,
+  then animate-enter would fade the same content from 0→1 again.
+*/
+:root:active-view-transition .animate-enter,
+:root:active-view-transition .animate-enter-heading,
+:root:active-view-transition .animate-enter-scale {
+  animation: none;
+}
+
+:root:active-view-transition .img-decode {
+  opacity: 1;
+  transition: none;
+}
+
+/* Reduce motion: skip morphs */
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root),
+  ::view-transition-old(*:not(root)),
+  ::view-transition-new(*:not(root)) {
+    animation-duration: 0.01ms !important;
+    mix-blend-mode: normal !important;
+  }
+
+  ::view-transition-group(root),
+  ::view-transition-group(*:not(root)) {
+    animation-duration: 0.01ms !important;
+  }
+}
+
+@keyframes vt-fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes vt-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 @media (max-width: 768px) {
@@ -1083,18 +1442,24 @@
   }
 
   .top-toolbar-actions {
-    gap: 0.3rem;
+    gap: 0.25rem;
   }
 
-  .theme-support-trigger,
   .theme-dock-trigger {
-    width: 2.75rem;
-    height: 2.75rem;
+    padding: 0 0.4rem;
+    font-size: 0.72rem;
   }
 
   .theme-dock-panel {
     right: -0.2rem;
     width: min(15rem, calc(100vw - 1rem));
+  }
+
+  /* Prevent iOS auto-zoom on input focus */
+  input,
+  select,
+  textarea {
+    font-size: max(1rem, 16px);
   }
 }
 

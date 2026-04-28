@@ -12,6 +12,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Button } from '#/components/ui/button'
+import { FadeImage } from '#/components/ui/fade-image'
 import { Input } from '#/components/ui/input'
 import type { ReadingHistoryItem, WeebcentralSeriesDTO } from '#/lib/contracts'
 import { weebcentralSeriesQueryOptions } from '#/lib/query-options'
@@ -39,6 +40,7 @@ const HOME_READING_TIPS = [
 import {
   loadSavedWeebcentralSeries,
   removeSavedWeebcentralSeries,
+  upsertSavedWeebcentralSeries,
 } from '#/lib/weebcentral-library'
 
 const HOME_TITLE = 'Tsuki reader'
@@ -79,6 +81,7 @@ function LibraryPage() {
   const remoteSeriesHelpId = 'remote-series-url-help'
   const remoteSeriesErrorId = 'remote-series-url-error'
   const [history, setHistory] = useState<ReadingHistoryItem[]>([])
+  const [hydrated, setHydrated] = useState(false)
   const [remoteInput, setRemoteInput] = useState('')
   const [isRemoteLoading, setIsRemoteLoading] = useState(false)
   const [remoteError, setRemoteError] = useState<string | null>(null)
@@ -87,6 +90,10 @@ function LibraryPage() {
   >([])
   const [showOnboardingHint, setShowOnboardingHint] = useState(false)
   const [loadingLineIndex, setLoadingLineIndex] = useState(0)
+  const [undoToast, setUndoToast] = useState<{
+    item: WeebcentralSeriesDTO
+    timer: number | null
+  } | null>(null)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
@@ -107,6 +114,7 @@ function LibraryPage() {
 
   useEffect(() => {
     refreshSideData()
+    setHydrated(true)
   }, [refreshSideData])
 
   useEffect(() => {
@@ -220,10 +228,29 @@ function LibraryPage() {
     }
   }, [dismissOnboardingHint, navigate, queryClient, remoteInput])
 
-  const removeRemoteSeriesFromLibrary = useCallback((seriesId: string) => {
-    removeSavedWeebcentralSeries(seriesId)
-    setSavedRemoteSeries(loadSavedWeebcentralSeries())
-  }, [])
+  const handleRemoveSeries = useCallback(
+    (item: WeebcentralSeriesDTO) => {
+      if (undoToast?.timer) {
+        window.clearTimeout(undoToast.timer)
+      }
+      removeSavedWeebcentralSeries(item.id)
+      setSavedRemoteSeries(loadSavedWeebcentralSeries())
+      const timer = window.setTimeout(() => setUndoToast(null), 5000)
+      setUndoToast({ item, timer })
+    },
+    [undoToast],
+  )
+
+  const handleUndoRemove = useCallback(() => {
+    if (undoToast) {
+      if (undoToast.timer) {
+        window.clearTimeout(undoToast.timer)
+      }
+      upsertSavedWeebcentralSeries(undoToast.item)
+      setSavedRemoteSeries(loadSavedWeebcentralSeries())
+      setUndoToast(null)
+    }
+  }, [undoToast])
 
   const recentHistory = history.slice(0, 6)
   const topHistory = recentHistory[0] ?? null
@@ -287,26 +314,23 @@ function LibraryPage() {
   }, [history, savedRemoteSeriesById])
 
   return (
-    <div className="space-y-5 pb-10">
-      <section
-        className="exp-hero animate-enter"
-        style={{ animationDelay: '20ms' }}
-      >
+    <div className="pb-10">
+      <section className="exp-hero pb-8">
         <span className="issue-label">Library</span>
-        <div className="mt-3 grid gap-4 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+        <div className="mt-4 grid gap-5 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
           <div>
-            <h1 className="manga-title max-w-4xl text-3xl font-semibold leading-tight text-foreground md:text-5xl">
-              {hasHistory
+            <h1 className="manga-title max-w-4xl text-3xl font-extrabold leading-tight text-foreground md:text-5xl">
+              {hydrated && hasHistory
                 ? 'Pick up where you left off'
                 : 'Open a manga series and start reading'}
             </h1>
-            <p className="manga-subtitle mt-3 max-w-2xl text-sm text-muted-foreground md:text-base">
-              {hasHistory
+            <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+              {hydrated && hasHistory
                 ? 'Resume a recent chapter or reopen any saved online series.'
                 : 'Paste a WeebCentral or MangaDex series link to open its chapter list.'}
             </p>
-            <div className="mt-5 flex flex-wrap gap-2">
-              {topHistory ? (
+            <div className="mt-6 flex flex-wrap gap-2">
+              {hydrated && topHistory ? (
                 <Link
                   to="/weebcentral/$chapterId"
                   params={{ chapterId: topHistory.chapterId }}
@@ -314,14 +338,14 @@ function LibraryPage() {
                     seriesId: topHistory.seriesId,
                     seriesTitle: topHistory.seriesTitle,
                   }}
-                  className="delight-cta inline-flex h-11 items-center border-2 border-primary bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[2px_2px_0_var(--shadow)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  className="delight-cta inline-flex h-11 items-center bg-koten px-5 text-sm font-semibold text-[var(--active-contrast)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-koten"
                 >
                   Continue reading
                 </Link>
               ) : (
                 <a
                   href="#proxy"
-                  className="delight-cta inline-flex h-11 items-center border-2 border-primary bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[2px_2px_0_var(--shadow)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  className="delight-cta inline-flex h-11 items-center bg-koten px-5 text-sm font-semibold text-[var(--active-contrast)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-koten"
                 >
                   Open an online series
                 </a>
@@ -347,40 +371,48 @@ function LibraryPage() {
                 <button
                   type="button"
                   onClick={dismissOnboardingHint}
-                  className="inline-flex min-h-8 min-w-16 items-center justify-center px-2 text-xs font-semibold text-foreground underline decoration-border/60 underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  className="inline-flex min-h-8 min-w-16 items-center justify-center px-2 text-xs font-semibold text-foreground underline decoration-border/60 underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-koten"
                 >
                   Dismiss
                 </button>
               </div>
             ) : null}
           </div>
-          <div className="exp-surface space-y-2">
-            {hasHistory && topHistory ? (
+          <div className="space-y-2">
+            {hydrated && hasHistory && topHistory ? (
               <>
                 <p className="exp-kicker">Your last read</p>
                 <Link
                   to="/weebcentral-series/$seriesId"
                   params={{ seriesId: topHistory.seriesId }}
-                  className="group flex items-start gap-3 rounded transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  className="group flex items-start gap-3 rounded transition-colors hover:bg-washi focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-koten"
                 >
                   {topHistoryCoverUrl ? (
-                    <img
+                    <FadeImage
                       src={topHistoryCoverUrl}
                       alt="Last read manga cover"
-                      className="h-16 w-12 shrink-0 border border-border object-cover"
+                      className="cover-hover h-20 w-14 shrink-0 border border-border object-cover"
                       loading="lazy"
                       fetchPriority="auto"
                       decoding="async"
+                      style={{
+                        viewTransitionName: `cover-${topHistory.seriesId}`,
+                      }}
                     />
                   ) : (
-                    <div className="flex h-16 w-12 shrink-0 items-center justify-center border border-border bg-surface-soft text-[10px] text-muted-foreground">
+                    <div
+                      className="flex h-20 w-14 shrink-0 items-center justify-center border border-border bg-surface-soft text-[10px] text-muted-foreground"
+                      style={{
+                        viewTransitionName: `cover-${topHistory.seriesId}`,
+                      }}
+                    >
                       No
                       <br />
                       image
                     </div>
                   )}
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                    <p className="truncate text-sm font-semibold text-foreground group-hover:text-koten transition-colors">
                       {topHistory.chapterTitle}
                     </p>
                     {topHistory.seriesTitle ? (
@@ -401,12 +433,21 @@ function LibraryPage() {
             ) : (
               <>
                 <p className="exp-kicker">Quick start</p>
-                <ol className="space-y-1 text-sm text-muted-foreground">
-                  <li>1. Open an online series</li>
-                  <li>2. Select a chapter</li>
-                  <li>3. Start reading</li>
+                <ol className="space-y-2 pt-1 text-sm text-muted-foreground">
+                  <li className="flex gap-2">
+                    <span className="text-koten font-semibold">1.</span>
+                    <span>Open an online series</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-koten font-semibold">2.</span>
+                    <span>Select a chapter</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-koten font-semibold">3.</span>
+                    <span>Start reading</span>
+                  </li>
                 </ol>
-                <p className="pt-1 text-xs text-muted-foreground">
+                <p className="pt-2 text-xs text-muted-foreground">
                   No account required.
                 </p>
               </>
@@ -415,12 +456,9 @@ function LibraryPage() {
         </div>
       </section>
 
-      {!hasHistory ? (
-        <section
-          className="deferred-section exp-surface-soft animate-enter"
-          style={{ animationDelay: '40ms' }}
-        >
-          <h2 className="manga-title text-lg font-semibold text-foreground md:text-xl">
+      {!hydrated || !hasHistory ? (
+        <section className="deferred-section pb-8">
+          <h2 className="manga-title text-lg font-bold text-foreground md:text-xl">
             No recent reads yet
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -429,7 +467,7 @@ function LibraryPage() {
           <div className="mt-3 flex flex-wrap gap-2">
             <a
               href="#proxy"
-              className="delight-cta inline-flex h-11 items-center border border-border bg-surface px-3 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              className="delight-cta inline-flex h-10 items-center border border-border bg-surface px-4 text-sm font-semibold text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-koten"
             >
               Open an online series
             </a>
@@ -437,14 +475,11 @@ function LibraryPage() {
         </section>
       ) : null}
 
-      {hasHistory ? (
-        <section
-          className="deferred-section exp-surface animate-enter"
-          style={{ animationDelay: '60ms' }}
-        >
+      {hydrated && hasHistory ? (
+        <section className="deferred-section scroll-reveal pb-10">
           <span className="issue-label">Continue</span>
           <div className="mt-2 flex items-center justify-between gap-3">
-            <h2 className="manga-title text-xl font-semibold tracking-tight text-foreground md:text-2xl">
+            <h2 className="manga-title text-xl font-bold tracking-tight text-foreground md:text-2xl">
               Recent series
             </h2>
             <span className="text-xs text-muted-foreground">
@@ -460,13 +495,14 @@ function LibraryPage() {
                 className="group exp-row h-full min-h-28 items-stretch"
               >
                 {item.coverUrl ? (
-                  <img
+                  <FadeImage
                     src={item.coverUrl}
                     alt={`${item.seriesTitle} cover`}
-                    className="h-full w-20 shrink-0 self-stretch border border-border object-cover"
+                    className="cover-hover h-full w-20 shrink-0 self-stretch border border-border object-cover"
                     loading="lazy"
                     decoding="async"
                     fetchPriority="low"
+                    style={{ viewTransitionName: `cover-${item.seriesId}` }}
                   />
                 ) : (
                   <div className="flex h-full w-20 shrink-0 items-center justify-center self-stretch border border-border bg-surface-soft text-[10px] text-muted-foreground">
@@ -491,13 +527,9 @@ function LibraryPage() {
 
       <div className="manga-divider" aria-hidden />
 
-      <section
-        id="proxy"
-        className="exp-surface animate-enter"
-        style={{ animationDelay: '85ms' }}
-      >
+      <section id="proxy" className="scroll-reveal pt-6 pb-8">
         <span className="issue-label">Online</span>
-        <h2 className="manga-title mt-2 text-xl font-semibold tracking-tight text-foreground md:text-2xl">
+        <h2 className="manga-title mt-2 text-xl font-bold tracking-tight text-foreground md:text-2xl">
           Open an online series
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
@@ -510,7 +542,10 @@ function LibraryPage() {
         >
           Series URL
         </label>
-        <p id={remoteSeriesHelpId} className="mt-1 text-xs text-muted-foreground">
+        <p
+          id={remoteSeriesHelpId}
+          className="mt-1 text-xs text-muted-foreground"
+        >
           Paste the series page URL from WeebCentral or MangaDex. Press{' '}
           <kbd className="delight-kbd">/</kbd> to jump here from anywhere on the
           page.
@@ -570,9 +605,7 @@ function LibraryPage() {
 
         {savedRemoteSeries.length > 0 ? (
           <div className="mt-5 space-y-1.5">
-            <p className="text-xs text-muted-foreground">
-              Saved online series
-            </p>
+            <p className="text-xs text-muted-foreground">Saved online series</p>
             {savedRemoteSeries.map((item) => (
               <article key={`remote:${item.id}`} className="exp-row">
                 <Link
@@ -581,13 +614,14 @@ function LibraryPage() {
                   className="group flex min-w-0 flex-1 items-center gap-3"
                 >
                   {item.coverUrl ? (
-                    <img
-                      className="h-20 w-14 shrink-0 border border-border object-cover"
+                    <FadeImage
+                      className="cover-hover h-20 w-14 shrink-0 border border-border object-cover"
                       src={item.coverUrl}
                       alt={`${item.title} cover`}
                       loading="lazy"
                       decoding="async"
                       fetchPriority="low"
+                      style={{ viewTransitionName: `cover-${item.id}` }}
                     />
                   ) : (
                     <div className="flex h-20 w-14 shrink-0 items-center justify-center border border-border bg-surface-soft text-[10px] text-muted-foreground">
@@ -609,15 +643,7 @@ function LibraryPage() {
                   className="size-8 text-destructive/90 hover:text-destructive"
                   aria-label={`Remove saved series ${item.title}`}
                   title={`Remove saved series ${item.title}`}
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        `Are you sure you want to remove ${item.title}?`,
-                      )
-                    ) {
-                      removeRemoteSeriesFromLibrary(item.id)
-                    }
-                  }}
+                  onClick={() => handleRemoveSeries(item)}
                 >
                   <Trash2 className="size-4" aria-hidden />
                 </Button>
@@ -627,10 +653,7 @@ function LibraryPage() {
         ) : null}
       </section>
 
-      <section
-        className="deferred-section exp-surface-soft animate-enter space-y-3"
-        style={{ animationDelay: '105ms' }}
-      >
+      <section className="deferred-section scroll-reveal pt-4 pb-6 space-y-3">
         <span className="issue-label">More</span>
         <details className="exp-details-panel px-3 py-2">
           <summary className="exp-details-summary">
@@ -662,12 +685,13 @@ function LibraryPage() {
               <ol className="flex flex-col space-y-1 text-xs text-muted-foreground">
                 <li>1. Open Tsuki in Chrome.</li>
                 <li className="inline-flex items-center gap-1">
-                  2. Tap <EllipsisVertical className="h-3.5 w-3.5" aria-hidden />
+                  2. Tap{' '}
+                  <EllipsisVertical className="h-3.5 w-3.5" aria-hidden />
                   menu.
                 </li>
                 <li className="inline-flex items-center gap-1">
-                  3. Tap <Download className="h-3.5 w-3.5" aria-hidden /> Install
-                  app.
+                  3. Tap <Download className="h-3.5 w-3.5" aria-hidden />{' '}
+                  Install app.
                 </li>
                 <li>4. Launch from your app drawer.</li>
               </ol>
@@ -704,6 +728,27 @@ function LibraryPage() {
           </p>
         </details>
       </section>
+
+      {undoToast ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 animate-enter"
+        >
+          <div className="flex items-center gap-3 rounded border border-border bg-surface px-4 py-2.5 text-sm shadow-lg">
+            <span className="text-foreground">
+              Removed <strong>{undoToast.item.title}</strong>
+            </span>
+            <button
+              type="button"
+              className="text-xs font-semibold text-koten underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-koten"
+              onClick={handleUndoRemove}
+            >
+              Undo
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

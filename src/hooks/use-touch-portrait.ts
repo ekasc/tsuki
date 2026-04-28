@@ -30,21 +30,25 @@ export function useTouchPortrait() {
   )
 
   useEffect(() => {
-    const media = window.matchMedia('(orientation: portrait)')
+    const orientationMedia = window.matchMedia('(orientation: portrait)')
+    const pointerMedia = window.matchMedia('(pointer: coarse)')
+
+    let lastValue = getTouchPortraitState()
 
     const update = () => {
-      setIsTouchPortrait(getTouchPortraitState())
+      const next = getTouchPortraitState()
+      if (next !== lastValue) {
+        lastValue = next
+        setIsTouchPortrait(next)
+      }
     }
 
-    update()
-    window.addEventListener('resize', update)
-    window.addEventListener('orientationchange', update)
-    media.addEventListener('change', update)
+    orientationMedia.addEventListener('change', update)
+    pointerMedia.addEventListener('change', update)
 
     return () => {
-      window.removeEventListener('resize', update)
-      window.removeEventListener('orientationchange', update)
-      media.removeEventListener('change', update)
+      orientationMedia.removeEventListener('change', update)
+      pointerMedia.removeEventListener('change', update)
     }
   }, [])
 
@@ -59,16 +63,19 @@ export function useTouchDevice() {
   useEffect(() => {
     const pointer = window.matchMedia('(pointer: coarse)')
 
+    let lastValue = getTouchDeviceState()
+
     const update = () => {
-      setIsTouchDevice(getTouchDeviceState())
+      const next = getTouchDeviceState()
+      if (next !== lastValue) {
+        lastValue = next
+        setIsTouchDevice(next)
+      }
     }
 
-    update()
-    window.addEventListener('resize', update)
     pointer.addEventListener('change', update)
 
     return () => {
-      window.removeEventListener('resize', update)
       pointer.removeEventListener('change', update)
     }
   }, [])

@@ -105,11 +105,12 @@
   }
 
   .reader-settings-action:hover {
-    background: color-mix(in oklab, var(--surface-soft) 82%, var(--bg) 18%);
+    background: color-mix(in oklab, var(--washi) 90%, var(--bg) 10%);
+    color: var(--koten);
   }
 
   .reader-settings-action:focus-visible {
-    outline: 2px solid color-mix(in oklab, var(--active), transparent 40%);
+    outline: 2px solid var(--koten);
     outline-offset: 2px;
   }
 
@@ -145,7 +146,15 @@
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: color-mix(in oklab, var(--accent) 54%, var(--text-soft) 46%);
+    color: var(--koten);
+  }
+
+  .reader-settings-heading::before {
+    content: none;
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 1px;
+    background: var(--koten);
   }
 
   .reader-settings-heading::before {
@@ -154,7 +163,8 @@
     height: 0.55rem;
     border-radius: 999px;
     background: color-mix(in oklab, var(--accent), transparent 18%);
-    box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent-soft), transparent 42%);
+    box-shadow: 0 0 0 2px
+      color-mix(in oklab, var(--accent-soft), transparent 42%);
   }
 
   .reader-settings-note {
@@ -209,22 +219,25 @@
   }
 
   .reader-shell-toggle {
-    border: 2px solid var(--border);
+    border: 1px solid var(--border);
     background: color-mix(in oklab, var(--surface-soft) 86%, var(--bg) 14%);
     color: var(--text);
-    box-shadow: 2px 2px 0 color-mix(in oklab, var(--shadow), transparent 24%);
     font-size: 1.35rem;
     font-weight: 700;
     line-height: 1;
     padding: 0;
+    transition:
+      background-color 150ms ease,
+      color 150ms ease;
   }
 
   .reader-shell-toggle:hover {
-    background: color-mix(in oklab, var(--surface) 90%, var(--bg) 10%);
+    background: color-mix(in oklab, var(--washi) 90%, var(--bg) 10%);
+    color: var(--koten);
   }
 
   .reader-shell-toggle:focus-visible {
-    outline: 2px solid color-mix(in oklab, var(--active), transparent 38%);
+    outline: 2px solid var(--koten);
     outline-offset: 2px;
   }
 
@@ -246,7 +259,6 @@
   .reader-chapter-jump {
     border: 1px solid color-mix(in oklab, var(--border), transparent 18%);
     background: color-mix(in oklab, var(--surface-soft) 86%, var(--bg) 14%);
-    box-shadow: 2px 2px 0 color-mix(in oklab, var(--shadow), transparent 26%);
     padding: 0.35rem;
   }
 
@@ -284,7 +296,7 @@
 
   .reader-native-pager {
     -ms-overflow-style: none;
-    contain: layout paint size;
+    contain: content;
     transform: translateZ(0);
     backface-visibility: hidden;
   }
@@ -296,16 +308,6 @@
   .reader-native-pager > div {
     transform: translateZ(0);
     backface-visibility: hidden;
-  }
-
-  .reader-page-motion-next {
-    animation: reader-page-motion-next 180ms cubic-bezier(0.18, 0.78, 0.2, 1);
-    will-change: transform;
-  }
-
-  .reader-page-motion-prev {
-    animation: reader-page-motion-prev 180ms cubic-bezier(0.18, 0.78, 0.2, 1);
-    will-change: transform;
   }
 
   @media (max-width: 768px) {
@@ -327,39 +329,14 @@
   }
 }
 
-@keyframes reader-page-motion-next {
-  from {
-    transform: translateX(14px);
+@media (prefers-reduced-motion: reduce) {
+  .reader-settings-action {
+    transition: none;
   }
 
-  to {
-    transform: translateX(0);
-  }
-}
-
-@keyframes reader-page-motion-prev {
-  from {
-    transform: translateX(-14px);
-  }
-
-  to {
-    transform: translateX(0);
+  .reader-settings-float,
+  .reader-shortcut-sheet {
+    transition: none;
+    animation: none;
   }
 }
-
-  @media (prefers-reduced-motion: reduce) {
-    .reader-settings-action {
-      transition: none;
-    }
-
-    .reader-settings-float,
-    .reader-shortcut-sheet {
-      transition: none;
-      animation: none;
-    }
-
-    .reader-page-motion-next,
-    .reader-page-motion-prev {
-      animation: none;
-    }
-  }

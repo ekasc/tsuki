@@ -10,6 +10,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Button } from '#/components/ui/button'
+import { FadeImage } from '#/components/ui/fade-image'
 import { Input } from '#/components/ui/input'
 import type { ReadingHistoryItem, SeriesDetail } from '#/lib/contracts'
 import { resolveApiUrl } from '#/lib/http-client'
@@ -165,8 +166,8 @@ function SeriesPage() {
   const nextChapter = useMemo(() => {
     const latestChapterId = latestHistoryEntry?.chapterId
     const latestChapter = latestChapterId
-      ? ascendingChapters.find((chapter) => chapter.id === latestChapterId) ??
-        null
+      ? (ascendingChapters.find((chapter) => chapter.id === latestChapterId) ??
+        null)
       : null
     const firstUnread =
       ascendingChapters.find((chapter) => !completedChapters.has(chapter.id)) ??
@@ -334,22 +335,20 @@ function SeriesPage() {
 
   return (
     <div className="space-y-5 pb-10">
-      <section
-        className="exp-hero animate-enter"
-        style={{ animationDelay: '20ms' }}
-      >
+      <section className="exp-hero">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="flex min-w-0 flex-col items-start gap-4 sm:flex-row">
             {previewCoverChapterId ? (
-              <img
+              <FadeImage
                 src={resolveApiUrl(
                   `/api/image/${previewCoverChapterId}/${previewCoverPageIndex}?thumb=1`,
                 )}
                 alt={`${series?.title ?? 'Series'} cover`}
-                className="h-36 w-24 shrink-0 border border-border object-cover sm:h-32"
+                className="cover-hover h-36 w-24 shrink-0 border border-border object-cover sm:h-32"
                 loading="eager"
                 fetchPriority="high"
                 decoding="async"
+                style={{ viewTransitionName: `cover-${params.seriesId}` }}
                 onError={() => {
                   if (previewCoverPageIndex === 0) {
                     setPreviewCoverPageIndex(1)
@@ -357,7 +356,10 @@ function SeriesPage() {
                 }}
               />
             ) : (
-              <div className="flex h-36 w-24 shrink-0 items-center justify-center border border-border bg-surface-soft text-xs text-muted-foreground sm:h-32">
+              <div
+                className="flex h-36 w-24 shrink-0 items-center justify-center border border-border bg-surface-soft text-xs text-muted-foreground sm:h-32"
+                style={{ viewTransitionName: `cover-${params.seriesId}` }}
+              >
                 No image
               </div>
             )}
@@ -371,7 +373,7 @@ function SeriesPage() {
 
               {series ? (
                 <>
-                  <h1 className="manga-title mt-4 text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
+                  <h1 className="manga-title mt-4 text-3xl font-bold tracking-tight text-foreground md:text-4xl">
                     {series.title}
                   </h1>
                   <p className="mt-2 text-sm leading-6 text-muted-foreground sm:line-clamp-5 md:line-clamp-none">
@@ -408,7 +410,7 @@ function SeriesPage() {
             <Link
               to="/reader/$chapterId"
               params={{ chapterId: nextChapter.id }}
-              className="delight-cta inline-flex h-10 w-full items-center justify-center border-2 border-primary bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[2px_2px_0_var(--shadow)] sm:w-auto"
+              className="delight-cta inline-flex h-10 w-full items-center justify-center bg-koten px-4 text-sm font-semibold text-[var(--active-contrast)] sm:w-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-koten"
             >
               Continue reading
             </Link>
@@ -418,7 +420,7 @@ function SeriesPage() {
 
       {isLoading ? (
         <section
-          className="exp-surface animate-enter text-sm text-muted-foreground"
+          className="text-sm text-muted-foreground"
           role="status"
           aria-live="polite"
         >
@@ -429,7 +431,7 @@ function SeriesPage() {
       ) : null}
 
       {error ? (
-        <section className="exp-surface text-sm text-destructive">
+        <section className="text-sm text-destructive">
           We could not open this series right now. Please go back and try again.
         </section>
       ) : null}
@@ -437,19 +439,14 @@ function SeriesPage() {
       <div className="manga-divider" aria-hidden />
 
       {!isLoading && series ? (
-        <section
-          className="animate-enter space-y-2"
-          style={{ animationDelay: '55ms' }}
-        >
+        <section className="space-y-2">
           <div className="exp-filter-toolbar">
             <div className="exp-toolbar-copy">
               <span className="issue-label">Chapters</span>
               <p className="text-sm text-foreground">
                 Filter, sort, or switch views.
               </p>
-              <p className="text-xs">
-                Search by chapter number or title.
-              </p>
+              <p className="text-xs">Search by chapter number or title.</p>
             </div>
             <div className="exp-filter-actions">
               <Button

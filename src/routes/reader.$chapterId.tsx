@@ -542,11 +542,12 @@ function resolveAdjacentChapterIds(series: SeriesDetail, chapterId: string) {
 function ReaderPage() {
   const params = Route.useParams()
   const navigate = useNavigate()
-  const loaderChapterPayload = Route.useLoaderData() as ChapterPayload | undefined
+  const loaderChapterPayload = Route.useLoaderData() as
+    | ChapterPayload
+    | undefined
   const queryClient = useQueryClient()
   const openingLine = useMemo(() => {
-    const seed =
-      params.chapterId.length + (params.chapterId.charCodeAt(0) || 0)
+    const seed = params.chapterId.length + (params.chapterId.charCodeAt(0) || 0)
     return LOCAL_READER_OPENING_LINES[seed % LOCAL_READER_OPENING_LINES.length]
   }, [params.chapterId])
 
@@ -631,7 +632,6 @@ function ReaderPage() {
     'next' | 'prev' | null
   >(null)
   const [boundaryNotice, setBoundaryNotice] = useState<string | null>(null)
-  const [pageMotion, setPageMotion] = useState<'next' | 'prev' | null>(null)
 
   const viewportRef = useRef<HTMLDivElement>(null)
   const readerStageRef = useRef<HTMLElement>(null)
@@ -639,7 +639,6 @@ function ReaderPage() {
   const pageHudTimeoutRef = useRef<number | null>(null)
   const readerUiTimeoutRef = useRef<number | null>(null)
   const boundaryNoticeTimeoutRef = useRef<number | null>(null)
-  const pageMotionTimeoutRef = useRef<number | null>(null)
   const dragStateRef = useRef<{
     active: boolean
     startX: number
@@ -870,10 +869,13 @@ function ReaderPage() {
             cursor += 1
 
             try {
-              await fetch(resolveApiUrl(`/api/image/${nextChapterId}/${index}`), {
-                signal: controller.signal,
-                cache: 'force-cache',
-              })
+              await fetch(
+                resolveApiUrl(`/api/image/${nextChapterId}/${index}`),
+                {
+                  signal: controller.signal,
+                  cache: 'force-cache',
+                },
+              )
             } catch {
               // Ignore warm failures.
             }
@@ -931,7 +933,9 @@ function ReaderPage() {
     }
 
     const chapterOptions = localChapterQueryOptions(params.chapterId)
-    const prefetchedPayload = prefetchedLocalChapterPayloads.get(params.chapterId)
+    const prefetchedPayload = prefetchedLocalChapterPayloads.get(
+      params.chapterId,
+    )
     const cachedPayload =
       prefetchedPayload ??
       queryClient.getQueryData<ChapterPayload>(chapterOptions.queryKey)
@@ -1018,8 +1022,7 @@ function ReaderPage() {
       void (async () => {
         try {
           const series =
-            cachedSeries ??
-            (await queryClient.fetchQuery(seriesOptions))
+            cachedSeries ?? (await queryClient.fetchQuery(seriesOptions))
           setBoundedMapEntry(
             prefetchedLocalSeriesDetails,
             payload.manifest.seriesId,
@@ -1270,7 +1273,14 @@ function ReaderPage() {
         completed: pageIndex >= maxPageIndex,
       })
     },
-    [chapterId, chapterPayload, maxPageIndex, mode, readingDirection, zoomPreset],
+    [
+      chapterId,
+      chapterPayload,
+      maxPageIndex,
+      mode,
+      readingDirection,
+      zoomPreset,
+    ],
   )
 
   const showPageHudForMoment = useCallback(() => {
@@ -1311,19 +1321,6 @@ function ReaderPage() {
       readerUiTimeoutRef.current = null
     }, uiAutoHideMs)
   }, [focusMode, isTouchDevice, sidebarOpen, uiAutoHideMs])
-
-  const triggerPageMotion = useCallback((direction: 'next' | 'prev') => {
-    setPageMotion(direction)
-
-    if (pageMotionTimeoutRef.current !== null) {
-      window.clearTimeout(pageMotionTimeoutRef.current)
-    }
-
-    pageMotionTimeoutRef.current = window.setTimeout(() => {
-      setPageMotion(null)
-      pageMotionTimeoutRef.current = null
-    }, 180)
-  }, [])
 
   const updateMagnifierFrame = useCallback(
     (event: MouseEvent<HTMLElement>) => {
@@ -1484,7 +1481,6 @@ function ReaderPage() {
         return
       }
 
-      triggerPageMotion('next')
       setCurrentStepIndex((prev) => {
         const next = Math.min(prev + 1, maxStepIndex)
         setCurrentPageIndex(
@@ -1507,7 +1503,6 @@ function ReaderPage() {
         return
       }
 
-      triggerPageMotion('next')
       setCurrentSingleStepIndex((prev) => {
         const next = Math.min(prev + 1, maxSingleStepIndex)
         setCurrentPageIndex(
@@ -1531,7 +1526,6 @@ function ReaderPage() {
 
     setPendingBoundaryDirection(null)
     setBoundaryNotice(null)
-    triggerPageMotion('next')
     goToPage(currentPageIndex + 1)
   }, [
     currentPageIndex,
@@ -1548,7 +1542,6 @@ function ReaderPage() {
     previousChapterId,
     activeDoubleSteps,
     singlePageSteps,
-    triggerPageMotion,
   ])
 
   const goPrevious = useCallback(() => {
@@ -1592,7 +1585,6 @@ function ReaderPage() {
         return
       }
 
-      triggerPageMotion('prev')
       setCurrentStepIndex((prev) => {
         const next = Math.max(prev - 1, 0)
         setCurrentPageIndex(
@@ -1615,7 +1607,6 @@ function ReaderPage() {
         return
       }
 
-      triggerPageMotion('prev')
       setCurrentSingleStepIndex((prev) => {
         const next = Math.max(prev - 1, 0)
         setCurrentPageIndex(
@@ -1639,7 +1630,6 @@ function ReaderPage() {
 
     setPendingBoundaryDirection(null)
     setBoundaryNotice(null)
-    triggerPageMotion('prev')
     goToPage(currentPageIndex - 1)
   }, [
     currentPageIndex,
@@ -1655,7 +1645,6 @@ function ReaderPage() {
     previousChapterId,
     activeDoubleSteps,
     singlePageSteps,
-    triggerPageMotion,
   ])
 
   const handleReaderTouchStart = useCallback(
@@ -2140,10 +2129,6 @@ function ReaderPage() {
       if (boundaryNoticeTimeoutRef.current !== null) {
         window.clearTimeout(boundaryNoticeTimeoutRef.current)
       }
-
-      if (pageMotionTimeoutRef.current !== null) {
-        window.clearTimeout(pageMotionTimeoutRef.current)
-      }
     },
     [],
   )
@@ -2236,6 +2221,153 @@ function ReaderPage() {
     )
   }
 
+  const advancedTuningInner = (
+    <div className="mt-2 grid gap-2">
+      {!isTouchDevice ? (
+        <div className="grid gap-2">
+          <Button
+            type="button"
+            variant={magnifierEnabled ? 'default' : 'soft'}
+            className="h-11 w-full px-3"
+            onClick={() => setMagnifierEnabled((value) => !value)}
+          >
+            Magnifier: {magnifierEnabled ? 'On' : 'Off'}
+          </Button>
+          <Button
+            type="button"
+            variant={focusMode ? 'default' : 'soft'}
+            className="h-11 w-full px-3"
+            onClick={() => setFocusMode((value) => !value)}
+          >
+            Distraction-free mode: {focusMode ? 'On' : 'Off'}
+          </Button>
+        </div>
+      ) : null}
+      <label className="reader-settings-label">
+        Pages to preload ahead
+        <Input
+          type="number"
+          min={1}
+          max={24}
+          value={preloadAhead}
+          onChange={(event) =>
+            setPreloadAhead(
+              clampNumber(Number.parseInt(event.target.value, 10), 1, 24),
+            )
+          }
+          className="mt-1 min-h-11"
+        />
+      </label>
+      <label className="reader-settings-label">
+        Pages to preload behind
+        <Input
+          type="number"
+          min={0}
+          max={12}
+          value={preloadBehind}
+          onChange={(event) =>
+            setPreloadBehind(
+              clampNumber(Number.parseInt(event.target.value, 10), 0, 12),
+            )
+          }
+          className="mt-1 min-h-11"
+        />
+      </label>
+      <label className="reader-settings-label">
+        Max parallel preloads
+        <Input
+          type="number"
+          min={1}
+          max={8}
+          value={prefetchConcurrency}
+          onChange={(event) =>
+            setPrefetchConcurrency(
+              clampNumber(Number.parseInt(event.target.value, 10), 1, 8),
+            )
+          }
+          className="mt-1 min-h-11"
+        />
+      </label>
+      <label className="reader-settings-label">
+        Start next chapter warm-up when this many pages remain
+        <Input
+          type="number"
+          min={1}
+          max={24}
+          value={nextChapterPrefetchThreshold}
+          onChange={(event) =>
+            setNextChapterPrefetchThreshold(
+              clampNumber(Number.parseInt(event.target.value, 10), 1, 24),
+            )
+          }
+          className="mt-1 min-h-11"
+        />
+      </label>
+      <label className="reader-settings-label">
+        Warm pages in the next chapter
+        <Input
+          type="number"
+          min={1}
+          max={16}
+          value={nextChapterWarmPages}
+          onChange={(event) =>
+            setNextChapterWarmPages(
+              clampNumber(Number.parseInt(event.target.value, 10), 1, 16),
+            )
+          }
+          className="mt-1 min-h-11"
+        />
+      </label>
+      <label className="reader-settings-label">
+        Hide reader controls after (ms)
+        <Input
+          type="number"
+          min={400}
+          max={5000}
+          step={100}
+          value={uiAutoHideMs}
+          onChange={(event) =>
+            setUiAutoHideMs(
+              clampNumber(Number.parseInt(event.target.value, 10), 400, 5000),
+            )
+          }
+          className="mt-1 min-h-11"
+        />
+      </label>
+      <label className="reader-settings-label">
+        Magnifier size (px)
+        <Input
+          type="number"
+          min={120}
+          max={420}
+          value={magnifierSize}
+          onChange={(event) =>
+            setMagnifierSize(
+              clampNumber(Number.parseInt(event.target.value, 10), 120, 420),
+            )
+          }
+          className="mt-1 min-h-11"
+        />
+      </label>
+      <label className="reader-settings-label">
+        Magnifier zoom level
+        <Input
+          type="number"
+          min={2}
+          max={5}
+          step={0.1}
+          value={magnifierZoom}
+          onChange={(event) =>
+            setMagnifierZoom(
+              clampNumber(Number.parseFloat(event.target.value), 2, 5),
+            )
+          }
+          className="mt-1 min-h-11"
+        />
+      </label>
+    </div>
+  )
+
   return (
     <div
       className={
@@ -2257,7 +2389,9 @@ function ReaderPage() {
           className={`reader-shell-toggle absolute ui-left-safe-offset ui-top-safe-offset z-50 size-12 text-2xl transition-transform duration-200 md:size-10 ${showReaderChrome || sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'} ${isTouchDevice ? 'hidden' : ''} ${sidebarOpen ? 'md:left-[calc(min(88vw,360px)+12px)]' : ''}`}
           onClick={() => setSidebarOpen((current) => !current)}
           type="button"
-          aria-label={sidebarOpen ? 'Close settings panel' : 'Open settings panel'}
+          aria-label={
+            sidebarOpen ? 'Close settings panel' : 'Open settings panel'
+          }
           title={sidebarOpen ? 'Close settings panel' : 'Open settings panel'}
         >
           {sidebarOpen ? '\u2039' : '\u203a'}
@@ -2564,85 +2698,91 @@ function ReaderPage() {
                   />
                 )}
 
-                <Button
-                  type="button"
-                  variant={doublePageOffset ? 'default' : 'soft'}
-                  className="h-11 w-full px-3"
-                  onClick={() => setDoublePageOffset((value) => !value)}
-                >
-                  Offset: {doublePageOffset ? 'On' : 'Off'}
-                </Button>
-
-                <SelectField
-                  value={zoomPreset}
-                  aria-label="Zoom preset"
-                  onChange={(event) =>
-                    setZoomPreset(event.target.value as ZoomPreset)
-                  }
-                  className="h-11"
-                  data-testid="zoom-select"
-                  options={[
-                    { value: 'fit-height', label: 'Fit to screen' },
-                    { value: 'fit-width', label: 'Fit to width' },
-                    { value: 'actual', label: 'Actual size' },
-                  ]}
-                />
-
-                {seriesChapters.length > 0 ? (
+                {!(isTouchDevice && isTouchPortrait) ? (
                   <>
-                    <p
-                      className={`reader-settings-heading ${isTouchDevice ? 'col-span-2' : ''}`}
+                    <Button
+                      type="button"
+                      variant={doublePageOffset ? 'default' : 'soft'}
+                      className="h-11 w-full px-3"
+                      onClick={() => setDoublePageOffset((value) => !value)}
                     >
-                      Chapter jump
-                    </p>
-                    {orderedSeriesChapters.length > 0 ? (
-                      <SelectField
-                        value={chapterPayload.manifest.chapterId}
-                        aria-label="Chapter jump"
-                        onPointerDown={() => {
-                          chapterJumpInteractionRef.current = true
-                        }}
-                        onKeyDown={(event) => {
-                          if (
-                            event.key === 'ArrowLeft' ||
-                            event.key === 'ArrowRight'
-                          ) {
-                            chapterJumpInteractionRef.current = false
-                            event.preventDefault()
-                            event.stopPropagation()
-                            return
-                          }
-                          chapterJumpInteractionRef.current = true
-                        }}
-                        onChange={(event) => {
-                          if (!chapterJumpInteractionRef.current) {
-                            return
-                          }
-                          chapterJumpInteractionRef.current = false
-                          const nextId = event.target.value
-                          if (nextId === chapterPayload.manifest.chapterId) {
-                            return
-                          }
-                          persistProgressNow(
-                            currentProgressPageIndex,
-                            currentStepIndex,
-                          )
-                          void navigate({
-                            to: '/reader/$chapterId',
-                            params: { chapterId: nextId },
-                          })
-                        }}
-                        className={`h-11 min-w-0 ${isTouchDevice ? 'col-span-2' : ''}`}
-                        options={orderedSeriesChapters.map((chapter) => ({
-                          value: chapter.id,
-                          label: `Chapter ${chapter.chapterNumber}`,
-                        }))}
-                      />
-                    ) : (
-                      <p className="col-span-2 px-1 text-xs text-muted-foreground">
-                        No chapter found. Try a different number.
-                      </p>
-                    )}
+                      Offset: {doublePageOffset ? 'On' : 'Off'}
+                    </Button>
+
+                    <SelectField
+                      value={zoomPreset}
+                      aria-label="Zoom preset"
+                      onChange={(event) =>
+                        setZoomPreset(event.target.value as ZoomPreset)
+                      }
+                      className="h-11"
+                      data-testid="zoom-select"
+                      options={[
+                        { value: 'fit-height', label: 'Fit to screen' },
+                        { value: 'fit-width', label: 'Fit to width' },
+                        { value: 'actual', label: 'Actual size' },
+                      ]}
+                    />
+
+                    {seriesChapters.length > 0 ? (
+                      <>
+                        <p
+                          className={`reader-settings-heading ${isTouchDevice ? 'col-span-2' : ''}`}
+                        >
+                          Chapter jump
+                        </p>
+                        {orderedSeriesChapters.length > 0 ? (
+                          <SelectField
+                            value={chapterPayload.manifest.chapterId}
+                            aria-label="Chapter jump"
+                            onPointerDown={() => {
+                              chapterJumpInteractionRef.current = true
+                            }}
+                            onKeyDown={(event) => {
+                              if (
+                                event.key === 'ArrowLeft' ||
+                                event.key === 'ArrowRight'
+                              ) {
+                                chapterJumpInteractionRef.current = false
+                                event.preventDefault()
+                                event.stopPropagation()
+                                return
+                              }
+                              chapterJumpInteractionRef.current = true
+                            }}
+                            onChange={(event) => {
+                              if (!chapterJumpInteractionRef.current) {
+                                return
+                              }
+                              chapterJumpInteractionRef.current = false
+                              const nextId = event.target.value
+                              if (
+                                nextId === chapterPayload.manifest.chapterId
+                              ) {
+                                return
+                              }
+                              persistProgressNow(
+                                currentProgressPageIndex,
+                                currentStepIndex,
+                              )
+                              void navigate({
+                                to: '/reader/$chapterId',
+                                params: { chapterId: nextId },
+                              })
+                            }}
+                            className={`h-11 min-w-0 ${isTouchDevice ? 'col-span-2' : ''}`}
+                            options={orderedSeriesChapters.map((chapter) => ({
+                              value: chapter.id,
+                              label: `Chapter ${chapter.chapterNumber}`,
+                            }))}
+                          />
+                        ) : (
+                          <p className="col-span-2 px-1 text-xs text-muted-foreground">
+                            No chapter found. Try a different number.
+                          </p>
+                        )}
+                      </>
+                    ) : null}
                   </>
                 ) : null}
 
@@ -2652,205 +2792,125 @@ function ReaderPage() {
                   <span>
                     Page {currentTargetPageIndex + 1} of {pages.length}
                   </span>
-                <RangeSlider
-                  min={0}
-                  max={scrubberMax}
-                  value={scrubberValue}
-                  onChange={(event) =>
-                    goToPage(Number.parseInt(event.target.value, 10))
-                  }
-                  className="mt-2 w-full accent-primary"
-                  style={
-                    readingDirection === 'rtl'
-                      ? { transform: 'scaleX(-1)' }
-                      : undefined
-                  }
-                  data-testid="page-scrubber"
-                />
-              </label>
+                  <RangeSlider
+                    min={0}
+                    max={scrubberMax}
+                    value={scrubberValue}
+                    onChange={(event) =>
+                      goToPage(Number.parseInt(event.target.value, 10))
+                    }
+                    className="mt-2 w-full accent-primary"
+                    style={
+                      readingDirection === 'rtl'
+                        ? { transform: 'scaleX(-1)' }
+                        : undefined
+                    }
+                    data-testid="page-scrubber"
+                  />
+                </label>
               </div>
 
-              <details className="reader-settings-advanced mt-3 text-xs text-muted-foreground">
-                <summary className="font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                  Advanced tuning
-                </summary>
-                <div className="mt-2 grid gap-2">
-                  {!isTouchDevice ? (
-                    <div className="grid gap-2">
-                      <Button
-                        type="button"
-                        variant={magnifierEnabled ? 'default' : 'soft'}
-                        className="h-11 w-full px-3"
-                        onClick={() => setMagnifierEnabled((value) => !value)}
-                      >
-                        Magnifier: {magnifierEnabled ? 'On' : 'Off'}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={focusMode ? 'default' : 'soft'}
-                        className="h-11 w-full px-3"
-                        onClick={() => setFocusMode((value) => !value)}
-                      >
-                        Distraction-free mode: {focusMode ? 'On' : 'Off'}
-                      </Button>
+              {isTouchDevice && isTouchPortrait && (
+                <details className="exp-details-panel mt-2 px-3 py-2 text-xs text-muted-foreground">
+                  <summary className="exp-details-summary">
+                    More settings
+                  </summary>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <SelectField
+                      value={zoomPreset}
+                      aria-label="Zoom preset"
+                      onChange={(event) =>
+                        setZoomPreset(event.target.value as ZoomPreset)
+                      }
+                      className="h-11"
+                      data-testid="zoom-select"
+                      options={[
+                        { value: 'fit-height', label: 'Fit to screen' },
+                        { value: 'fit-width', label: 'Fit to width' },
+                        { value: 'actual', label: 'Actual size' },
+                      ]}
+                    />
+                    <Button
+                      type="button"
+                      variant={doublePageOffset ? 'default' : 'soft'}
+                      className="h-11 w-full px-3"
+                      onClick={() => setDoublePageOffset((value) => !value)}
+                    >
+                      Offset: {doublePageOffset ? 'On' : 'Off'}
+                    </Button>
+                  </div>
+                  {seriesChapters.length > 0 ? (
+                    <div className="mt-2">
+                      <p className="reader-settings-heading col-span-2">
+                        Chapter jump
+                      </p>
+                      {orderedSeriesChapters.length > 0 ? (
+                        <SelectField
+                          value={chapterPayload.manifest.chapterId}
+                          aria-label="Chapter jump"
+                          onPointerDown={() => {
+                            chapterJumpInteractionRef.current = true
+                          }}
+                          onKeyDown={(event) => {
+                            if (
+                              event.key === 'ArrowLeft' ||
+                              event.key === 'ArrowRight'
+                            ) {
+                              chapterJumpInteractionRef.current = false
+                              event.preventDefault()
+                              event.stopPropagation()
+                              return
+                            }
+                            chapterJumpInteractionRef.current = true
+                          }}
+                          onChange={(event) => {
+                            if (!chapterJumpInteractionRef.current) {
+                              return
+                            }
+                            chapterJumpInteractionRef.current = false
+                            const nextId = event.target.value
+                            if (nextId === chapterPayload.manifest.chapterId) {
+                              return
+                            }
+                            persistProgressNow(
+                              currentProgressPageIndex,
+                              currentStepIndex,
+                            )
+                            void navigate({
+                              to: '/reader/$chapterId',
+                              params: { chapterId: nextId },
+                            })
+                          }}
+                          className="h-11 min-w-0 col-span-2"
+                          options={orderedSeriesChapters.map((chapter) => ({
+                            value: chapter.id,
+                            label: `Chapter ${chapter.chapterNumber}`,
+                          }))}
+                        />
+                      ) : (
+                        <p className="col-span-2 px-1 text-xs text-muted-foreground">
+                          No chapter found. Try a different number.
+                        </p>
+                      )}
                     </div>
                   ) : null}
-                  <label className="reader-settings-label">
-                    Pages to preload ahead
-                    <Input
-                      type="number"
-                      min={1}
-                      max={24}
-                      value={preloadAhead}
-                      onChange={(event) =>
-                        setPreloadAhead(
-                          clampNumber(
-                            Number.parseInt(event.target.value, 10),
-                            1,
-                            24,
-                          ),
-                        )
-                      }
-                      className="mt-1 min-h-11"
-                    />
-                  </label>
-                  <label className="reader-settings-label">
-                    Pages to preload behind
-                    <Input
-                      type="number"
-                      min={0}
-                      max={12}
-                      value={preloadBehind}
-                      onChange={(event) =>
-                        setPreloadBehind(
-                          clampNumber(
-                            Number.parseInt(event.target.value, 10),
-                            0,
-                            12,
-                          ),
-                        )
-                      }
-                      className="mt-1 min-h-11"
-                    />
-                  </label>
-                  <label className="reader-settings-label">
-                    Max parallel preloads
-                    <Input
-                      type="number"
-                      min={1}
-                      max={8}
-                      value={prefetchConcurrency}
-                      onChange={(event) =>
-                        setPrefetchConcurrency(
-                          clampNumber(
-                            Number.parseInt(event.target.value, 10),
-                            1,
-                            8,
-                          ),
-                        )
-                      }
-                      className="mt-1 min-h-11"
-                    />
-                  </label>
-                  <label className="reader-settings-label">
-                    Start next chapter warm-up when this many pages remain
-                    <Input
-                      type="number"
-                      min={1}
-                      max={24}
-                      value={nextChapterPrefetchThreshold}
-                      onChange={(event) =>
-                        setNextChapterPrefetchThreshold(
-                          clampNumber(
-                            Number.parseInt(event.target.value, 10),
-                            1,
-                            24,
-                          ),
-                        )
-                      }
-                      className="mt-1 min-h-11"
-                    />
-                  </label>
-                  <label className="reader-settings-label">
-                    Warm pages in the next chapter
-                    <Input
-                      type="number"
-                      min={1}
-                      max={16}
-                      value={nextChapterWarmPages}
-                      onChange={(event) =>
-                        setNextChapterWarmPages(
-                          clampNumber(
-                            Number.parseInt(event.target.value, 10),
-                            1,
-                            16,
-                          ),
-                        )
-                      }
-                      className="mt-1 min-h-11"
-                    />
-                  </label>
-                  <label className="reader-settings-label">
-                    Hide reader controls after (ms)
-                    <Input
-                      type="number"
-                      min={400}
-                      max={5000}
-                      step={100}
-                      value={uiAutoHideMs}
-                      onChange={(event) =>
-                        setUiAutoHideMs(
-                          clampNumber(
-                            Number.parseInt(event.target.value, 10),
-                            400,
-                            5000,
-                          ),
-                        )
-                      }
-                      className="mt-1 min-h-11"
-                    />
-                  </label>
-                  <label className="reader-settings-label">
-                    Magnifier size (px)
-                    <Input
-                      type="number"
-                      min={120}
-                      max={420}
-                      value={magnifierSize}
-                      onChange={(event) =>
-                        setMagnifierSize(
-                          clampNumber(
-                            Number.parseInt(event.target.value, 10),
-                            120,
-                            420,
-                          ),
-                        )
-                      }
-                      className="mt-1 min-h-11"
-                    />
-                  </label>
-                  <label className="reader-settings-label">
-                    Magnifier zoom level
-                    <Input
-                      type="number"
-                      min={2}
-                      max={5}
-                      step={0.1}
-                      value={magnifierZoom}
-                      onChange={(event) =>
-                        setMagnifierZoom(
-                          clampNumber(
-                            Number.parseFloat(event.target.value),
-                            2,
-                            5,
-                          ),
-                        )
-                      }
-                      className="mt-1 min-h-11"
-                    />
-                  </label>
-                </div>
-              </details>
+                  <details className="reader-settings-advanced mt-2 text-xs text-muted-foreground">
+                    <summary className="font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                      Advanced tuning
+                    </summary>
+                    {advancedTuningInner}
+                  </details>
+                </details>
+              )}
+
+              {!(isTouchDevice && isTouchPortrait) ? (
+                <details className="reader-settings-advanced mt-3 text-xs text-muted-foreground">
+                  <summary className="font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    Advanced tuning
+                  </summary>
+                  {advancedTuningInner}
+                </details>
+              ) : null}
 
               <div className="mt-3 flex items-center justify-between gap-2">
                 <Button
@@ -3047,32 +3107,24 @@ function ReaderPage() {
           >
             <div
               ref={swipeTrackRef}
-              className={`flex h-full items-center justify-center gap-0 overflow-hidden ${isSinglePageTouchView ? 'px-4' : ''} ${pageMotion ? `reader-page-motion-${pageMotion}` : ''}`}
+              className={`flex h-full items-center justify-center gap-0 overflow-hidden ${isSinglePageTouchView ? 'px-4' : ''}`}
               data-testid="reader-paging-container"
             >
               {renderUnitsForPaging(currentRenderUnits, 'current')}
             </div>
 
-            {!isTouchDevice &&
-            !magnifierEnabled &&
-            zoomPreset !== 'actual' ? (
+            {!isTouchDevice && !magnifierEnabled && zoomPreset !== 'actual' ? (
               <ReaderTapZone
                 side="left"
                 action={readingDirection === 'rtl' ? 'next' : 'previous'}
-                onActivate={
-                  readingDirection === 'rtl' ? goNext : goPrevious
-                }
+                onActivate={readingDirection === 'rtl' ? goNext : goPrevious}
               />
             ) : null}
-            {!isTouchDevice &&
-            !magnifierEnabled &&
-            zoomPreset !== 'actual' ? (
+            {!isTouchDevice && !magnifierEnabled && zoomPreset !== 'actual' ? (
               <ReaderTapZone
                 side="right"
                 action={readingDirection === 'rtl' ? 'previous' : 'next'}
-                onActivate={
-                  readingDirection === 'rtl' ? goPrevious : goNext
-                }
+                onActivate={readingDirection === 'rtl' ? goPrevious : goNext}
               />
             ) : null}
             {!fullscreenActive &&
@@ -3083,16 +3135,12 @@ function ReaderPage() {
                 <ReaderEdgeArrowButton
                   side="left"
                   action={readingDirection === 'rtl' ? 'next' : 'previous'}
-                  onActivate={
-                    readingDirection === 'rtl' ? goNext : goPrevious
-                  }
+                  onActivate={readingDirection === 'rtl' ? goNext : goPrevious}
                 />
                 <ReaderEdgeArrowButton
                   side="right"
                   action={readingDirection === 'rtl' ? 'previous' : 'next'}
-                  onActivate={
-                    readingDirection === 'rtl' ? goPrevious : goNext
-                  }
+                  onActivate={readingDirection === 'rtl' ? goPrevious : goNext}
                 />
               </>
             ) : null}

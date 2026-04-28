@@ -60,14 +60,17 @@ export const Route = createFileRoute('/weebcentral/$chapterId')({
       { title: 'Tsuki reader' },
       {
         name: 'description',
-        content: 'Read manga chapters in Tsuki with a clean, distraction-free viewer.',
+        content:
+          'Read manga chapters in Tsuki with a clean, distraction-free viewer.',
       },
       { name: 'robots', content: 'index,follow,max-image-preview:large' },
     ],
     links: [
       {
         rel: 'canonical',
-        href: canonicalUrl(`/weebcentral/${encodeURIComponent(params.chapterId)}`),
+        href: canonicalUrl(
+          `/weebcentral/${encodeURIComponent(params.chapterId)}`,
+        ),
       },
       { rel: 'stylesheet', href: readerCss },
     ],
@@ -572,9 +575,7 @@ function loadRemoteProgress(chapterId: string): StoredRemoteProgress | null {
       pageIndex:
         typeof item.pageIndex === 'number' ? Math.max(0, item.pageIndex) : 0,
       mode:
-        item.mode === 'double' || item.mode === 'scroll'
-          ? item.mode
-          : 'single',
+        item.mode === 'double' || item.mode === 'scroll' ? item.mode : 'single',
       direction: item.direction === 'ltr' ? 'ltr' : 'rtl',
       zoomPreset:
         item.zoomPreset === 'fit-width' || item.zoomPreset === 'actual'
@@ -635,11 +636,12 @@ function WeebcentralReaderPage() {
     seriesTitle?: string
   }
   const navigate = useNavigate()
-  const loaderChapter = Route.useLoaderData() as WeebcentralChapterDTO | undefined
+  const loaderChapter = Route.useLoaderData() as
+    | WeebcentralChapterDTO
+    | undefined
   const queryClient = useQueryClient()
   const openingLine = useMemo(() => {
-    const seed =
-      params.chapterId.length + (params.chapterId.charCodeAt(0) || 0)
+    const seed = params.chapterId.length + (params.chapterId.charCodeAt(0) || 0)
     return REMOTE_READER_OPENING_LINES[
       seed % REMOTE_READER_OPENING_LINES.length
     ]
@@ -720,7 +722,7 @@ function WeebcentralReaderPage() {
     'next' | 'prev' | null
   >(null)
   const [boundaryNotice, setBoundaryNotice] = useState<string | null>(null)
-  const [pageMotion, setPageMotion] = useState<'next' | 'prev' | null>(null)
+
   const [nativePagerVisualLock, setNativePagerVisualLock] = useState(false)
 
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -728,7 +730,7 @@ function WeebcentralReaderPage() {
   const pageHudTimeoutRef = useRef<number | null>(null)
   const readerUiTimeoutRef = useRef<number | null>(null)
   const boundaryNoticeTimeoutRef = useRef<number | null>(null)
-  const pageMotionTimeoutRef = useRef<number | null>(null)
+
   const dragStateRef = useRef<{
     active: boolean
     startX: number
@@ -962,26 +964,24 @@ function WeebcentralReaderPage() {
     readingDirection,
     singlePageSteps,
   ])
-  const leftRenderUnits =
-    nativePagerVisualLock
-      ? currentRenderUnits
-      : readingDirection === 'rtl'
-        ? nextRenderUnits.length > 0
-          ? nextRenderUnits
-          : currentRenderUnits
-        : previousRenderUnits.length > 0
-          ? previousRenderUnits
-          : currentRenderUnits
-  const rightRenderUnits =
-    nativePagerVisualLock
-      ? currentRenderUnits
-      : readingDirection === 'rtl'
-        ? previousRenderUnits.length > 0
-          ? previousRenderUnits
-          : currentRenderUnits
-        : nextRenderUnits.length > 0
-          ? nextRenderUnits
-          : currentRenderUnits
+  const leftRenderUnits = nativePagerVisualLock
+    ? currentRenderUnits
+    : readingDirection === 'rtl'
+      ? nextRenderUnits.length > 0
+        ? nextRenderUnits
+        : currentRenderUnits
+      : previousRenderUnits.length > 0
+        ? previousRenderUnits
+        : currentRenderUnits
+  const rightRenderUnits = nativePagerVisualLock
+    ? currentRenderUnits
+    : readingDirection === 'rtl'
+      ? previousRenderUnits.length > 0
+        ? previousRenderUnits
+        : currentRenderUnits
+      : nextRenderUnits.length > 0
+        ? nextRenderUnits
+        : currentRenderUnits
 
   const armNativePagerVisualLock = useCallback((durationMs = 220) => {
     setNativePagerVisualLock(true)
@@ -1104,6 +1104,153 @@ function WeebcentralReaderPage() {
     [displayUnits],
   )
 
+  const advancedTuningInner = (
+    <div className="mt-2 grid gap-2">
+      {!isTouchDevice ? (
+        <div className="grid gap-2">
+          <Button
+            type="button"
+            variant={magnifierEnabled ? 'default' : 'soft'}
+            className="h-11 w-full px-3"
+            onClick={() => setMagnifierEnabled((value) => !value)}
+          >
+            Magnifier: {magnifierEnabled ? 'On' : 'Off'}
+          </Button>
+          <Button
+            type="button"
+            variant={focusMode ? 'default' : 'soft'}
+            className="h-11 w-full px-3"
+            onClick={() => setFocusMode((value) => !value)}
+          >
+            Distraction-free mode: {focusMode ? 'On' : 'Off'}
+          </Button>
+        </div>
+      ) : null}
+      <label className="reader-settings-label">
+        Pages to preload ahead
+        <Input
+          type="number"
+          min={1}
+          max={16}
+          value={preloadAhead}
+          onChange={(event) =>
+            setPreloadAhead(
+              clampNumber(Number.parseInt(event.target.value, 10), 1, 16),
+            )
+          }
+          className="mt-1 min-h-11"
+        />
+      </label>
+      <label className="reader-settings-label">
+        Pages to preload behind
+        <Input
+          type="number"
+          min={0}
+          max={8}
+          value={preloadBehind}
+          onChange={(event) =>
+            setPreloadBehind(
+              clampNumber(Number.parseInt(event.target.value, 10), 0, 8),
+            )
+          }
+          className="mt-1 min-h-11"
+        />
+      </label>
+      <label className="reader-settings-label">
+        Max parallel preloads
+        <Input
+          type="number"
+          min={1}
+          max={4}
+          value={prefetchConcurrency}
+          onChange={(event) =>
+            setPrefetchConcurrency(
+              clampNumber(Number.parseInt(event.target.value, 10), 1, 4),
+            )
+          }
+          className="mt-1 min-h-11"
+        />
+      </label>
+      <label className="reader-settings-label">
+        Start next chapter warm-up when this many pages remain
+        <Input
+          type="number"
+          min={1}
+          max={12}
+          value={nextChapterPrefetchThreshold}
+          onChange={(event) =>
+            setNextChapterPrefetchThreshold(
+              clampNumber(Number.parseInt(event.target.value, 10), 1, 12),
+            )
+          }
+          className="mt-1 min-h-11"
+        />
+      </label>
+      <label className="reader-settings-label">
+        Warm pages in the next chapter
+        <Input
+          type="number"
+          min={1}
+          max={6}
+          value={nextChapterWarmPages}
+          onChange={(event) =>
+            setNextChapterWarmPages(
+              clampNumber(Number.parseInt(event.target.value, 10), 1, 6),
+            )
+          }
+          className="mt-1 min-h-11"
+        />
+      </label>
+      <label className="reader-settings-label">
+        Hide reader controls after (ms)
+        <Input
+          type="number"
+          min={400}
+          max={5000}
+          step={100}
+          value={uiAutoHideMs}
+          onChange={(event) =>
+            setUiAutoHideMs(
+              clampNumber(Number.parseInt(event.target.value, 10), 400, 5000),
+            )
+          }
+          className="mt-1 min-h-11"
+        />
+      </label>
+      <label className="reader-settings-label">
+        Magnifier size (px)
+        <Input
+          type="number"
+          min={120}
+          max={420}
+          value={magnifierSize}
+          onChange={(event) =>
+            setMagnifierSize(
+              clampNumber(Number.parseInt(event.target.value, 10), 120, 420),
+            )
+          }
+          className="mt-1 min-h-11"
+        />
+      </label>
+      <label className="reader-settings-label">
+        Magnifier zoom level
+        <Input
+          type="number"
+          min={2}
+          max={5}
+          step={0.1}
+          value={magnifierZoom}
+          onChange={(event) =>
+            setMagnifierZoom(
+              clampNumber(Number.parseFloat(event.target.value), 2, 5),
+            )
+          }
+          className="mt-1 min-h-11"
+        />
+      </label>
+    </div>
+  )
+
   const showPageHudForMoment = useCallback(() => {
     if (!fullscreenActive) {
       return
@@ -1143,19 +1290,6 @@ function WeebcentralReaderPage() {
       readerUiTimeoutRef.current = null
     }, uiAutoHideMs)
   }, [focusMode, isTouchDevice, sidebarOpen, uiAutoHideMs])
-
-  const triggerPageMotion = useCallback((direction: 'next' | 'prev') => {
-    setPageMotion(direction)
-
-    if (pageMotionTimeoutRef.current !== null) {
-      window.clearTimeout(pageMotionTimeoutRef.current)
-    }
-
-    pageMotionTimeoutRef.current = window.setTimeout(() => {
-      setPageMotion(null)
-      pageMotionTimeoutRef.current = null
-    }, 180)
-  }, [])
 
   const updateMagnifierFrame = useCallback(
     (event: MouseEvent<HTMLElement>) => {
@@ -1378,8 +1512,7 @@ function WeebcentralReaderPage() {
       void (async () => {
         try {
           const seriesPayload =
-            cachedSeries ??
-            (await queryClient.fetchQuery(seriesOptions))
+            cachedSeries ?? (await queryClient.fetchQuery(seriesOptions))
           setBoundedMapEntry(
             prefetchedRemoteSeries,
             seriesInput,
@@ -1519,11 +1652,7 @@ function WeebcentralReaderPage() {
     return () => {
       window.clearTimeout(timeout)
     }
-  }, [
-    currentProgressPageIndex,
-    chapter,
-    persistRemoteProgressNow,
-  ])
+  }, [currentProgressPageIndex, chapter, persistRemoteProgressNow])
 
   useEffect(() => {
     const start = Math.max(0, currentTargetPageIndex - preloadBehind)
@@ -1753,10 +1882,6 @@ function WeebcentralReaderPage() {
         window.clearTimeout(boundaryNoticeTimeoutRef.current)
       }
 
-      if (pageMotionTimeoutRef.current !== null) {
-        window.clearTimeout(pageMotionTimeoutRef.current)
-      }
-
       if (swipeCommitTimeoutRef.current !== null) {
         window.clearTimeout(swipeCommitTimeoutRef.current)
       }
@@ -1912,7 +2037,6 @@ function WeebcentralReaderPage() {
       }
 
       const next = clamp(currentStepIndex + 1, 0, maxStepIndex)
-      triggerPageMotion('next')
       setCurrentStepIndex(next)
       setCurrentPageIndex(
         activeDoubleSteps[next]?.anchorPageIndex ?? currentPageIndex,
@@ -1937,7 +2061,6 @@ function WeebcentralReaderPage() {
         0,
         maxSingleStepIndex,
       )
-      triggerPageMotion('next')
       setCurrentSingleStepIndex(nextSingle)
       setCurrentPageIndex(
         singlePageSteps[nextSingle]?.anchorPageIndex ?? currentPageIndex,
@@ -1958,7 +2081,6 @@ function WeebcentralReaderPage() {
 
     setPendingBoundaryDirection(null)
     setBoundaryNotice(null)
-    triggerPageMotion('next')
     goToPage(currentPageIndex + 1)
   }, [
     currentPageIndex,
@@ -1975,7 +2097,6 @@ function WeebcentralReaderPage() {
     previousChapterId,
     activeDoubleSteps,
     singlePageSteps,
-    triggerPageMotion,
   ])
 
   const goPrevious = useCallback(() => {
@@ -2020,7 +2141,6 @@ function WeebcentralReaderPage() {
       }
 
       const previous = clamp(currentStepIndex - 1, 0, maxStepIndex)
-      triggerPageMotion('prev')
       setCurrentStepIndex(previous)
       setCurrentPageIndex(
         activeDoubleSteps[previous]?.anchorPageIndex ?? currentPageIndex,
@@ -2045,7 +2165,6 @@ function WeebcentralReaderPage() {
         0,
         maxSingleStepIndex,
       )
-      triggerPageMotion('prev')
       setCurrentSingleStepIndex(previousSingle)
       setCurrentPageIndex(
         singlePageSteps[previousSingle]?.anchorPageIndex ?? currentPageIndex,
@@ -2066,7 +2185,6 @@ function WeebcentralReaderPage() {
 
     setPendingBoundaryDirection(null)
     setBoundaryNotice(null)
-    triggerPageMotion('prev')
     goToPage(currentPageIndex - 1)
   }, [
     currentPageIndex,
@@ -2082,7 +2200,6 @@ function WeebcentralReaderPage() {
     previousChapterId,
     activeDoubleSteps,
     singlePageSteps,
-    triggerPageMotion,
   ])
 
   const navigatingRef = useRef(false)
@@ -2747,7 +2864,8 @@ function WeebcentralReaderPage() {
     toggleFullscreen,
   ])
 
-  const remoteSeriesTitle = series?.title ?? search.seriesTitle ?? 'Online series'
+  const remoteSeriesTitle =
+    series?.title ?? search.seriesTitle ?? 'Online series'
   const remoteSeriesIdForLink =
     series?.id ?? search.seriesId ?? chapter?.seriesId ?? params.chapterId
   const activeChapterMetadata =
@@ -2794,7 +2912,9 @@ function WeebcentralReaderPage() {
           className={`reader-shell-toggle absolute ui-left-safe-offset ui-top-safe-offset z-50 size-12 text-2xl transition-transform duration-200 md:size-10 ${showReaderChrome || sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'} ${isTouchDevice ? 'hidden' : ''} ${sidebarOpen ? 'md:left-[calc(min(88vw,360px)+12px)]' : ''}`}
           onClick={() => setSidebarOpen((current) => !current)}
           type="button"
-          aria-label={sidebarOpen ? 'Close settings panel' : 'Open settings panel'}
+          aria-label={
+            sidebarOpen ? 'Close settings panel' : 'Open settings panel'
+          }
           title={sidebarOpen ? 'Close settings panel' : 'Open settings panel'}
         >
           {sidebarOpen ? '\u2039' : '\u203a'}
@@ -3005,77 +3125,77 @@ function WeebcentralReaderPage() {
                 />
               )}
 
-              <Button
-                type="button"
-                variant={doublePageOffset ? 'default' : 'soft'}
-                className="h-11 w-full px-3"
-                onClick={() => setDoublePageOffset((value) => !value)}
-              >
-                Offset: {doublePageOffset ? 'On' : 'Off'}
-              </Button>
-
-              <SelectField
-                value={zoomPreset}
-                aria-label="Zoom preset"
-                onChange={(event) =>
-                  setZoomPreset(event.target.value as ZoomPreset)
-                }
-                className="h-11"
-                options={[
-                  { value: 'fit-height', label: 'Fit to screen' },
-                  { value: 'fit-width', label: 'Fit to width' },
-                  { value: 'actual', label: 'Actual size' },
-                ]}
-              />
-
-              {orderedSeriesChapters.length ? (
+              {!isTouchDevice ? (
                 <>
-                  <p
-                    className={`reader-settings-heading ${isTouchDevice ? 'col-span-2' : ''}`}
+                  <Button
+                    type="button"
+                    variant={doublePageOffset ? 'default' : 'soft'}
+                    className="h-11 w-full px-3"
+                    onClick={() => setDoublePageOffset((value) => !value)}
                   >
-                    Chapter jump
-                  </p>
-                  {orderedSeriesChapters.length > 0 ? (
-                    <SelectField
-                      value={chapter.chapterId}
-                      aria-label="Chapter jump"
-                      onPointerDown={() => {
-                        chapterJumpInteractionRef.current = true
-                      }}
-                      onKeyDown={(event) => {
-                        if (
-                          event.key === 'ArrowLeft' ||
-                          event.key === 'ArrowRight'
-                        ) {
-                          chapterJumpInteractionRef.current = false
-                          event.preventDefault()
-                          event.stopPropagation()
-                          return
-                        }
-                        chapterJumpInteractionRef.current = true
-                      }}
-                      onChange={(event) => {
-                        if (!chapterJumpInteractionRef.current) {
-                          return
-                        }
-                        chapterJumpInteractionRef.current = false
-                        const nextId = event.target.value
-                        if (nextId === chapter.chapterId) {
-                          return
-                        }
-                        goToChapter(nextId)
-                      }}
-                      className={`h-11 min-w-0 ${isTouchDevice ? 'col-span-2' : ''}`}
-                      options={orderedSeriesChapters.map((entry) => ({
-                        value: entry.id,
-                        label: `Chapter ${entry.number}`,
-                      }))}
-                    />
-                  ) : (
-                    <p className="col-span-2 px-1 text-xs text-muted-foreground">
-                      No chapter found. Try a different number.
-                    </p>
-                  )}
+                    Offset: {doublePageOffset ? 'On' : 'Off'}
+                  </Button>
+
+                  <SelectField
+                    value={zoomPreset}
+                    aria-label="Zoom preset"
+                    onChange={(event) =>
+                      setZoomPreset(event.target.value as ZoomPreset)
+                    }
+                    className="h-11"
+                    options={[
+                      { value: 'fit-height', label: 'Fit to screen' },
+                      { value: 'fit-width', label: 'Fit to width' },
+                      { value: 'actual', label: 'Actual size' },
+                    ]}
+                  />
+
+                  {orderedSeriesChapters.length ? (
+                    <>
+                      <p className="reader-settings-heading">Chapter jump</p>
+                      {orderedSeriesChapters.length > 0 ? (
+                        <SelectField
+                          value={chapter.chapterId}
+                          aria-label="Chapter jump"
+                          onPointerDown={() => {
+                            chapterJumpInteractionRef.current = true
+                          }}
+                          onKeyDown={(event) => {
+                            if (
+                              event.key === 'ArrowLeft' ||
+                              event.key === 'ArrowRight'
+                            ) {
+                              chapterJumpInteractionRef.current = false
+                              event.preventDefault()
+                              event.stopPropagation()
+                              return
+                            }
+                            chapterJumpInteractionRef.current = true
+                          }}
+                          onChange={(event) => {
+                            if (!chapterJumpInteractionRef.current) {
+                              return
+                            }
+                            chapterJumpInteractionRef.current = false
+                            const nextId = event.target.value
+                            if (nextId === chapter.chapterId) {
+                              return
+                            }
+                            goToChapter(nextId)
+                          }}
+                          className="h-11 min-w-0"
+                          options={orderedSeriesChapters.map((entry) => ({
+                            value: entry.id,
+                            label: `Chapter ${entry.number}`,
+                          }))}
+                        />
+                      ) : (
+                        <p className="col-span-2 px-1 text-xs text-muted-foreground">
+                          No chapter found. Try a different number.
+                        </p>
+                      )}
+                    </>
+                  ) : null}
                 </>
               ) : null}
 
@@ -3102,187 +3222,95 @@ function WeebcentralReaderPage() {
               </label>
             </div>
 
-            <details className="reader-settings-advanced mt-3 text-xs text-muted-foreground">
-              <summary className="font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                Advanced tuning
-              </summary>
-              <div className="mt-2 grid gap-2">
-                {!isTouchDevice ? (
-                  <div className="grid gap-2">
-                    <Button
-                      type="button"
-                      variant={magnifierEnabled ? 'default' : 'soft'}
-                      className="h-11 w-full px-3"
-                      onClick={() => setMagnifierEnabled((value) => !value)}
-                    >
-                      Magnifier: {magnifierEnabled ? 'On' : 'Off'}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={focusMode ? 'default' : 'soft'}
-                      className="h-11 w-full px-3"
-                      onClick={() => setFocusMode((value) => !value)}
-                    >
-                      Distraction-free mode: {focusMode ? 'On' : 'Off'}
-                    </Button>
+            {isTouchDevice ? (
+              <details className="exp-details-panel mt-2 px-3 py-2 text-xs text-muted-foreground">
+                <summary className="exp-details-summary">More settings</summary>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <SelectField
+                    value={zoomPreset}
+                    aria-label="Zoom preset"
+                    onChange={(event) =>
+                      setZoomPreset(event.target.value as ZoomPreset)
+                    }
+                    className="h-11"
+                    options={[
+                      { value: 'fit-height', label: 'Fit to screen' },
+                      { value: 'fit-width', label: 'Fit to width' },
+                      { value: 'actual', label: 'Actual size' },
+                    ]}
+                  />
+                  <Button
+                    type="button"
+                    variant={doublePageOffset ? 'default' : 'soft'}
+                    className="h-11 w-full px-3"
+                    onClick={() => setDoublePageOffset((value) => !value)}
+                  >
+                    Offset: {doublePageOffset ? 'On' : 'Off'}
+                  </Button>
+                </div>
+                {orderedSeriesChapters.length ? (
+                  <div className="mt-2">
+                    <p className="reader-settings-heading col-span-2">
+                      Chapter jump
+                    </p>
+                    {orderedSeriesChapters.length > 0 ? (
+                      <SelectField
+                        value={chapter.chapterId}
+                        aria-label="Chapter jump"
+                        onPointerDown={() => {
+                          chapterJumpInteractionRef.current = true
+                        }}
+                        onKeyDown={(event) => {
+                          if (
+                            event.key === 'ArrowLeft' ||
+                            event.key === 'ArrowRight'
+                          ) {
+                            chapterJumpInteractionRef.current = false
+                            event.preventDefault()
+                            event.stopPropagation()
+                            return
+                          }
+                          chapterJumpInteractionRef.current = true
+                        }}
+                        onChange={(event) => {
+                          if (!chapterJumpInteractionRef.current) {
+                            return
+                          }
+                          chapterJumpInteractionRef.current = false
+                          const nextId = event.target.value
+                          if (nextId === chapter.chapterId) {
+                            return
+                          }
+                          goToChapter(nextId)
+                        }}
+                        className="h-11 min-w-0 col-span-2"
+                        options={orderedSeriesChapters.map((entry) => ({
+                          value: entry.id,
+                          label: `Chapter ${entry.number}`,
+                        }))}
+                      />
+                    ) : (
+                      <p className="col-span-2 px-1 text-xs text-muted-foreground">
+                        No chapter found. Try a different number.
+                      </p>
+                    )}
                   </div>
                 ) : null}
-                <label className="reader-settings-label">
-                  Pages to preload ahead
-                  <Input
-                    type="number"
-                    min={1}
-                    max={16}
-                    value={preloadAhead}
-                    onChange={(event) =>
-                      setPreloadAhead(
-                        clampNumber(
-                          Number.parseInt(event.target.value, 10),
-                          1,
-                          16,
-                        ),
-                      )
-                    }
-                    className="mt-1 min-h-11"
-                  />
-                </label>
-                <label className="reader-settings-label">
-                  Pages to preload behind
-                  <Input
-                    type="number"
-                    min={0}
-                    max={8}
-                    value={preloadBehind}
-                    onChange={(event) =>
-                      setPreloadBehind(
-                        clampNumber(
-                          Number.parseInt(event.target.value, 10),
-                          0,
-                          8,
-                        ),
-                      )
-                    }
-                    className="mt-1 min-h-11"
-                  />
-                </label>
-                <label className="reader-settings-label">
-                  Max parallel preloads
-                  <Input
-                    type="number"
-                    min={1}
-                    max={4}
-                    value={prefetchConcurrency}
-                    onChange={(event) =>
-                      setPrefetchConcurrency(
-                        clampNumber(
-                          Number.parseInt(event.target.value, 10),
-                          1,
-                          4,
-                        ),
-                      )
-                    }
-                    className="mt-1 min-h-11"
-                  />
-                </label>
-                <label className="reader-settings-label">
-                  Start next chapter warm-up when this many pages remain
-                  <Input
-                    type="number"
-                    min={1}
-                    max={12}
-                    value={nextChapterPrefetchThreshold}
-                    onChange={(event) =>
-                      setNextChapterPrefetchThreshold(
-                        clampNumber(
-                          Number.parseInt(event.target.value, 10),
-                          1,
-                          12,
-                        ),
-                      )
-                    }
-                    className="mt-1 min-h-11"
-                  />
-                </label>
-                <label className="reader-settings-label">
-                  Warm pages in the next chapter
-                  <Input
-                    type="number"
-                    min={1}
-                    max={6}
-                    value={nextChapterWarmPages}
-                    onChange={(event) =>
-                      setNextChapterWarmPages(
-                        clampNumber(
-                          Number.parseInt(event.target.value, 10),
-                          1,
-                          6,
-                        ),
-                      )
-                    }
-                    className="mt-1 min-h-11"
-                  />
-                </label>
-                <label className="reader-settings-label">
-                  Hide reader controls after (ms)
-                  <Input
-                    type="number"
-                    min={400}
-                    max={5000}
-                    step={100}
-                    value={uiAutoHideMs}
-                    onChange={(event) =>
-                      setUiAutoHideMs(
-                        clampNumber(
-                          Number.parseInt(event.target.value, 10),
-                          400,
-                          5000,
-                        ),
-                      )
-                    }
-                    className="mt-1 min-h-11"
-                  />
-                </label>
-                <label className="reader-settings-label">
-                  Magnifier size (px)
-                  <Input
-                    type="number"
-                    min={120}
-                    max={420}
-                    value={magnifierSize}
-                    onChange={(event) =>
-                      setMagnifierSize(
-                        clampNumber(
-                          Number.parseInt(event.target.value, 10),
-                          120,
-                          420,
-                        ),
-                      )
-                    }
-                    className="mt-1 min-h-11"
-                  />
-                </label>
-                <label className="reader-settings-label">
-                  Magnifier zoom level
-                  <Input
-                    type="number"
-                    min={2}
-                    max={5}
-                    step={0.1}
-                    value={magnifierZoom}
-                    onChange={(event) =>
-                      setMagnifierZoom(
-                        clampNumber(
-                          Number.parseFloat(event.target.value),
-                          2,
-                          5,
-                        ),
-                      )
-                    }
-                    className="mt-1 min-h-11"
-                  />
-                </label>
-              </div>
-            </details>
+                <details className="reader-settings-advanced mt-2 text-xs text-muted-foreground">
+                  <summary className="font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    Advanced tuning
+                  </summary>
+                  {advancedTuningInner}
+                </details>
+              </details>
+            ) : (
+              <details className="reader-settings-advanced mt-3 text-xs text-muted-foreground">
+                <summary className="font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Advanced tuning
+                </summary>
+                {advancedTuningInner}
+              </details>
+            )}
 
             <div className="mt-3 flex items-center gap-2">
               <Button variant="soft" className="w-full" onClick={goNext}>
@@ -3302,12 +3330,12 @@ function WeebcentralReaderPage() {
               >
                 Next chapter
               </Button>
-                <Button
-                  variant="ghost"
-                  className="w-full border border-border disabled:!bg-surface-soft disabled:!text-foreground/70 disabled:!opacity-100"
-                  onClick={() => goToChapter(previousChapterId)}
-                  disabled={!previousChapterId}
-                >
+              <Button
+                variant="ghost"
+                className="w-full border border-border disabled:!bg-surface-soft disabled:!text-foreground/70 disabled:!opacity-100"
+                onClick={() => goToChapter(previousChapterId)}
+                disabled={!previousChapterId}
+              >
                 Previous chapter
               </Button>
             </div>
@@ -3475,7 +3503,7 @@ function WeebcentralReaderPage() {
                 </div>
                 <div className="h-full w-full shrink-0 snap-start overflow-hidden">
                   <div
-                    className={`flex h-full items-center justify-center gap-0 overflow-hidden ${isSinglePageTouchView ? 'px-4' : ''} ${!gallerySwipeEnabled && pageMotion ? `reader-page-motion-${pageMotion}` : ''}`}
+                    className={`flex h-full items-center justify-center gap-0 overflow-hidden ${isSinglePageTouchView ? 'px-4' : ''}`}
                   >
                     {renderUnitsForPaging(currentRenderUnits, 'current')}
                   </div>
@@ -3490,33 +3518,25 @@ function WeebcentralReaderPage() {
               </div>
             ) : (
               <div
-                className={`flex h-full items-center justify-center gap-0 overflow-hidden ${isSinglePageTouchView ? 'px-4' : ''} ${!gallerySwipeEnabled && pageMotion ? `reader-page-motion-${pageMotion}` : ''}`}
+                className={`flex h-full items-center justify-center gap-0 overflow-hidden ${isSinglePageTouchView ? 'px-4' : ''}`}
                 data-testid="reader-paging-container"
               >
                 {renderUnitsForPaging(currentRenderUnits, 'current')}
               </div>
             )}
 
-            {!isTouchDevice &&
-            !magnifierEnabled &&
-            zoomPreset !== 'actual' ? (
+            {!isTouchDevice && !magnifierEnabled && zoomPreset !== 'actual' ? (
               <ReaderTapZone
                 side="left"
                 action={readingDirection === 'rtl' ? 'next' : 'previous'}
-                onActivate={
-                  readingDirection === 'rtl' ? goNext : goPrevious
-                }
+                onActivate={readingDirection === 'rtl' ? goNext : goPrevious}
               />
             ) : null}
-            {!isTouchDevice &&
-            !magnifierEnabled &&
-            zoomPreset !== 'actual' ? (
+            {!isTouchDevice && !magnifierEnabled && zoomPreset !== 'actual' ? (
               <ReaderTapZone
                 side="right"
                 action={readingDirection === 'rtl' ? 'previous' : 'next'}
-                onActivate={
-                  readingDirection === 'rtl' ? goPrevious : goNext
-                }
+                onActivate={readingDirection === 'rtl' ? goPrevious : goNext}
               />
             ) : null}
             {!fullscreenActive &&
@@ -3527,16 +3547,12 @@ function WeebcentralReaderPage() {
                 <ReaderEdgeArrowButton
                   side="left"
                   action={readingDirection === 'rtl' ? 'next' : 'previous'}
-                  onActivate={
-                    readingDirection === 'rtl' ? goNext : goPrevious
-                  }
+                  onActivate={readingDirection === 'rtl' ? goNext : goPrevious}
                 />
                 <ReaderEdgeArrowButton
                   side="right"
                   action={readingDirection === 'rtl' ? 'previous' : 'next'}
-                  onActivate={
-                    readingDirection === 'rtl' ? goPrevious : goNext
-                  }
+                  onActivate={readingDirection === 'rtl' ? goPrevious : goNext}
                 />
               </>
             ) : null}

@@ -13,6 +13,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Button } from '#/components/ui/button'
+import { FadeImage } from '#/components/ui/fade-image'
 import { Input } from '#/components/ui/input'
 import type { ReadingHistoryItem, WeebcentralSeriesDTO } from '#/lib/contracts'
 import { weebcentralSeriesQueryOptions } from '#/lib/query-options'
@@ -138,7 +139,9 @@ function WeebcentralSeriesPage() {
         })
 
         if (forceRefresh) {
-          await queryClient.invalidateQueries({ queryKey: queryOptions.queryKey })
+          await queryClient.invalidateQueries({
+            queryKey: queryOptions.queryKey,
+          })
         }
 
         const payload = await queryClient.fetchQuery(queryOptions)
@@ -389,12 +392,13 @@ function WeebcentralSeriesPage() {
   const nextChapter = useMemo(() => {
     const latestChapterId = latestHistoryEntry?.chapterId
     const latestChapter = latestChapterId
-      ? ascendingChapters.find((chapter) => chapter.id === latestChapterId) ??
-        null
+      ? (ascendingChapters.find((chapter) => chapter.id === latestChapterId) ??
+        null)
       : null
     const firstUnread =
-      ascendingChapters.find((chapter) => !completedChapterIds.has(chapter.id)) ??
-      null
+      ascendingChapters.find(
+        (chapter) => !completedChapterIds.has(chapter.id),
+      ) ?? null
 
     if (latestHistoryEntry && latestHistoryEntry.completed !== true) {
       return latestChapter ?? firstUnread ?? ascendingChapters[0] ?? null
@@ -476,7 +480,7 @@ function WeebcentralSeriesPage() {
   if (isLoading) {
     return (
       <div
-        className="exp-surface animate-enter text-sm text-muted-foreground"
+        className="text-sm text-muted-foreground"
         role="status"
         aria-live="polite"
       >
@@ -489,7 +493,7 @@ function WeebcentralSeriesPage() {
 
   if (error || !series) {
     return (
-      <div className="exp-surface text-sm text-destructive">
+      <div className="text-sm text-destructive">
         We could not open this series right now. Please go back and try again.
       </div>
     )
@@ -497,23 +501,24 @@ function WeebcentralSeriesPage() {
 
   return (
     <div className="space-y-5 pb-10">
-      <section
-        className="exp-hero animate-enter"
-        style={{ animationDelay: '20ms' }}
-      >
+      <section className="exp-hero">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="flex min-w-0 flex-col items-start gap-4 sm:flex-row">
             {series.coverUrl ? (
-              <img
+              <FadeImage
                 src={series.coverUrl}
                 alt={`${series.title} cover`}
-                className="h-44 w-30 shrink-0 border border-border object-cover sm:h-52 sm:w-36 md:h-56 md:w-40"
+                className="cover-hover h-44 w-30 shrink-0 border border-border object-cover sm:h-52 sm:w-36 md:h-56 md:w-40"
                 loading="eager"
                 fetchPriority="high"
                 decoding="async"
+                style={{ viewTransitionName: `cover-${series.id}` }}
               />
             ) : (
-              <div className="flex h-44 w-30 shrink-0 items-center justify-center border border-border bg-surface-soft text-xs text-muted-foreground sm:h-52 sm:w-36 md:h-56 md:w-40">
+              <div
+                className="flex h-44 w-30 shrink-0 items-center justify-center border border-border bg-surface-soft text-xs text-muted-foreground sm:h-52 sm:w-36 md:h-56 md:w-40"
+                style={{ viewTransitionName: `cover-${series.id}` }}
+              >
                 No image
               </div>
             )}
@@ -525,7 +530,7 @@ function WeebcentralSeriesPage() {
                 <span className="issue-label">Read online</span>
               </div>
 
-              <h1 className="manga-title mt-4 text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
+              <h1 className="manga-title mt-4 text-3xl font-bold tracking-tight text-foreground md:text-4xl">
                 {series.title}
               </h1>
               {series.description ? (
@@ -579,7 +584,7 @@ function WeebcentralSeriesPage() {
                   seriesId: series.id,
                   seriesTitle: series.title,
                 }}
-                className="delight-cta inline-flex h-10 flex-1 items-center justify-center border-2 border-primary bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[2px_2px_0_var(--shadow)] md:flex-none"
+                className="delight-cta inline-flex h-10 flex-1 items-center justify-center bg-koten px-4 text-sm font-semibold text-[var(--active-contrast)] md:flex-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-koten"
               >
                 Continue reading
               </Link>
@@ -675,10 +680,7 @@ function WeebcentralSeriesPage() {
         </div>
       </section>
 
-      <section
-        className="animate-enter space-y-2"
-        style={{ animationDelay: '52ms' }}
-      >
+      <section className="space-y-2">
         <div className="manga-divider" aria-hidden />
         <div className="exp-filter-toolbar">
           <div className="exp-toolbar-copy">

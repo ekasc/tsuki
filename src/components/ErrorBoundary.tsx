@@ -44,7 +44,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
     return (
       <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 p-8 text-center">
-        <div className="exp-surface max-w-md space-y-3 p-6">
+        <div className="max-w-md space-y-3 p-6">
           <h2 className="manga-title text-lg font-semibold text-foreground">
             Something went wrong
           </h2>
