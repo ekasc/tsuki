@@ -2811,7 +2811,7 @@ function ReaderPage() {
               </div>
 
               {isTouchDevice && isTouchPortrait && (
-                <details className="exp-details-panel mt-2 px-3 py-2 text-xs text-muted-foreground">
+                <details className="exp-details-panel mt-2 px-3 py-2 text-xs text-muted-foreground" open>
                   <summary className="exp-details-summary">
                     More settings
                   </summary>
