@@ -2107,6 +2107,31 @@ function ReaderPage() {
         return
       }
 
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (document.fullscreenElement) {
+          void document.exitFullscreen()
+          return
+        }
+        if (inlineFullscreen) {
+          setInlineFullscreen(false)
+          return
+        }
+        if (sidebarOpen) {
+          setSidebarOpen(false)
+          return
+        }
+        if (showShortcutHelp) {
+          setShowShortcutHelp(false)
+          return
+        }
+        if (boundaryNotice) {
+          setBoundaryNotice(null)
+          setPendingBoundaryDirection(null)
+          return
+        }
+      }
+
       if (event.key === '?') {
         event.preventDefault()
         blurReaderFocusTarget()
@@ -2138,6 +2163,10 @@ function ReaderPage() {
     readingDirection,
     revealReaderUi,
     toggleFullscreen,
+    sidebarOpen,
+    inlineFullscreen,
+    boundaryNotice,
+    showShortcutHelp,
   ])
 
   useEffect(() => {
@@ -2165,6 +2194,55 @@ function ReaderPage() {
       document.removeEventListener('fullscreenchange', onFullscreenChange)
     }
   }, [])
+
+  useEffect(() => {
+    if (!fullscreenActive || !readerStageRef.current) return
+
+    const container = readerStageRef.current
+    const focusableSelector =
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+
+    const handleTabKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+
+      const focusable = Array.from(
+        container.querySelectorAll<HTMLElement>(focusableSelector),
+      )
+      if (focusable.length === 0) return
+
+      const first = focusable[0]!
+      const last = focusable[focusable.length - 1]!
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+
+    container.addEventListener('keydown', handleTabKey)
+
+    const firstFocusable =
+      container.querySelector<HTMLElement>(focusableSelector)
+    requestAnimationFrame(() => {
+      firstFocusable?.focus()
+    })
+
+    return () => {
+      container.removeEventListener('keydown', handleTabKey)
+    }
+  }, [fullscreenActive])
+
+  useEffect(() => {
+    if (!chapterPayload || isLoading || fullscreenActive || sidebarOpen) return
+    readerStageRef.current?.focus()
+  }, [chapterPayload, isLoading, fullscreenActive, sidebarOpen])
 
   useEffect(() => {
     if (!fullscreenActive) {
@@ -2589,6 +2667,8 @@ function ReaderPage() {
       {!fullscreenActive ? (
         <aside
           ref={sidebarRef}
+          role="complementary"
+          aria-label="Reader settings"
           className={
             isTouchDevice
               ? `reader-shell-panel reader-settings-panel animate-enter relative z-30 w-full overflow-visible ${isTouchPortrait ? 'p-3' : 'px-3 py-1.5'}`
@@ -3108,7 +3188,12 @@ function ReaderPage() {
                       : 'Keyboard shortcuts'}
                   </Button>
                   {showShortcutHelp ? (
-                    <div className="reader-shortcut-sheet mt-2 text-xs">
+                    <div
+                      role="dialog"
+                      aria-modal="true"
+                      aria-label="Keyboard shortcuts"
+                      className="reader-shortcut-sheet mt-2 text-xs"
+                    >
                       <p>Nav: A/D or arrows, Space, [ ]</p>
                       <p>View: Q mode, 0 reset zoom, F fullscreen</p>
                       <p>UI: S sidebar, X focus, Z magnifier</p>
@@ -3149,6 +3234,8 @@ function ReaderPage() {
       {boundaryNotice ? (
         <div
           ref={boundaryRef}
+          role="alert"
+          aria-live="polite"
           className="pointer-events-none absolute ui-bottom-safe-stack left-4 right-4 z-30 flex items-center justify-center gap-2 rounded-sm border border-white/20 bg-black/85 px-4 py-3 text-center text-sm text-white/90 shadow-lg backdrop-blur-sm md:bottom-20 md:left-1/2 md:right-auto md:-translate-x-1/2 md:px-6"
         >
           <span>{boundaryNotice}</span>
@@ -3178,6 +3265,8 @@ function ReaderPage() {
       ) : null}
 
       <section
+        tabIndex={-1}
+        style={{ outline: 'none' }}
         className={
           fullscreenActive ? '' : isTouchDevice ? 'min-h-[100dvh]' : 'h-full'
         }

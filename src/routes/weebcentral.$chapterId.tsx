@@ -1915,6 +1915,55 @@ function WeebcentralReaderPage() {
   }, [])
 
   useEffect(() => {
+    if (!fullscreenActive || !readerStageRef.current) return
+
+    const container = readerStageRef.current
+    const focusableSelector =
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+
+    const handleTabKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+
+      const focusable = Array.from(
+        container.querySelectorAll<HTMLElement>(focusableSelector),
+      )
+      if (focusable.length === 0) return
+
+      const first = focusable[0]!
+      const last = focusable[focusable.length - 1]!
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+
+    container.addEventListener('keydown', handleTabKey)
+
+    const firstFocusable =
+      container.querySelector<HTMLElement>(focusableSelector)
+    requestAnimationFrame(() => {
+      firstFocusable?.focus()
+    })
+
+    return () => {
+      container.removeEventListener('keydown', handleTabKey)
+    }
+  }, [fullscreenActive])
+
+  useEffect(() => {
+    if (!chapter || isLoading || fullscreenActive || sidebarOpen) return
+    readerStageRef.current?.focus()
+  }, [chapter, isLoading, fullscreenActive, sidebarOpen])
+
+  useEffect(() => {
     if (!focusMode) {
       return
     }
@@ -2927,6 +2976,31 @@ function WeebcentralReaderPage() {
         return
       }
 
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (document.fullscreenElement) {
+          void document.exitFullscreen()
+          return
+        }
+        if (inlineFullscreen) {
+          setInlineFullscreen(false)
+          return
+        }
+        if (sidebarOpen) {
+          setSidebarOpen(false)
+          return
+        }
+        if (showShortcutHelp) {
+          setShowShortcutHelp(false)
+          return
+        }
+        if (boundaryNotice) {
+          setBoundaryNotice(null)
+          setPendingBoundaryDirection(null)
+          return
+        }
+      }
+
       if (event.key === '?') {
         event.preventDefault()
         blurReaderFocusTarget()
@@ -2959,6 +3033,10 @@ function WeebcentralReaderPage() {
     readingDirection,
     revealReaderUi,
     toggleFullscreen,
+    sidebarOpen,
+    inlineFullscreen,
+    boundaryNotice,
+    showShortcutHelp,
   ])
 
   useGSAP(
@@ -3135,6 +3213,8 @@ function WeebcentralReaderPage() {
       {!fullscreenActive ? (
         <aside
           ref={sidebarRef}
+          role="complementary"
+          aria-label="Reader settings"
           className={
             isTouchDevice
               ? 'reader-shell-panel reader-settings-panel animate-enter relative z-30 w-full overflow-visible p-3'
@@ -3524,7 +3604,12 @@ function WeebcentralReaderPage() {
                     : 'Keyboard shortcuts'}
                 </Button>
                 {showShortcutHelp ? (
-                  <div className="reader-shortcut-sheet mt-2 text-xs">
+                  <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Keyboard shortcuts"
+                    className="reader-shortcut-sheet mt-2 text-xs"
+                  >
                     <p>Nav: A/D or arrows, Space, [ ]</p>
                     <p>View: Q mode, 0 reset zoom, F fullscreen</p>
                     <p>UI: S sidebar, X focus, Z magnifier</p>
@@ -3564,6 +3649,8 @@ function WeebcentralReaderPage() {
       {boundaryNotice ? (
         <div
           ref={boundaryRef}
+          role="alert"
+          aria-live="polite"
           className="reader-hud pointer-events-none absolute ui-bottom-safe-stack left-1/2 z-30 -translate-x-1/2 px-3 py-1 text-xs"
         >
           {boundaryNotice}
@@ -3582,6 +3669,8 @@ function WeebcentralReaderPage() {
       ) : null}
 
       <section
+        tabIndex={-1}
+        style={{ outline: 'none' }}
         className={
           fullscreenActive ? '' : isTouchDevice ? 'min-h-[100dvh]' : 'h-full'
         }
