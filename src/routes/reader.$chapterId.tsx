@@ -83,12 +83,7 @@ export const Route = createFileRoute('/reader/$chapterId')({
   component: ReaderPage,
 })
 
-const prefetchedLocalChapterPayloads = new Map<string, ChapterPayload>()
-const prefetchedLocalSeriesDetails = new Map<string, SeriesDetail>()
-const inFlightLocalChapterPrefetches = new Set<string>()
 const optimisticLocalProgress = new Map<string, ChapterProgress>()
-const PREFETCHED_LOCAL_CHAPTER_LIMIT = 48
-const PREFETCHED_LOCAL_SERIES_LIMIT = 48
 const OPTIMISTIC_PROGRESS_LIMIT = 240
 const LOCAL_READER_UI_PREFS_KEY = 'tsuki-local-reader-ui.v1'
 const LEGACY_LOCAL_READER_UI_PREFS_KEY = 'suki-local-reader-ui.v1'
@@ -581,27 +576,17 @@ function ReaderPage() {
 
   const initialCached = useMemo(() => {
     if (typeof window === 'undefined') return null
-    const preloaded =
-      loaderChapterPayload ??
-      (prefetchedLocalChapterPayloads.get(params.chapterId) as
-        | ChapterPayload
-        | undefined)
-    if (preloaded?.manifest.chapterId === params.chapterId) {
-      prefetchedLocalChapterPayloads.delete(params.chapterId)
-      setBoundedMapEntry(
-        prefetchedLocalChapterPayloads,
-        params.chapterId,
-        preloaded,
-        PREFETCHED_LOCAL_CHAPTER_LIMIT,
-      )
-      return preloaded
+    if (
+      loaderChapterPayload?.manifest.chapterId === params.chapterId
+    ) {
+      return loaderChapterPayload
     }
     const cached = queryClient.getQueryData<ChapterPayload>(
       localChapterQueryOptions(params.chapterId).queryKey,
     )
     if (cached?.manifest.chapterId === params.chapterId) return cached
     return null
-  }, [params.chapterId])
+  }, [params.chapterId, loaderChapterPayload])
 
   const [chapterPayload, setChapterPayload] = useState<ChapterPayload | null>(
     initialCached,
@@ -615,6 +600,7 @@ function ReaderPage() {
   const [seriesChapters, setSeriesChapters] = useState<
     SeriesDetail['chapters']
   >([])
+  const [seriesTitle, setSeriesTitle] = useState<string | null>(null)
   const initialUiPrefs = useMemo(
     () =>
       loadReaderUiPrefs(
@@ -901,15 +887,12 @@ function ReaderPage() {
       return
     }
 
-    if (
-      prefetchedLocalChapterPayloads.has(nextChapterId) ||
-      inFlightLocalChapterPrefetches.has(nextChapterId)
-    ) {
+    const chapterOptions = localChapterQueryOptions(nextChapterId)
+    if (queryClient.getQueryData(chapterOptions.queryKey)) {
       return
     }
 
     const controller = new AbortController()
-    inFlightLocalChapterPrefetches.add(nextChapterId)
 
     void (async () => {
       try {
@@ -917,13 +900,6 @@ function ReaderPage() {
         const payload =
           queryClient.getQueryData<ChapterPayload>(chapterOptions.queryKey) ??
           (await queryClient.fetchQuery(chapterOptions))
-
-        setBoundedMapEntry(
-          prefetchedLocalChapterPayloads,
-          nextChapterId,
-          payload,
-          PREFETCHED_LOCAL_CHAPTER_LIMIT,
-        )
 
         const warmCount = Math.min(
           nextChapterWarmPages,
@@ -957,8 +933,6 @@ function ReaderPage() {
         await Promise.all(Array.from({ length: workerCount }, warmWorker))
       } catch {
         // Ignore prefetch failures; regular navigation still works.
-      } finally {
-        inFlightLocalChapterPrefetches.delete(nextChapterId)
       }
     })()
 
@@ -984,35 +958,17 @@ function ReaderPage() {
 
     if (prev === params.chapterId) return
 
-    prefetchedLocalChapterPayloads.clear()
-    prefetchedLocalSeriesDetails.clear()
-    inFlightLocalChapterPrefetches.clear()
-
     if (prev !== null) {
       // Reset chapter state on chapter change to prevent stale data flash
       setChapterPayload(null)
       setNextChapterId(null)
       setPreviousChapterId(null)
       setSeriesChapters([])
+      setSeriesTitle(null)
       setPageState(ZERO_PAGE_STATE)
       setIsLoading(true)
     }
-
-    if (!loaderChapterPayload) {
-      return
-    }
-
-    if (loaderChapterPayload.manifest.chapterId !== params.chapterId) {
-      return
-    }
-
-    setBoundedMapEntry(
-      prefetchedLocalChapterPayloads,
-      params.chapterId,
-      loaderChapterPayload,
-      PREFETCHED_LOCAL_CHAPTER_LIMIT,
-    )
-  }, [params.chapterId, loaderChapterPayload])
+  }, [params.chapterId])
 
   const loadChapter = useCallback(async () => {
     if (
@@ -1026,16 +982,8 @@ function ReaderPage() {
     }
 
     const chapterOptions = localChapterQueryOptions(params.chapterId)
-    const prefetchedPayload = prefetchedLocalChapterPayloads.get(
-      params.chapterId,
-    )
     const cachedPayload =
-      prefetchedPayload ??
       queryClient.getQueryData<ChapterPayload>(chapterOptions.queryKey)
-
-    if (prefetchedPayload) {
-      prefetchedLocalChapterPayloads.delete(params.chapterId)
-    }
 
     setIsLoading(!cachedPayload)
     setError(null)
@@ -1083,17 +1031,9 @@ function ReaderPage() {
 
       const seriesOptions = localSeriesQueryOptions(payload.manifest.seriesId)
       const cachedSeries =
-        prefetchedLocalSeriesDetails.get(payload.manifest.seriesId) ??
         queryClient.getQueryData<SeriesDetail>(seriesOptions.queryKey)
 
       if (cachedSeries) {
-        setBoundedMapEntry(
-          prefetchedLocalSeriesDetails,
-          payload.manifest.seriesId,
-          cachedSeries,
-          PREFETCHED_LOCAL_SERIES_LIMIT,
-        )
-
         const adjacent = resolveAdjacentChapterIds(
           cachedSeries,
           payload.manifest.chapterId,
@@ -1101,18 +1041,13 @@ function ReaderPage() {
         setNextChapterId(adjacent.nextChapterId)
         setPreviousChapterId(adjacent.previousChapterId)
         setSeriesChapters(cachedSeries.chapters)
+        setSeriesTitle(cachedSeries.title)
       }
 
       void (async () => {
         try {
           const series =
             cachedSeries ?? (await queryClient.fetchQuery(seriesOptions))
-          setBoundedMapEntry(
-            prefetchedLocalSeriesDetails,
-            payload.manifest.seriesId,
-            series,
-            PREFETCHED_LOCAL_SERIES_LIMIT,
-          )
 
           const adjacent = resolveAdjacentChapterIds(
             series,
@@ -1121,10 +1056,12 @@ function ReaderPage() {
           setNextChapterId(adjacent.nextChapterId)
           setPreviousChapterId(adjacent.previousChapterId)
           setSeriesChapters(series.chapters)
+          setSeriesTitle(series.title)
         } catch {
           setNextChapterId(null)
           setPreviousChapterId(null)
           setSeriesChapters([])
+          setSeriesTitle(null)
         }
       })()
     } catch (requestError) {
@@ -2652,9 +2589,7 @@ function ReaderPage() {
                   params={{ seriesId: chapterPayload.manifest.seriesId }}
                   className="block truncate text-sm font-semibold leading-snug text-foreground underline-offset-2 hover:underline"
                 >
-                  {prefetchedLocalSeriesDetails.get(
-                    chapterPayload.manifest.seriesId,
-                  )?.title ?? 'Open series page'}
+                  {seriesTitle ?? 'Open series page'}
                 </Link>
                 <p>
                   Ch {chapterPayload.manifest.chapterNumber} ·{' '}

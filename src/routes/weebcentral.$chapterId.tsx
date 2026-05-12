@@ -98,13 +98,8 @@ export const Route = createFileRoute('/weebcentral/$chapterId')({
 
 const REMOTE_PROGRESS_STORAGE_KEY = 'tsuki-remote-progress.v1'
 const LEGACY_REMOTE_PROGRESS_STORAGE_KEY = 'suki-remote-progress.v1'
-const prefetchedRemoteChapters = new Map<string, WeebcentralChapterDTO>()
-const prefetchedRemoteSeries = new Map<string, WeebcentralSeriesDTO>()
-const inFlightRemoteChapterPrefetches = new Set<string>()
 const prefetchedRemoteImageUrls = new Set<string>()
 const inFlightRemoteImagePrefetches = new Map<string, HTMLImageElement>()
-const PREFETCHED_REMOTE_CHAPTER_LIMIT = 64
-const PREFETCHED_REMOTE_SERIES_LIMIT = 64
 const PREFETCHED_REMOTE_IMAGE_URL_LIMIT = 1600
 const REMOTE_PAGE_DIMENSIONS_LIMIT = 180
 interface RemotePageDimension {
@@ -677,27 +672,15 @@ function WeebcentralReaderPage() {
 
   const cachedChapter = useMemo(() => {
     if (typeof window === 'undefined') return null
-    const preloaded =
-      loaderChapter ??
-      (prefetchedRemoteChapters.get(params.chapterId) as
-        | WeebcentralChapterDTO
-        | undefined)
-    if (preloaded?.chapterId === params.chapterId) {
-      prefetchedRemoteChapters.delete(params.chapterId)
-      setBoundedMapEntry(
-        prefetchedRemoteChapters,
-        params.chapterId,
-        preloaded,
-        PREFETCHED_REMOTE_CHAPTER_LIMIT,
-      )
-      return preloaded
+    if (loaderChapter?.chapterId === params.chapterId) {
+      return loaderChapter
     }
     const cached = queryClient.getQueryData<WeebcentralChapterDTO>(
       weebcentralChapterQueryOptions(params.chapterId).queryKey,
     )
     if (cached?.chapterId === params.chapterId) return cached
     return null
-  }, [params.chapterId])
+  }, [params.chapterId, loaderChapter])
 
   const initialCachedDimensions = useMemo(() => {
     if (!cachedChapter) return {} as Record<number, RemotePageDimension>
@@ -1495,10 +1478,6 @@ function WeebcentralReaderPage() {
 
     if (prev === params.chapterId) return
 
-    prefetchedRemoteChapters.clear()
-    prefetchedRemoteSeries.clear()
-    inFlightRemoteChapterPrefetches.clear()
-
     if (prev !== null) {
       setChapter(null)
       setSeries(null)
@@ -1506,29 +1485,12 @@ function WeebcentralReaderPage() {
       setPageState(ZERO_PAGE_STATE)
       setIsLoading(true)
     }
-
-    if (!loaderChapter) {
-      return
-    }
-
-    setBoundedMapEntry(
-      prefetchedRemoteChapters,
-      params.chapterId,
-      loaderChapter,
-      PREFETCHED_REMOTE_CHAPTER_LIMIT,
-    )
-  }, [params.chapterId, loaderChapter])
+  }, [params.chapterId])
 
   const loadRemoteChapter = useCallback(async () => {
     const chapterOptions = weebcentralChapterQueryOptions(params.chapterId)
-    const prefetchedChapter = prefetchedRemoteChapters.get(params.chapterId)
     const cachedChapter =
-      prefetchedChapter ??
       queryClient.getQueryData<WeebcentralChapterDTO>(chapterOptions.queryKey)
-
-    if (prefetchedChapter) {
-      prefetchedRemoteChapters.delete(params.chapterId)
-    }
 
     setIsLoading(!cachedChapter)
     setError(null)
@@ -1577,22 +1539,8 @@ function WeebcentralReaderPage() {
         search.seriesId?.trim() || chapterPayload.seriesId || params.chapterId
       const seriesOptions = weebcentralSeriesQueryOptions(seriesInput)
       const cachedSeries =
-        prefetchedRemoteSeries.get(seriesInput) ??
-        prefetchedRemoteSeries.get(chapterPayload.seriesId) ??
         queryClient.getQueryData<WeebcentralSeriesDTO>(seriesOptions.queryKey)
       if (cachedSeries) {
-        setBoundedMapEntry(
-          prefetchedRemoteSeries,
-          seriesInput,
-          cachedSeries,
-          PREFETCHED_REMOTE_SERIES_LIMIT,
-        )
-        setBoundedMapEntry(
-          prefetchedRemoteSeries,
-          cachedSeries.id,
-          cachedSeries,
-          PREFETCHED_REMOTE_SERIES_LIMIT,
-        )
         setSeries(cachedSeries)
       }
 
@@ -1600,18 +1548,6 @@ function WeebcentralReaderPage() {
         try {
           const seriesPayload =
             cachedSeries ?? (await queryClient.fetchQuery(seriesOptions))
-          setBoundedMapEntry(
-            prefetchedRemoteSeries,
-            seriesInput,
-            seriesPayload,
-            PREFETCHED_REMOTE_SERIES_LIMIT,
-          )
-          setBoundedMapEntry(
-            prefetchedRemoteSeries,
-            seriesPayload.id,
-            seriesPayload,
-            PREFETCHED_REMOTE_SERIES_LIMIT,
-          )
           setSeries(seriesPayload)
         } catch {
           // Ignore series metadata failure; chapter can still render.
@@ -1835,32 +1771,21 @@ function WeebcentralReaderPage() {
       return
     }
 
-    if (
-      prefetchedRemoteChapters.has(nextChapterId) ||
-      inFlightRemoteChapterPrefetches.has(nextChapterId)
-    ) {
+    const chapterOptions = weebcentralChapterQueryOptions(nextChapterId, {
+      prefetch: true,
+    })
+    if (queryClient.getQueryData(chapterOptions.queryKey)) {
       return
     }
 
     const controller = new AbortController()
-    inFlightRemoteChapterPrefetches.add(nextChapterId)
 
     void (async () => {
       try {
-        const chapterOptions = weebcentralChapterQueryOptions(nextChapterId, {
-          prefetch: true,
-        })
         const payload =
           queryClient.getQueryData<WeebcentralChapterDTO>(
             chapterOptions.queryKey,
           ) ?? (await queryClient.fetchQuery(chapterOptions))
-
-        setBoundedMapEntry(
-          prefetchedRemoteChapters,
-          nextChapterId,
-          payload,
-          PREFETCHED_REMOTE_CHAPTER_LIMIT,
-        )
 
         const warmCount = Math.min(nextChapterWarmPages, payload.pages.length)
         const workerCount = Math.max(
@@ -1895,8 +1820,6 @@ function WeebcentralReaderPage() {
         await Promise.all(Array.from({ length: workerCount }, warmWorker))
       } catch {
         // Ignore prefetch failures; regular navigation still works.
-      } finally {
-        inFlightRemoteChapterPrefetches.delete(nextChapterId)
       }
     })()
 
