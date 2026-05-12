@@ -549,10 +549,21 @@ function derivePageIndicesForLocal(
 ): ReaderPageState {
   const safeIdx = clamp(pageIndex, 0, Math.max(pages.length - 1, 0))
   const pairingPages = pages.map(asPairingPage)
-  const doubleSteps = buildDoublePageStepsWithOffset(pairingPages, doublePageOffset)
-  const portraitSteps = expandStepsForPortraitSingle(doubleSteps, pages, readingDirection)
+  const doubleSteps = buildDoublePageStepsWithOffset(
+    pairingPages,
+    doublePageOffset,
+  )
+  const portraitSteps = expandStepsForPortraitSingle(
+    doubleSteps,
+    pages,
+    readingDirection,
+  )
   const activeSteps = isTouchPortrait ? portraitSteps : doubleSteps
-  const singleSteps = buildSinglePageSteps(pages, isTouchPortrait, readingDirection)
+  const singleSteps = buildSinglePageSteps(
+    pages,
+    isTouchPortrait,
+    readingDirection,
+  )
   return {
     pageIndex: safeIdx,
     stepIndex: findStepIndexByPageIndex(activeSteps, safeIdx),
@@ -560,7 +571,11 @@ function derivePageIndicesForLocal(
   }
 }
 
-const ZERO_PAGE_STATE: ReaderPageState = { pageIndex: 0, stepIndex: 0, singleStepIndex: 0 }
+const ZERO_PAGE_STATE: ReaderPageState = {
+  pageIndex: 0,
+  stepIndex: 0,
+  singleStepIndex: 0,
+}
 
 function ReaderPage() {
   const params = Route.useParams()
@@ -576,9 +591,7 @@ function ReaderPage() {
 
   const initialCached = useMemo(() => {
     if (typeof window === 'undefined') return null
-    if (
-      loaderChapterPayload?.manifest.chapterId === params.chapterId
-    ) {
+    if (loaderChapterPayload?.manifest.chapterId === params.chapterId) {
       return loaderChapterPayload
     }
     const cached = queryClient.getQueryData<ChapterPayload>(
@@ -668,7 +681,8 @@ function ReaderPage() {
   } | null>(null)
 
   const initialPageState = useMemo(() => {
-    if (!initialCached || initialCached.manifest.pages.length === 0) return ZERO_PAGE_STATE
+    if (!initialCached || initialCached.manifest.pages.length === 0)
+      return ZERO_PAGE_STATE
     const savedProgress =
       optimisticLocalProgress.get(initialCached.manifest.chapterId) ??
       initialCached.progress
@@ -982,8 +996,9 @@ function ReaderPage() {
     }
 
     const chapterOptions = localChapterQueryOptions(params.chapterId)
-    const cachedPayload =
-      queryClient.getQueryData<ChapterPayload>(chapterOptions.queryKey)
+    const cachedPayload = queryClient.getQueryData<ChapterPayload>(
+      chapterOptions.queryKey,
+    )
 
     setIsLoading(!cachedPayload)
     setError(null)
@@ -1030,8 +1045,9 @@ function ReaderPage() {
       }
 
       const seriesOptions = localSeriesQueryOptions(payload.manifest.seriesId)
-      const cachedSeries =
-        queryClient.getQueryData<SeriesDetail>(seriesOptions.queryKey)
+      const cachedSeries = queryClient.getQueryData<SeriesDetail>(
+        seriesOptions.queryKey,
+      )
 
       if (cachedSeries) {
         const adjacent = resolveAdjacentChapterIds(
@@ -1177,12 +1193,7 @@ function ReaderPage() {
     }
 
     setMode(next)
-  }, [
-    activeDoubleSteps,
-    currentTargetPageIndex,
-    mode,
-    singlePageSteps,
-  ])
+  }, [activeDoubleSteps, currentTargetPageIndex, mode, singlePageSteps])
 
   useEffect(() => {
     if (!chapterPayload) {
@@ -1256,12 +1267,7 @@ function ReaderPage() {
         ),
       )
     },
-    [
-      doublePageOffset,
-      isTouchPortrait,
-      pages,
-      readingDirection,
-    ],
+    [doublePageOffset, isTouchPortrait, pages, readingDirection],
   )
 
   const persistProgressNow = useCallback(
@@ -1523,8 +1529,7 @@ function ReaderPage() {
         return {
           ...prev,
           stepIndex: next,
-          pageIndex:
-            activeDoubleSteps[next]?.anchorPageIndex ?? prev.pageIndex,
+          pageIndex: activeDoubleSteps[next]?.anchorPageIndex ?? prev.pageIndex,
         }
       })
       setPendingBoundaryDirection(null)
@@ -1547,8 +1552,7 @@ function ReaderPage() {
         return {
           ...prev,
           singleStepIndex: next,
-          pageIndex:
-            singlePageSteps[next]?.anchorPageIndex ?? prev.pageIndex,
+          pageIndex: singlePageSteps[next]?.anchorPageIndex ?? prev.pageIndex,
         }
       })
       setPendingBoundaryDirection(null)
@@ -1631,8 +1635,7 @@ function ReaderPage() {
         return {
           ...prev,
           stepIndex: next,
-          pageIndex:
-            activeDoubleSteps[next]?.anchorPageIndex ?? prev.pageIndex,
+          pageIndex: activeDoubleSteps[next]?.anchorPageIndex ?? prev.pageIndex,
         }
       })
       setPendingBoundaryDirection(null)
@@ -1655,8 +1658,7 @@ function ReaderPage() {
         return {
           ...prev,
           singleStepIndex: next,
-          pageIndex:
-            singlePageSteps[next]?.anchorPageIndex ?? prev.pageIndex,
+          pageIndex: singlePageSteps[next]?.anchorPageIndex ?? prev.pageIndex,
         }
       })
       setPendingBoundaryDirection(null)
@@ -1918,7 +1920,12 @@ function ReaderPage() {
       swipeTrackRef.current.style.transition = 'none'
       swipeTrackRef.current.style.transform = 'translate3d(0px, 0, 0)'
     }
-  }, [pageState.pageIndex, pageState.singleStepIndex, pageState.stepIndex, mode])
+  }, [
+    pageState.pageIndex,
+    pageState.singleStepIndex,
+    pageState.stepIndex,
+    mode,
+  ])
 
   const handleTouchTapNavigate = useCallback(
     (event: MouseEvent<HTMLElement>) => {

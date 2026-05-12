@@ -639,10 +639,21 @@ function derivePageIndices(
 ): ReaderPageState {
   const safeIdx = clamp(pageIndex, 0, Math.max(pages.length - 1, 0))
   const pairingPages = pages.map(asPairingPage)
-  const doubleSteps = buildDoublePageStepsWithOffset(pairingPages, doublePageOffset)
-  const portraitSteps = expandStepsForPortraitSingle(doubleSteps, pages, readingDirection)
+  const doubleSteps = buildDoublePageStepsWithOffset(
+    pairingPages,
+    doublePageOffset,
+  )
+  const portraitSteps = expandStepsForPortraitSingle(
+    doubleSteps,
+    pages,
+    readingDirection,
+  )
   const activeSteps = isTouchPortrait ? portraitSteps : doubleSteps
-  const singleSteps = buildSinglePageSteps(pages, isTouchPortrait, readingDirection)
+  const singleSteps = buildSinglePageSteps(
+    pages,
+    isTouchPortrait,
+    readingDirection,
+  )
   return {
     pageIndex: safeIdx,
     stepIndex: findStepIndexByPageIndex(activeSteps, safeIdx),
@@ -650,7 +661,11 @@ function derivePageIndices(
   }
 }
 
-const ZERO_PAGE_STATE: ReaderPageState = { pageIndex: 0, stepIndex: 0, singleStepIndex: 0 }
+const ZERO_PAGE_STATE: ReaderPageState = {
+  pageIndex: 0,
+  stepIndex: 0,
+  singleStepIndex: 0,
+}
 
 function WeebcentralReaderPage() {
   const params = Route.useParams()
@@ -770,14 +785,12 @@ function WeebcentralReaderPage() {
     if (!cachedChapter) return ZERO_PAGE_STATE
     if (cachedPages.length === 0) return ZERO_PAGE_STATE
     const savedProgress = loadRemoteProgress(cachedChapter.chapterId)
-    const pageIdx = clamp(savedProgress?.pageIndex ?? 0, 0, cachedPages.length - 1)
-    return derivePageIndices(
-      pageIdx,
-      cachedPages,
-      false,
-      false,
-      'rtl',
+    const pageIdx = clamp(
+      savedProgress?.pageIndex ?? 0,
+      0,
+      cachedPages.length - 1,
     )
+    return derivePageIndices(pageIdx, cachedPages, false, false, 'rtl')
   })
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [inlineFullscreen, setInlineFullscreen] = useState(false)
@@ -1489,8 +1502,9 @@ function WeebcentralReaderPage() {
 
   const loadRemoteChapter = useCallback(async () => {
     const chapterOptions = weebcentralChapterQueryOptions(params.chapterId)
-    const cachedChapter =
-      queryClient.getQueryData<WeebcentralChapterDTO>(chapterOptions.queryKey)
+    const cachedChapter = queryClient.getQueryData<WeebcentralChapterDTO>(
+      chapterOptions.queryKey,
+    )
 
     setIsLoading(!cachedChapter)
     setError(null)
@@ -1538,8 +1552,9 @@ function WeebcentralReaderPage() {
       const seriesInput =
         search.seriesId?.trim() || chapterPayload.seriesId || params.chapterId
       const seriesOptions = weebcentralSeriesQueryOptions(seriesInput)
-      const cachedSeries =
-        queryClient.getQueryData<WeebcentralSeriesDTO>(seriesOptions.queryKey)
+      const cachedSeries = queryClient.getQueryData<WeebcentralSeriesDTO>(
+        seriesOptions.queryKey,
+      )
       if (cachedSeries) {
         setSeries(cachedSeries)
       }
@@ -1666,12 +1681,7 @@ function WeebcentralReaderPage() {
     }
 
     setMode(next)
-  }, [
-    activeDoubleSteps,
-    currentTargetPageIndex,
-    mode,
-    singlePageSteps,
-  ])
+  }, [activeDoubleSteps, currentTargetPageIndex, mode, singlePageSteps])
 
   useEffect(() => {
     if (!chapter) {
@@ -1982,13 +1992,7 @@ function WeebcentralReaderPage() {
         ),
       )
     },
-    [
-      doublePageOffset,
-      isTouchPortrait,
-      maxPageIndex,
-      pages,
-      readingDirection,
-    ],
+    [doublePageOffset, isTouchPortrait, maxPageIndex, pages, readingDirection],
   )
 
   const toggleFullscreen = useCallback(async () => {
@@ -2069,8 +2073,7 @@ function WeebcentralReaderPage() {
         return {
           ...prev,
           stepIndex: next,
-          pageIndex:
-            activeDoubleSteps[next]?.anchorPageIndex ?? prev.pageIndex,
+          pageIndex: activeDoubleSteps[next]?.anchorPageIndex ?? prev.pageIndex,
         }
       })
       setPendingBoundaryDirection(null)
