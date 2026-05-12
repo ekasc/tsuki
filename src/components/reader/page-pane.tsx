@@ -84,7 +84,11 @@ export function PagePane({
   const errorOverlay = imageError ? (
     <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-black/80">
       <p className="text-sm text-white/80">Image failed to load</p>
-      <Button variant="soft" className="h-8 px-3 text-xs" onClick={handleManualRetry}>
+      <Button
+        variant="soft"
+        className="h-8 px-3 text-xs"
+        onClick={handleManualRetry}
+      >
         Tap to reload
       </Button>
     </div>
@@ -98,7 +102,9 @@ export function PagePane({
         ? (unit.crop as 'left' | 'right')
         : null
   const isCropped = cssCrop !== null
-  const paneAspectRatio = isCropped ? Math.max(0.1, page.aspect / 2) : page.aspect
+  const paneAspectRatio = isCropped
+    ? Math.max(0.1, page.aspect / 2)
+    : page.aspect
   const fetchPriority = loading === 'eager' ? 'high' : 'auto'
 
   // CSS-cropped page: show full image at 200% width, translate to show correct half
@@ -107,7 +113,11 @@ export function PagePane({
       <div
         className={`relative flex h-full flex-none items-center justify-center overflow-hidden bg-black ${forceFullWidth ? 'w-full' : ''}`}
         style={{
-          aspectRatio: forceFullWidth ? (paneAspectRatio > 0 ? paneAspectRatio : undefined) : paneAspectRatio,
+          aspectRatio: forceFullWidth
+            ? paneAspectRatio > 0
+              ? paneAspectRatio
+              : undefined
+            : paneAspectRatio,
         }}
         data-testid={testId}
       >

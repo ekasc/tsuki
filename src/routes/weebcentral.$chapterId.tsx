@@ -649,10 +649,19 @@ function WeebcentralReaderPage() {
 
   const cachedChapter = useMemo(() => {
     if (typeof window === 'undefined') return null
-    const preloaded = loaderChapter ?? prefetchedRemoteChapters.get(params.chapterId) as WeebcentralChapterDTO | undefined
+    const preloaded =
+      loaderChapter ??
+      (prefetchedRemoteChapters.get(params.chapterId) as
+        | WeebcentralChapterDTO
+        | undefined)
     if (preloaded?.chapterId === params.chapterId) {
       prefetchedRemoteChapters.delete(params.chapterId)
-      setBoundedMapEntry(prefetchedRemoteChapters, params.chapterId, preloaded, PREFETCHED_REMOTE_CHAPTER_LIMIT)
+      setBoundedMapEntry(
+        prefetchedRemoteChapters,
+        params.chapterId,
+        preloaded,
+        PREFETCHED_REMOTE_CHAPTER_LIMIT,
+      )
       return preloaded
     }
     const cached = queryClient.getQueryData<WeebcentralChapterDTO>(
@@ -679,7 +688,8 @@ function WeebcentralReaderPage() {
   }, [cachedChapter])
 
   const initialRemoteStepIndices = useMemo(() => {
-    if (!cachedChapter || cachedPages.length === 0) return { step: 0, single: 0 }
+    if (!cachedChapter || cachedPages.length === 0)
+      return { step: 0, single: 0 }
     const pageIdx = Math.min(initialRemotePageIndex, cachedPages.length - 1)
     const step = findStepIndexByPageIndex(
       buildDoublePageStepsWithOffset(cachedPages.map(asPairingPage), false),
@@ -711,14 +721,15 @@ function WeebcentralReaderPage() {
   const [zoomPreset, setZoomPreset] = useState<ZoomPreset>(
     initialUiPrefs.zoomPreset,
   )
-  const [readingDirection, setReadingDirection] =
-    useState<ReaderDirection>(() => {
+  const [readingDirection, setReadingDirection] = useState<ReaderDirection>(
+    () => {
       if (typeof window === 'undefined') return 'rtl'
       const maybeSeriesId = search.seriesId
       if (!maybeSeriesId) return 'rtl'
       const preset = loadReaderSeriesPreset(maybeSeriesId)
       return preset?.readingDirection ?? 'rtl'
-    })
+    },
+  )
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(
     initialUiPrefs.sidebarOpen,
   )

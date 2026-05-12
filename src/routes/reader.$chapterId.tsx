@@ -553,13 +553,24 @@ function ReaderPage() {
 
   const initialCached = useMemo(() => {
     if (typeof window === 'undefined') return null
-    const preloaded = loaderChapterPayload ?? prefetchedLocalChapterPayloads.get(params.chapterId) as ChapterPayload | undefined
+    const preloaded =
+      loaderChapterPayload ??
+      (prefetchedLocalChapterPayloads.get(params.chapterId) as
+        | ChapterPayload
+        | undefined)
     if (preloaded?.manifest.chapterId === params.chapterId) {
       prefetchedLocalChapterPayloads.delete(params.chapterId)
-      setBoundedMapEntry(prefetchedLocalChapterPayloads, params.chapterId, preloaded, PREFETCHED_LOCAL_CHAPTER_LIMIT)
+      setBoundedMapEntry(
+        prefetchedLocalChapterPayloads,
+        params.chapterId,
+        preloaded,
+        PREFETCHED_LOCAL_CHAPTER_LIMIT,
+      )
       return preloaded
     }
-    const cached = queryClient.getQueryData<ChapterPayload>(localChapterQueryOptions(params.chapterId).queryKey)
+    const cached = queryClient.getQueryData<ChapterPayload>(
+      localChapterQueryOptions(params.chapterId).queryKey,
+    )
     if (cached?.manifest.chapterId === params.chapterId) return cached
     return null
   }, [params.chapterId])
@@ -589,14 +600,15 @@ function ReaderPage() {
   const [zoomPreset, setZoomPreset] = useState<ZoomPreset>(
     initialUiPrefs.zoomPreset,
   )
-  const [readingDirection, setReadingDirection] =
-    useState<ReaderDirection>(() => {
+  const [readingDirection, setReadingDirection] = useState<ReaderDirection>(
+    () => {
       if (typeof window === 'undefined') return 'rtl'
       const payload = chapterPayload
       if (!payload) return 'rtl'
       const preset = loadReaderSeriesPreset(payload.manifest.seriesId)
       return preset?.readingDirection ?? 'rtl'
-    })
+    },
+  )
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(
     initialUiPrefs.sidebarOpen,
   )
@@ -2877,7 +2889,10 @@ function ReaderPage() {
               </div>
 
               {isTouchDevice && isTouchPortrait && (
-                <details className="exp-details-panel mt-2 px-3 py-2 text-xs text-muted-foreground" open>
+                <details
+                  className="exp-details-panel mt-2 px-3 py-2 text-xs text-muted-foreground"
+                  open
+                >
                   <summary className="exp-details-summary">
                     More settings
                   </summary>
