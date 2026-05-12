@@ -55,6 +55,19 @@ import {
 } from '#/lib/reader/pairing'
 import { useTouchDevice, useTouchPortrait } from '#/hooks/use-touch-portrait'
 
+function WeebcentralPending() {
+  return (
+    <div className="reader-stage-bg flex h-[100dvh] flex-col items-center justify-center gap-4">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white/70" />
+        <p className="text-sm text-white/60" role="status" aria-live="polite">
+          Opening chapter…
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export const Route = createFileRoute('/weebcentral/$chapterId')({
   headers: () => ({
     'X-Robots-Tag': 'index, follow',
@@ -97,7 +110,10 @@ export const Route = createFileRoute('/weebcentral/$chapterId')({
   staleTime: 45_000,
   preloadStaleTime: 120_000,
   gcTime: 15 * 60_000,
+  pendingMs: 100,
+  pendingMinMs: 300,
   component: WeebcentralReaderPage,
+  pendingComponent: WeebcentralPending,
 })
 
 const REMOTE_PROGRESS_STORAGE_KEY = 'tsuki-remote-progress.v1'
