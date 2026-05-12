@@ -12,7 +12,11 @@ import {
   useState,
   type MouseEvent,
 } from 'react'
+import gsap from 'gsap'
+import { useGSAP } from '@gsap/react'
 import { flushSync } from 'react-dom'
+
+gsap.registerPlugin(useGSAP)
 
 import { ContinuousScroll } from '#/components/reader/continuous-scroll'
 import { PagePane } from '#/components/reader/page-pane'
@@ -834,6 +838,10 @@ function WeebcentralReaderPage() {
   const nativePagerVisualLockTimeoutRef = useRef<number | null>(null)
   const nativePagerReadyRef = useRef(false)
   const nativePagerCenteringRef = useRef(false)
+  const sidebarRef = useRef<HTMLDivElement>(null)
+  const boundaryRef = useRef<HTMLDivElement>(null)
+  const hudRef = useRef<HTMLDivElement>(null)
+  const settingsContentRef = useRef<HTMLDivElement>(null)
   const isTouchDevice = useTouchDevice()
   const isTouchPortrait = useTouchPortrait()
 
@@ -2909,6 +2917,87 @@ function WeebcentralReaderPage() {
     toggleFullscreen,
   ])
 
+  useGSAP(
+    () => {
+      if (typeof window === 'undefined') return
+      const mm = gsap.matchMedia()
+      mm.add('(prefers-reduced-motion: no-preference)', () => {
+        if (sidebarRef.current) {
+          gsap.fromTo(
+            sidebarRef.current,
+            { x: sidebarOpen ? '-100%' : '0%', autoAlpha: sidebarOpen ? 0 : 1 },
+            {
+              x: sidebarOpen ? '0%' : '-100%',
+              autoAlpha: sidebarOpen ? 1 : 0,
+              duration: 0.25,
+              ease: 'power3.out',
+            },
+          )
+        }
+      })
+      return () => mm.revert()
+    },
+    { dependencies: [sidebarOpen], scope: sidebarRef },
+  )
+
+  useGSAP(
+    () => {
+      if (!boundaryNotice) return
+      if (typeof window === 'undefined') return
+      const mm = gsap.matchMedia()
+      mm.add('(prefers-reduced-motion: no-preference)', () => {
+        gsap.fromTo(
+          boundaryRef.current,
+          { autoAlpha: 0, y: 12, scale: 0.96 },
+          {
+            autoAlpha: 1,
+            y: 0,
+            scale: 1,
+            duration: 0.22,
+            ease: 'back.out(1.7)',
+          },
+        )
+      })
+      return () => mm.revert()
+    },
+    { dependencies: [boundaryNotice], scope: boundaryRef },
+  )
+
+  useGSAP(
+    () => {
+      if (!showPageHud || !hudRef.current) return
+      if (typeof window === 'undefined') return
+      const mm = gsap.matchMedia()
+      mm.add('(prefers-reduced-motion: no-preference)', () => {
+        gsap.fromTo(
+          hudRef.current,
+          { autoAlpha: 0, y: 6 },
+          { autoAlpha: 1, y: 0, duration: 0.15, ease: 'power2.out' },
+        )
+      })
+      return () => mm.revert()
+    },
+    { dependencies: [showPageHud, pageState.pageIndex], scope: hudRef },
+  )
+
+  useGSAP(
+    () => {
+      if (typeof window === 'undefined') return
+      const el = settingsContentRef.current
+      if (!el) return
+      const mm = gsap.matchMedia()
+      mm.add('(prefers-reduced-motion: no-preference)', () => {
+        if (mobileSettingsMinimized) {
+          gsap.to(el, { autoAlpha: 0, duration: 0.15, ease: 'power2.in' })
+        } else {
+          gsap.to(el, { autoAlpha: 1, duration: 0.2, ease: 'power2.out' })
+        }
+      })
+      return () => mm.revert()
+    },
+    { dependencies: [mobileSettingsMinimized], scope: settingsContentRef },
+  )
+
   const remoteSeriesTitle =
     series?.title ?? search.seriesTitle ?? 'Online series'
   const remoteSeriesIdForLink =
@@ -2982,6 +3071,7 @@ function WeebcentralReaderPage() {
 
       {!fullscreenActive ? (
         <aside
+          ref={sidebarRef}
           className={
             isTouchDevice
               ? 'reader-shell-panel reader-settings-panel animate-enter relative z-30 w-full overflow-visible p-3'
@@ -3014,7 +3104,10 @@ function WeebcentralReaderPage() {
           ) : null}
 
           <div
-            className={isTouchDevice && mobileSettingsMinimized ? 'hidden' : ''}
+            ref={settingsContentRef}
+            className={
+              isTouchDevice && mobileSettingsMinimized ? 'invisible' : ''
+            }
           >
             <div className="reader-settings-surface space-y-2 text-xs text-muted-foreground">
               <Link
@@ -3406,7 +3499,10 @@ function WeebcentralReaderPage() {
       ) : null}
 
       {boundaryNotice ? (
-        <div className="reader-hud pointer-events-none absolute ui-bottom-safe-stack left-1/2 z-30 -translate-x-1/2 px-3 py-1 text-xs">
+        <div
+          ref={boundaryRef}
+          className="reader-hud pointer-events-none absolute ui-bottom-safe-stack left-1/2 z-30 -translate-x-1/2 px-3 py-1 text-xs"
+        >
           {boundaryNotice}
         </div>
       ) : null}
@@ -3454,7 +3550,10 @@ function WeebcentralReaderPage() {
               }
             />
             {fullscreenActive && showPageHud ? (
-              <div className="reader-hud pointer-events-none absolute ui-bottom-safe-hud left-1/2 -translate-x-1/2 px-3 py-1 text-sm">
+              <div
+                ref={hudRef}
+                className="reader-hud pointer-events-none absolute ui-bottom-safe-hud left-1/2 -translate-x-1/2 px-3 py-1 text-sm"
+              >
                 {hudPageLabel}
               </div>
             ) : null}
@@ -3577,7 +3676,10 @@ function WeebcentralReaderPage() {
               </>
             ) : null}
             {fullscreenActive && showPageHud ? (
-              <div className="reader-hud pointer-events-none absolute ui-bottom-safe-hud left-1/2 -translate-x-1/2 px-3 py-1 text-sm">
+              <div
+                ref={hudRef}
+                className="reader-hud pointer-events-none absolute ui-bottom-safe-hud left-1/2 -translate-x-1/2 px-3 py-1 text-sm"
+              >
                 {hudPageLabel}
               </div>
             ) : null}
