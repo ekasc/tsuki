@@ -8,7 +8,6 @@ interface ContinuousScrollProps {
   chapterId: string
   pages: ChapterPageManifest[]
   zoomPreset: ZoomPreset
-  isFullscreen?: boolean
   resolveImageUrl?: (page: ChapterPageManifest) => string | undefined
   onImageMeasure?: (pageIndex: number, width: number, height: number) => void
   onVisiblePageChange: (pageIndex: number) => void
@@ -18,7 +17,6 @@ export function ContinuousScroll({
   chapterId,
   pages,
   zoomPreset,
-  isFullscreen = false,
   resolveImageUrl,
   onImageMeasure,
   onVisiblePageChange,
@@ -143,7 +141,7 @@ export function ContinuousScroll({
   return (
     <div
       ref={parentRef}
-      className={`${isFullscreen ? 'h-[100dvh]' : 'h-[72vh]'} overflow-auto bg-black`}
+      className="h-[100dvh] overflow-auto bg-black"
       style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}
       data-testid="reader-scroll-container"
     >

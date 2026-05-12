@@ -107,7 +107,7 @@ export function PagePane({
       <div
         className={`relative flex h-full flex-none items-center justify-center overflow-hidden bg-black ${forceFullWidth ? 'w-full' : ''}`}
         style={{
-          aspectRatio: forceFullWidth ? undefined : paneAspectRatio,
+          aspectRatio: forceFullWidth ? (paneAspectRatio > 0 ? paneAspectRatio : undefined) : paneAspectRatio,
         }}
         data-testid={testId}
       >
@@ -146,7 +146,7 @@ export function PagePane({
     <div
       className={`relative flex h-full flex-none items-center justify-center overflow-hidden bg-black ${forceFullWidth ? 'w-full' : ''}`}
       style={{
-        aspectRatio: forceFullWidth ? undefined : paneAspectRatio,
+        aspectRatio: paneAspectRatio > 0 ? paneAspectRatio : undefined,
       }}
       data-testid={testId}
     >

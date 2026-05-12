@@ -647,9 +647,56 @@ function WeebcentralReaderPage() {
     ]
   }, [params.chapterId])
 
+  const cachedChapter = useMemo(() => {
+    if (typeof window === 'undefined') return null
+    const preloaded = loaderChapter ?? prefetchedRemoteChapters.get(params.chapterId) as WeebcentralChapterDTO | undefined
+    if (preloaded?.chapterId === params.chapterId) {
+      prefetchedRemoteChapters.delete(params.chapterId)
+      setBoundedMapEntry(prefetchedRemoteChapters, params.chapterId, preloaded, PREFETCHED_REMOTE_CHAPTER_LIMIT)
+      return preloaded
+    }
+    const cached = queryClient.getQueryData<WeebcentralChapterDTO>(
+      weebcentralChapterQueryOptions(params.chapterId).queryKey,
+    )
+    if (cached?.chapterId === params.chapterId) return cached
+    return null
+  }, [params.chapterId])
+
+  const initialCachedDimensions = useMemo(() => {
+    if (!cachedChapter) return {} as Record<number, RemotePageDimension>
+    return remotePageDimensionsCache.get(cachedChapter.chapterId) ?? {}
+  }, [cachedChapter])
+
+  const cachedPages = useMemo(() => {
+    if (!cachedChapter) return [] as ChapterPageManifest[]
+    return createPlaceholderPages(cachedChapter, initialCachedDimensions)
+  }, [cachedChapter, initialCachedDimensions])
+
+  const initialRemotePageIndex = useMemo(() => {
+    if (!cachedChapter) return 0
+    const savedProgress = loadRemoteProgress(cachedChapter.chapterId)
+    return savedProgress?.pageIndex ?? 0
+  }, [cachedChapter])
+
+  const initialRemoteStepIndices = useMemo(() => {
+    if (!cachedChapter || cachedPages.length === 0) return { step: 0, single: 0 }
+    const pageIdx = Math.min(initialRemotePageIndex, cachedPages.length - 1)
+    const step = findStepIndexByPageIndex(
+      buildDoublePageStepsWithOffset(cachedPages.map(asPairingPage), false),
+      pageIdx,
+    )
+    const single = findStepIndexByPageIndex(
+      buildSinglePageSteps(cachedPages, false, 'rtl'),
+      pageIdx,
+    )
+    return { step, single, page: pageIdx }
+  }, [cachedChapter, cachedPages, initialRemotePageIndex])
+
   const [series, setSeries] = useState<WeebcentralSeriesDTO | null>(null)
-  const [chapter, setChapter] = useState<WeebcentralChapterDTO | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [chapter, setChapter] = useState<WeebcentralChapterDTO | null>(
+    cachedChapter,
+  )
+  const [isLoading, setIsLoading] = useState(() => !cachedChapter)
   const [error, setError] = useState<string | null>(null)
   const initialUiPrefs = useMemo(
     () =>
@@ -665,7 +712,13 @@ function WeebcentralReaderPage() {
     initialUiPrefs.zoomPreset,
   )
   const [readingDirection, setReadingDirection] =
-    useState<ReaderDirection>('rtl')
+    useState<ReaderDirection>(() => {
+      if (typeof window === 'undefined') return 'rtl'
+      const maybeSeriesId = search.seriesId
+      if (!maybeSeriesId) return 'rtl'
+      const preset = loadReaderSeriesPreset(maybeSeriesId)
+      return preset?.readingDirection ?? 'rtl'
+    })
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(
     initialUiPrefs.sidebarOpen,
   )
@@ -711,10 +764,16 @@ function WeebcentralReaderPage() {
   } | null>(null)
   const [pageDimensions, setPageDimensions] = useState<
     Record<number, RemotePageDimension>
-  >({})
-  const [currentPageIndex, setCurrentPageIndex] = useState(0)
-  const [currentStepIndex, setCurrentStepIndex] = useState(0)
-  const [currentSingleStepIndex, setCurrentSingleStepIndex] = useState(0)
+  >(initialCachedDimensions)
+  const [currentPageIndex, setCurrentPageIndex] = useState(
+    initialRemoteStepIndices?.page ?? 0,
+  )
+  const [currentStepIndex, setCurrentStepIndex] = useState(
+    initialRemoteStepIndices?.step ?? 0,
+  )
+  const [currentSingleStepIndex, setCurrentSingleStepIndex] = useState(
+    initialRemoteStepIndices?.single ?? 0,
+  )
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [inlineFullscreen, setInlineFullscreen] = useState(false)
   const [showPageHud, setShowPageHud] = useState(false)
@@ -1406,7 +1465,29 @@ function WeebcentralReaderPage() {
     ],
   )
 
+  const remoteChapterChangeRef = useRef<string | null>(null)
+
   useEffect(() => {
+    const prev = remoteChapterChangeRef.current
+    remoteChapterChangeRef.current = params.chapterId
+
+    if (prev === params.chapterId) return
+
+    prefetchedRemoteChapters.clear()
+    prefetchedRemoteSeries.clear()
+    inFlightRemoteChapterPrefetches.clear()
+
+    if (prev !== null) {
+      setChapter(null)
+      setSeries(null)
+      setPageDimensions({})
+      setCurrentPageIndex(0)
+      setCurrentStepIndex(0)
+      setCurrentSingleStepIndex(0)
+      setError(null)
+      setIsLoading(true)
+    }
+
     if (!loaderChapter) {
       return
     }
@@ -1417,7 +1498,7 @@ function WeebcentralReaderPage() {
       loaderChapter,
       PREFETCHED_REMOTE_CHAPTER_LIMIT,
     )
-  }, [loaderChapter, params.chapterId])
+  }, [params.chapterId, loaderChapter])
 
   const loadRemoteChapter = useCallback(async () => {
     const chapterOptions = weebcentralChapterQueryOptions(params.chapterId)
@@ -3426,7 +3507,6 @@ function WeebcentralReaderPage() {
               chapterId={chapter.chapterId}
               pages={pages}
               zoomPreset={zoomPreset}
-              isFullscreen={fullscreenActive}
               resolveImageUrl={(page) => pageUrlMap.get(page.pageIndex)}
               onImageMeasure={rememberPageDimension}
               onVisiblePageChange={(pageIndex) =>

@@ -1,10 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 import { addBoundedSetEntry } from '#/lib/bounded-cache'
 import { resolveApiUrl } from '#/lib/http-client'
 
-const prefetched = new Set<string>()
-const inFlight = new Map<string, HTMLImageElement>()
 const PREFETCH_URL_CACHE_LIMIT = 1200
 
 interface PrefetchOptions {
@@ -17,7 +15,26 @@ interface PrefetchOptions {
   concurrency?: number
 }
 
-function warmImageUrl(url: string): Promise<void> {
+const perChapterPrefetched = new Map<string, Set<string>>()
+const perChapterInFlight = new Map<string, Map<string, HTMLImageElement>>()
+
+function getChapterSets(chapterId: string) {
+  let prefetched = perChapterPrefetched.get(chapterId)
+  if (!prefetched) {
+    prefetched = new Set()
+    perChapterPrefetched.set(chapterId, prefetched)
+  }
+  let inFlight = perChapterInFlight.get(chapterId)
+  if (!inFlight) {
+    inFlight = new Map()
+    perChapterInFlight.set(chapterId, inFlight)
+  }
+  return { prefetched, inFlight }
+}
+
+function warmImageUrl(url: string, chapterId: string): Promise<void> {
+  const { prefetched, inFlight } = getChapterSets(chapterId)
+
   if (prefetched.has(url) || inFlight.has(url)) {
     return Promise.resolve()
   }
@@ -51,7 +68,6 @@ function warmImageUrl(url: string): Promise<void> {
       { once: true },
     )
 
-    // Keep URLs identical to runtime <img src=...> requests for cache reuse.
     image.src = url
   })
 }
@@ -65,12 +81,16 @@ export function useImagePrefetch({
   lookbehind = 4,
   concurrency = 2,
 }: PrefetchOptions) {
+  const chapterIdRef = useRef(chapterId)
+  chapterIdRef.current = chapterId
+
   useEffect(() => {
     if (!enabled) {
       return
     }
 
     let canceled = false
+    const currentChapterId = chapterIdRef.current
     const targets: number[] = []
 
     const start = Math.max(0, startPageIndex - lookbehind)
@@ -85,7 +105,10 @@ export function useImagePrefetch({
 
     const urls = targets
       .map((pageIndex) => resolveApiUrl(`/api/image/${chapterId}/${pageIndex}`))
-      .filter((url) => !prefetched.has(url) && !inFlight.has(url))
+      .filter((url) => {
+        const { prefetched, inFlight } = getChapterSets(chapterId)
+        return !prefetched.has(url) && !inFlight.has(url)
+      })
 
     if (urls.length === 0) {
       return
@@ -104,14 +127,13 @@ export function useImagePrefetch({
           continue
         }
 
-        await warmImageUrl(url)
+        await warmImageUrl(url, currentChapterId)
       }
     }
 
     void Promise.all(Array.from({ length: workerCount }, runWorker))
 
     return () => {
-      // Avoid canceling in-flight image warms during quick flips.
       canceled = true
     }
   }, [

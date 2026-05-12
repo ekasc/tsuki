@@ -551,10 +551,23 @@ function ReaderPage() {
     return LOCAL_READER_OPENING_LINES[seed % LOCAL_READER_OPENING_LINES.length]
   }, [params.chapterId])
 
+  const initialCached = useMemo(() => {
+    if (typeof window === 'undefined') return null
+    const preloaded = loaderChapterPayload ?? prefetchedLocalChapterPayloads.get(params.chapterId) as ChapterPayload | undefined
+    if (preloaded?.manifest.chapterId === params.chapterId) {
+      prefetchedLocalChapterPayloads.delete(params.chapterId)
+      setBoundedMapEntry(prefetchedLocalChapterPayloads, params.chapterId, preloaded, PREFETCHED_LOCAL_CHAPTER_LIMIT)
+      return preloaded
+    }
+    const cached = queryClient.getQueryData<ChapterPayload>(localChapterQueryOptions(params.chapterId).queryKey)
+    if (cached?.manifest.chapterId === params.chapterId) return cached
+    return null
+  }, [params.chapterId])
+
   const [chapterPayload, setChapterPayload] = useState<ChapterPayload | null>(
-    null,
+    initialCached,
   )
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(() => !initialCached)
   const [error, setError] = useState<string | null>(null)
   const [nextChapterId, setNextChapterId] = useState<string | null>(null)
   const [previousChapterId, setPreviousChapterId] = useState<string | null>(
@@ -577,7 +590,13 @@ function ReaderPage() {
     initialUiPrefs.zoomPreset,
   )
   const [readingDirection, setReadingDirection] =
-    useState<ReaderDirection>('rtl')
+    useState<ReaderDirection>(() => {
+      if (typeof window === 'undefined') return 'rtl'
+      const payload = chapterPayload
+      if (!payload) return 'rtl'
+      const preset = loadReaderSeriesPreset(payload.manifest.seriesId)
+      return preset?.readingDirection ?? 'rtl'
+    })
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(
     initialUiPrefs.sidebarOpen,
   )
@@ -622,9 +641,33 @@ function ReaderPage() {
     height: number
   } | null>(null)
 
-  const [currentPageIndex, setCurrentPageIndex] = useState(0)
-  const [currentStepIndex, setCurrentStepIndex] = useState(0)
-  const [currentSingleStepIndex, setCurrentSingleStepIndex] = useState(0)
+  const initialStepIndices = useMemo(() => {
+    if (!initialCached) return { step: 0, single: 0 }
+    const savedProgress =
+      optimisticLocalProgress.get(initialCached.manifest.chapterId) ??
+      initialCached.progress
+    const pageIdx = savedProgress?.pageIndex ?? 0
+    const pages = initialCached.manifest.pages
+    const step = findStepIndexByPageIndex(
+      buildDoublePageStepsWithOffset(pages.map(asPairingPage), false),
+      pageIdx,
+    )
+    const single = findStepIndexByPageIndex(
+      buildSinglePageSteps(pages, false, 'rtl'),
+      pageIdx,
+    )
+    return { step, single, page: pageIdx }
+  }, [initialCached])
+
+  const [currentPageIndex, setCurrentPageIndex] = useState(
+    initialStepIndices?.page ?? 0,
+  )
+  const [currentStepIndex, setCurrentStepIndex] = useState(
+    initialStepIndices?.step ?? 0,
+  )
+  const [currentSingleStepIndex, setCurrentSingleStepIndex] = useState(
+    initialStepIndices?.single ?? 0,
+  )
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [inlineFullscreen, setInlineFullscreen] = useState(false)
   const [showPageHud, setShowPageHud] = useState(false)
@@ -904,7 +947,30 @@ function ReaderPage() {
     queryClient,
   ])
 
+  const chapterChangeRef = useRef<string | null>(null)
+
   useEffect(() => {
+    const prev = chapterChangeRef.current
+    chapterChangeRef.current = params.chapterId
+
+    if (prev === params.chapterId) return
+
+    prefetchedLocalChapterPayloads.clear()
+    prefetchedLocalSeriesDetails.clear()
+    inFlightLocalChapterPrefetches.clear()
+
+    if (prev !== null) {
+      // Reset chapter state on chapter change to prevent stale data flash
+      setChapterPayload(null)
+      setNextChapterId(null)
+      setPreviousChapterId(null)
+      setSeriesChapters([])
+      setCurrentPageIndex(0)
+      setCurrentStepIndex(0)
+      setCurrentSingleStepIndex(0)
+      setIsLoading(true)
+    }
+
     if (!loaderChapterPayload) {
       return
     }
@@ -919,7 +985,7 @@ function ReaderPage() {
       loaderChapterPayload,
       PREFETCHED_LOCAL_CHAPTER_LIMIT,
     )
-  }, [loaderChapterPayload, params.chapterId])
+  }, [params.chapterId, loaderChapterPayload])
 
   const loadChapter = useCallback(async () => {
     if (
@@ -3057,7 +3123,6 @@ function ReaderPage() {
               chapterId={chapterId}
               pages={pages}
               zoomPreset={zoomPreset}
-              isFullscreen={fullscreenActive}
               onVisiblePageChange={(pageIndex) =>
                 setCurrentPageIndex(pageIndex)
               }
