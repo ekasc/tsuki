@@ -539,6 +539,34 @@ function resolveAdjacentChapterIds(series: SeriesDetail, chapterId: string) {
   }
 }
 
+interface ReaderPageState {
+  pageIndex: number
+  stepIndex: number
+  singleStepIndex: number
+}
+
+function derivePageIndicesForLocal(
+  pageIndex: number,
+  pages: ChapterPageManifest[],
+  doublePageOffset: boolean,
+  isTouchPortrait: boolean,
+  readingDirection: ReaderDirection,
+): ReaderPageState {
+  const safeIdx = clamp(pageIndex, 0, Math.max(pages.length - 1, 0))
+  const pairingPages = pages.map(asPairingPage)
+  const doubleSteps = buildDoublePageStepsWithOffset(pairingPages, doublePageOffset)
+  const portraitSteps = expandStepsForPortraitSingle(doubleSteps, pages, readingDirection)
+  const activeSteps = isTouchPortrait ? portraitSteps : doubleSteps
+  const singleSteps = buildSinglePageSteps(pages, isTouchPortrait, readingDirection)
+  return {
+    pageIndex: safeIdx,
+    stepIndex: findStepIndexByPageIndex(activeSteps, safeIdx),
+    singleStepIndex: findStepIndexByPageIndex(singleSteps, safeIdx),
+  }
+}
+
+const ZERO_PAGE_STATE: ReaderPageState = { pageIndex: 0, stepIndex: 0, singleStepIndex: 0 }
+
 function ReaderPage() {
   const params = Route.useParams()
   const navigate = useNavigate()
@@ -653,33 +681,22 @@ function ReaderPage() {
     height: number
   } | null>(null)
 
-  const initialStepIndices = useMemo(() => {
-    if (!initialCached) return { step: 0, single: 0 }
+  const initialPageState = useMemo(() => {
+    if (!initialCached || initialCached.manifest.pages.length === 0) return ZERO_PAGE_STATE
     const savedProgress =
       optimisticLocalProgress.get(initialCached.manifest.chapterId) ??
       initialCached.progress
     const pageIdx = savedProgress?.pageIndex ?? 0
-    const pages = initialCached.manifest.pages
-    const step = findStepIndexByPageIndex(
-      buildDoublePageStepsWithOffset(pages.map(asPairingPage), false),
+    return derivePageIndicesForLocal(
       pageIdx,
+      initialCached.manifest.pages,
+      false,
+      false,
+      'rtl',
     )
-    const single = findStepIndexByPageIndex(
-      buildSinglePageSteps(pages, false, 'rtl'),
-      pageIdx,
-    )
-    return { step, single, page: pageIdx }
   }, [initialCached])
 
-  const [currentPageIndex, setCurrentPageIndex] = useState(
-    initialStepIndices?.page ?? 0,
-  )
-  const [currentStepIndex, setCurrentStepIndex] = useState(
-    initialStepIndices?.step ?? 0,
-  )
-  const [currentSingleStepIndex, setCurrentSingleStepIndex] = useState(
-    initialStepIndices?.single ?? 0,
-  )
+  const [pageState, setPageState] = useState<ReaderPageState>(initialPageState)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [inlineFullscreen, setInlineFullscreen] = useState(false)
   const [showPageHud, setShowPageHud] = useState(false)
@@ -750,16 +767,16 @@ function ReaderPage() {
 
   const currentTargetPageIndex =
     mode === 'double'
-      ? (activeDoubleSteps[currentStepIndex]?.anchorPageIndex ??
-        currentPageIndex)
+      ? (activeDoubleSteps[pageState.stepIndex]?.anchorPageIndex ??
+        pageState.pageIndex)
       : mode === 'single'
-        ? (singlePageSteps[currentSingleStepIndex]?.anchorPageIndex ??
-          currentPageIndex)
-        : currentPageIndex
+        ? (singlePageSteps[pageState.singleStepIndex]?.anchorPageIndex ??
+          pageState.pageIndex)
+        : pageState.pageIndex
   const scrubberMax = Math.max(0, pages.length - 1)
   const scrubberValue = currentTargetPageIndex
 
-  const activeStep = activeDoubleSteps[currentStepIndex] ?? null
+  const activeStep = activeDoubleSteps[pageState.stepIndex] ?? null
 
   const displayUnits = useMemo(() => {
     if (mode !== 'double') {
@@ -777,12 +794,12 @@ function ReaderPage() {
   const currentRenderUnits = useMemo(
     () =>
       mode === 'single'
-        ? (singlePageSteps[currentSingleStepIndex]?.units ??
-          ([{ type: 'page', pageIndex: currentPageIndex }] as const))
+        ? (singlePageSteps[pageState.singleStepIndex]?.units ??
+          ([{ type: 'page', pageIndex: pageState.pageIndex }] as const))
         : displayUnits,
     [
-      currentPageIndex,
-      currentSingleStepIndex,
+      pageState.pageIndex,
+      pageState.singleStepIndex,
       displayUnits,
       mode,
       singlePageSteps,
@@ -806,7 +823,7 @@ function ReaderPage() {
     }
 
     if (mode === 'single') {
-      return `Page ${currentSingleStepIndex + 1} / ${Math.max(singlePageSteps.length, 1)}`
+      return `Page ${pageState.singleStepIndex + 1} / ${Math.max(singlePageSteps.length, 1)}`
     }
 
     if (mode !== 'double') {
@@ -826,7 +843,7 @@ function ReaderPage() {
     const last = visibleIndexes[visibleIndexes.length - 1]!
     return `Pages ${first + 1}-${last + 1} / ${pages.length}`
   }, [
-    currentSingleStepIndex,
+    pageState.singleStepIndex,
     currentTargetPageIndex,
     displayUnits,
     mode,
@@ -977,9 +994,7 @@ function ReaderPage() {
       setNextChapterId(null)
       setPreviousChapterId(null)
       setSeriesChapters([])
-      setCurrentPageIndex(0)
-      setCurrentStepIndex(0)
-      setCurrentSingleStepIndex(0)
+      setPageState(ZERO_PAGE_STATE)
       setIsLoading(true)
     }
 
@@ -1039,20 +1054,13 @@ function ReaderPage() {
         payload.manifest.pageCount - 1,
       )
 
-      setCurrentPageIndex(nextPage)
-      setCurrentStepIndex(
-        findStepIndexByPageIndex(
-          buildDoublePageStepsWithOffset(
-            payload.manifest.pages.map(asPairingPage),
-            doublePageOffset,
-          ),
+      setPageState(
+        derivePageIndicesForLocal(
           nextPage,
-        ),
-      )
-      setCurrentSingleStepIndex(
-        findStepIndexByPageIndex(
-          buildSinglePageSteps(payload.manifest.pages, false, 'rtl'),
-          nextPage,
+          payload.manifest.pages,
+          doublePageOffset,
+          isTouchPortrait,
+          readingDirection,
         ),
       )
     }
@@ -1061,9 +1069,7 @@ function ReaderPage() {
       applyPayloadState(cachedPayload)
     } else {
       setChapterPayload(null)
-      setCurrentPageIndex(0)
-      setCurrentStepIndex(0)
-      setCurrentSingleStepIndex(0)
+      setPageState(ZERO_PAGE_STATE)
     }
 
     chapterTransitionRef.current = false
@@ -1206,30 +1212,40 @@ function ReaderPage() {
   ])
 
   const cycleMode = useCallback(() => {
-    setMode((current) => {
-      const next: ReaderMode =
-        current === 'single'
-          ? 'double'
-          : current === 'double'
-            ? 'scroll'
-            : 'single'
+    const next: ReaderMode =
+      mode === 'single' ? 'double' : mode === 'double' ? 'scroll' : 'single'
 
-      if (next === 'double') {
-        setCurrentStepIndex(
-          findStepIndexByPageIndex(activeDoubleSteps, currentTargetPageIndex),
-        )
-      } else if (next === 'single') {
-        setCurrentSingleStepIndex(
-          findStepIndexByPageIndex(singlePageSteps, currentTargetPageIndex),
-        )
-        setCurrentPageIndex(currentTargetPageIndex)
-      } else {
-        setCurrentPageIndex(currentTargetPageIndex)
-      }
+    if (next === 'double') {
+      setPageState((prev) => ({
+        ...prev,
+        stepIndex: findStepIndexByPageIndex(
+          activeDoubleSteps,
+          currentTargetPageIndex,
+        ),
+      }))
+    } else if (next === 'single') {
+      setPageState({
+        pageIndex: currentTargetPageIndex,
+        stepIndex: findStepIndexByPageIndex(
+          activeDoubleSteps,
+          currentTargetPageIndex,
+        ),
+        singleStepIndex: findStepIndexByPageIndex(
+          singlePageSteps,
+          currentTargetPageIndex,
+        ),
+      })
+    } else {
+      setPageState((prev) => ({ ...prev, pageIndex: currentTargetPageIndex }))
+    }
 
-      return next
-    })
-  }, [activeDoubleSteps, currentTargetPageIndex, singlePageSteps])
+    setMode(next)
+  }, [
+    activeDoubleSteps,
+    currentTargetPageIndex,
+    mode,
+    singlePageSteps,
+  ])
 
   useEffect(() => {
     if (!chapterPayload) {
@@ -1243,7 +1259,7 @@ function ReaderPage() {
         {
           chapterId,
           pageIndex: currentProgressPageIndex,
-          stepIndex: currentStepIndex,
+          stepIndex: pageState.stepIndex,
           mode,
           direction: readingDirection,
           zoomPreset,
@@ -1260,7 +1276,7 @@ function ReaderPage() {
         body: JSON.stringify({
           chapterId,
           pageIndex: currentProgressPageIndex,
-          stepIndex: currentStepIndex,
+          stepIndex: pageState.stepIndex,
           mode,
           direction: readingDirection,
           zoomPreset,
@@ -1284,7 +1300,7 @@ function ReaderPage() {
     chapterId,
     chapterPayload,
     currentProgressPageIndex,
-    currentStepIndex,
+    pageState.stepIndex,
     maxPageIndex,
     mode,
     readingDirection,
@@ -1293,16 +1309,22 @@ function ReaderPage() {
 
   const goToPage = useCallback(
     (nextPageIndex: number) => {
-      const safeIndex = clamp(nextPageIndex, 0, maxPageIndex)
-      setCurrentPageIndex(safeIndex)
-      setCurrentStepIndex(
-        findStepIndexByPageIndex(activeDoubleSteps, safeIndex),
-      )
-      setCurrentSingleStepIndex(
-        findStepIndexByPageIndex(singlePageSteps, safeIndex),
+      setPageState(
+        derivePageIndicesForLocal(
+          nextPageIndex,
+          pages,
+          doublePageOffset,
+          isTouchPortrait,
+          readingDirection,
+        ),
       )
     },
-    [activeDoubleSteps, maxPageIndex, singlePageSteps],
+    [
+      doublePageOffset,
+      isTouchPortrait,
+      pages,
+      readingDirection,
+    ],
   )
 
   const persistProgressNow = useCallback(
@@ -1473,14 +1495,14 @@ function ReaderPage() {
     setPendingBoundaryDirection(null)
     setBoundaryNotice(null)
     setShowPageHud(false)
-    persistProgressNow(currentProgressPageIndex, currentStepIndex)
+    persistProgressNow(currentProgressPageIndex, pageState.stepIndex)
     void navigate({
       to: '/reader/$chapterId',
       params: { chapterId: previousChapterId },
     })
   }, [
     currentProgressPageIndex,
-    currentStepIndex,
+    pageState.stepIndex,
     navigate,
     persistProgressNow,
     previousChapterId,
@@ -1550,7 +1572,7 @@ function ReaderPage() {
     }
 
     if (mode === 'double') {
-      if (currentStepIndex >= maxStepIndex) {
+      if (pageState.stepIndex >= maxStepIndex) {
         if (pendingBoundaryDirection === 'next' && nextChapterId) {
           goToNextChapter()
         } else {
@@ -1559,12 +1581,14 @@ function ReaderPage() {
         return
       }
 
-      setCurrentStepIndex((prev) => {
-        const next = Math.min(prev + 1, maxStepIndex)
-        setCurrentPageIndex(
-          activeDoubleSteps[next]?.anchorPageIndex ?? currentPageIndex,
-        )
-        return next
+      setPageState((prev) => {
+        const next = Math.min(prev.stepIndex + 1, maxStepIndex)
+        return {
+          ...prev,
+          stepIndex: next,
+          pageIndex:
+            activeDoubleSteps[next]?.anchorPageIndex ?? prev.pageIndex,
+        }
       })
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
@@ -1572,7 +1596,7 @@ function ReaderPage() {
     }
 
     if (mode === 'single') {
-      if (currentSingleStepIndex >= maxSingleStepIndex) {
+      if (pageState.singleStepIndex >= maxSingleStepIndex) {
         if (pendingBoundaryDirection === 'next' && nextChapterId) {
           goToNextChapter()
         } else {
@@ -1581,19 +1605,21 @@ function ReaderPage() {
         return
       }
 
-      setCurrentSingleStepIndex((prev) => {
-        const next = Math.min(prev + 1, maxSingleStepIndex)
-        setCurrentPageIndex(
-          singlePageSteps[next]?.anchorPageIndex ?? currentPageIndex,
-        )
-        return next
+      setPageState((prev) => {
+        const next = Math.min(prev.singleStepIndex + 1, maxSingleStepIndex)
+        return {
+          ...prev,
+          singleStepIndex: next,
+          pageIndex:
+            singlePageSteps[next]?.anchorPageIndex ?? prev.pageIndex,
+        }
       })
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
       return
     }
 
-    if (currentPageIndex >= maxPageIndex) {
+    if (pageState.pageIndex >= maxPageIndex) {
       if (pendingBoundaryDirection === 'next' && nextChapterId) {
         goToNextChapter()
       } else {
@@ -1604,11 +1630,11 @@ function ReaderPage() {
 
     setPendingBoundaryDirection(null)
     setBoundaryNotice(null)
-    goToPage(currentPageIndex + 1)
+    goToPage(pageState.pageIndex + 1)
   }, [
-    currentPageIndex,
-    currentStepIndex,
-    currentSingleStepIndex,
+    pageState.pageIndex,
+    pageState.stepIndex,
+    pageState.singleStepIndex,
     goToNextChapter,
     goToPage,
     maxPageIndex,
@@ -1654,7 +1680,7 @@ function ReaderPage() {
     }
 
     if (mode === 'double') {
-      if (currentStepIndex <= 0) {
+      if (pageState.stepIndex <= 0) {
         if (pendingBoundaryDirection === 'prev' && previousChapterId) {
           goToPreviousChapter()
         } else {
@@ -1663,12 +1689,14 @@ function ReaderPage() {
         return
       }
 
-      setCurrentStepIndex((prev) => {
-        const next = Math.max(prev - 1, 0)
-        setCurrentPageIndex(
-          activeDoubleSteps[next]?.anchorPageIndex ?? currentPageIndex,
-        )
-        return next
+      setPageState((prev) => {
+        const next = Math.max(prev.stepIndex - 1, 0)
+        return {
+          ...prev,
+          stepIndex: next,
+          pageIndex:
+            activeDoubleSteps[next]?.anchorPageIndex ?? prev.pageIndex,
+        }
       })
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
@@ -1676,7 +1704,7 @@ function ReaderPage() {
     }
 
     if (mode === 'single') {
-      if (currentSingleStepIndex <= 0) {
+      if (pageState.singleStepIndex <= 0) {
         if (pendingBoundaryDirection === 'prev' && previousChapterId) {
           goToPreviousChapter()
         } else {
@@ -1685,19 +1713,21 @@ function ReaderPage() {
         return
       }
 
-      setCurrentSingleStepIndex((prev) => {
-        const next = Math.max(prev - 1, 0)
-        setCurrentPageIndex(
-          singlePageSteps[next]?.anchorPageIndex ?? currentPageIndex,
-        )
-        return next
+      setPageState((prev) => {
+        const next = Math.max(prev.singleStepIndex - 1, 0)
+        return {
+          ...prev,
+          singleStepIndex: next,
+          pageIndex:
+            singlePageSteps[next]?.anchorPageIndex ?? prev.pageIndex,
+        }
       })
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
       return
     }
 
-    if (currentPageIndex <= 0) {
+    if (pageState.pageIndex <= 0) {
       if (pendingBoundaryDirection === 'prev' && previousChapterId) {
         goToPreviousChapter()
       } else {
@@ -1708,11 +1738,11 @@ function ReaderPage() {
 
     setPendingBoundaryDirection(null)
     setBoundaryNotice(null)
-    goToPage(currentPageIndex - 1)
+    goToPage(pageState.pageIndex - 1)
   }, [
-    currentPageIndex,
-    currentStepIndex,
-    currentSingleStepIndex,
+    pageState.pageIndex,
+    pageState.stepIndex,
+    pageState.singleStepIndex,
     goToPage,
     goToPreviousChapter,
     maxSingleStepIndex,
@@ -1951,7 +1981,7 @@ function ReaderPage() {
       swipeTrackRef.current.style.transition = 'none'
       swipeTrackRef.current.style.transform = 'translate3d(0px, 0, 0)'
     }
-  }, [currentPageIndex, currentSingleStepIndex, currentStepIndex, mode])
+  }, [pageState.pageIndex, pageState.singleStepIndex, pageState.stepIndex, mode])
 
   const handleTouchTapNavigate = useCallback(
     (event: MouseEvent<HTMLElement>) => {
@@ -2227,7 +2257,7 @@ function ReaderPage() {
       showPageHudForMoment()
     }
   }, [
-    currentStepIndex,
+    pageState.stepIndex,
     currentTargetPageIndex,
     fullscreenActive,
     showPageHudForMoment,
@@ -2541,13 +2571,7 @@ function ReaderPage() {
                   aria-label="Switch to single-page mode"
                   onClick={() => {
                     setMode('single')
-                    setCurrentSingleStepIndex(
-                      findStepIndexByPageIndex(
-                        singlePageSteps,
-                        currentTargetPageIndex,
-                      ),
-                    )
-                    setCurrentPageIndex(currentTargetPageIndex)
+                    goToPage(currentTargetPageIndex)
                   }}
                 >
                   1
@@ -2559,12 +2583,7 @@ function ReaderPage() {
                   aria-label="Switch to two-page mode"
                   onClick={() => {
                     setMode('double')
-                    setCurrentStepIndex(
-                      findStepIndexByPageIndex(
-                        activeDoubleSteps,
-                        currentTargetPageIndex,
-                      ),
-                    )
+                    goToPage(currentTargetPageIndex)
                   }}
                 >
                   2
@@ -2576,7 +2595,7 @@ function ReaderPage() {
                   aria-label="Switch to scroll mode"
                   onClick={() => {
                     setMode('scroll')
-                    setCurrentPageIndex(currentTargetPageIndex)
+                    goToPage(currentTargetPageIndex)
                   }}
                 >
                   ∞
@@ -2658,13 +2677,7 @@ function ReaderPage() {
                       className="h-11"
                       onClick={() => {
                         setMode('single')
-                        setCurrentSingleStepIndex(
-                          findStepIndexByPageIndex(
-                            singlePageSteps,
-                            currentTargetPageIndex,
-                          ),
-                        )
-                        setCurrentPageIndex(currentTargetPageIndex)
+                        goToPage(currentTargetPageIndex)
                       }}
                     >
                       Single
@@ -2675,12 +2688,7 @@ function ReaderPage() {
                       className="h-11"
                       onClick={() => {
                         setMode('double')
-                        setCurrentStepIndex(
-                          findStepIndexByPageIndex(
-                            activeDoubleSteps,
-                            currentTargetPageIndex,
-                          ),
-                        )
+                        goToPage(currentTargetPageIndex)
                       }}
                     >
                       Double
@@ -2691,7 +2699,7 @@ function ReaderPage() {
                       className="h-11"
                       onClick={() => {
                         setMode('scroll')
-                        setCurrentPageIndex(currentTargetPageIndex)
+                        goToPage(currentTargetPageIndex)
                       }}
                     >
                       Scroll
@@ -2704,25 +2712,7 @@ function ReaderPage() {
                     onChange={(event) => {
                       const nextMode = event.target.value as ReaderMode
                       setMode(nextMode)
-
-                      if (nextMode === 'double') {
-                        setCurrentStepIndex(
-                          findStepIndexByPageIndex(
-                            activeDoubleSteps,
-                            currentTargetPageIndex,
-                          ),
-                        )
-                      } else if (nextMode === 'single') {
-                        setCurrentSingleStepIndex(
-                          findStepIndexByPageIndex(
-                            singlePageSteps,
-                            currentTargetPageIndex,
-                          ),
-                        )
-                        setCurrentPageIndex(currentTargetPageIndex)
-                      } else {
-                        setCurrentPageIndex(currentTargetPageIndex)
-                      }
+                      goToPage(currentTargetPageIndex)
                     }}
                     options={[
                       { value: 'single', label: 'Single page' },
@@ -2841,7 +2831,7 @@ function ReaderPage() {
                               }
                               persistProgressNow(
                                 currentProgressPageIndex,
-                                currentStepIndex,
+                                pageState.stepIndex,
                               )
                               void navigate({
                                 to: '/reader/$chapterId',
@@ -2955,7 +2945,7 @@ function ReaderPage() {
                             }
                             persistProgressNow(
                               currentProgressPageIndex,
-                              currentStepIndex,
+                              pageState.stepIndex,
                             )
                             void navigate({
                               to: '/reader/$chapterId',
@@ -3034,9 +3024,9 @@ function ReaderPage() {
                 data-testid="position-label"
               >
                 {mode === 'double'
-                  ? `Spread ${currentStepIndex + 1} / ${Math.max(activeDoubleSteps.length, 1)}`
+                  ? `Spread ${pageState.stepIndex + 1} / ${Math.max(activeDoubleSteps.length, 1)}`
                   : mode === 'single'
-                    ? `Page ${currentSingleStepIndex + 1} / ${Math.max(singlePageSteps.length, 1)}`
+                    ? `Page ${pageState.singleStepIndex + 1} / ${Math.max(singlePageSteps.length, 1)}`
                     : `Page ${currentTargetPageIndex + 1} / ${Math.max(pages.length, 1)}`}
               </p>
               {!isTouchDevice ? (
@@ -3139,7 +3129,12 @@ function ReaderPage() {
               pages={pages}
               zoomPreset={zoomPreset}
               onVisiblePageChange={(pageIndex) =>
-                setCurrentPageIndex(pageIndex)
+                setPageState((prev) => ({
+                  ...prev,
+                  pageIndex,
+                  stepIndex: 0,
+                  singleStepIndex: 0,
+                }))
               }
             />
             {fullscreenActive && showPageHud ? (
