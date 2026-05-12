@@ -2343,8 +2343,25 @@ function ReaderPage() {
 
   if (error) {
     return (
-      <div className="border-2 border-destructive/30 bg-destructive/10 p-6 text-destructive">
-        We could not open this chapter. Please go back and try another one.
+      <div className="flex min-h-[40dvh] flex-col items-center justify-center gap-4 p-6">
+        <div className="flex max-w-sm flex-col items-center gap-4 rounded border border-destructive/30 bg-destructive/10 px-6 py-8 text-center">
+          <p className="text-sm text-destructive">{error}</p>
+          <Button
+            variant="default"
+            className="h-12 min-w-[140px] px-5 text-sm"
+            onClick={() => {
+              void loadChapter()
+            }}
+          >
+            Try again
+          </Button>
+          <Link
+            to="/"
+            className="inline-flex min-h-11 items-center text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            Go back to home
+          </Link>
+        </div>
       </div>
     )
   }
@@ -2601,7 +2618,7 @@ function ReaderPage() {
                 <Button
                   type="button"
                   variant={mode === 'single' ? 'default' : 'soft'}
-                  className="h-11 px-3 text-xs"
+                  className="h-12 px-3 text-xs"
                   aria-label="Switch to single-page mode"
                   onClick={() => {
                     setMode('single')
@@ -2613,7 +2630,7 @@ function ReaderPage() {
                 <Button
                   type="button"
                   variant={mode === 'double' ? 'default' : 'soft'}
-                  className="h-11 px-3 text-xs"
+                  className="h-12 px-3 text-xs"
                   aria-label="Switch to two-page mode"
                   onClick={() => {
                     setMode('double')
@@ -2625,7 +2642,7 @@ function ReaderPage() {
                 <Button
                   type="button"
                   variant={mode === 'scroll' ? 'default' : 'soft'}
-                  className="h-11 px-3 text-xs"
+                  className="h-12 px-3 text-xs"
                   aria-label="Switch to scroll mode"
                   onClick={() => {
                     setMode('scroll')
@@ -2656,7 +2673,7 @@ function ReaderPage() {
               <Button
                 type="button"
                 variant="soft"
-                className="h-11 shrink-0 px-3 text-xs"
+                className="h-12 shrink-0 px-3 text-xs"
                 onClick={() => void toggleFullscreen()}
                 aria-label="Toggle fullscreen"
                 title="Toggle fullscreen"
@@ -2707,7 +2724,7 @@ function ReaderPage() {
                     <Button
                       type="button"
                       variant={mode === 'single' ? 'default' : 'soft'}
-                      className="h-11"
+                      className="h-12"
                       onClick={() => {
                         setMode('single')
                         goToPage(currentTargetPageIndex)
@@ -2718,7 +2735,7 @@ function ReaderPage() {
                     <Button
                       type="button"
                       variant={mode === 'double' ? 'default' : 'soft'}
-                      className="h-11"
+                      className="h-12"
                       onClick={() => {
                         setMode('double')
                         goToPage(currentTargetPageIndex)
@@ -2729,7 +2746,7 @@ function ReaderPage() {
                     <Button
                       type="button"
                       variant={mode === 'scroll' ? 'default' : 'soft'}
-                      className="h-11"
+                      className="h-12"
                       onClick={() => {
                         setMode('scroll')
                         goToPage(currentTargetPageIndex)
@@ -2768,7 +2785,7 @@ function ReaderPage() {
                     <Button
                       type="button"
                       variant={readingDirection === 'rtl' ? 'default' : 'soft'}
-                      className="h-11"
+                      className="h-12"
                       onClick={() => setReadingDirection('rtl')}
                     >
                       RTL
@@ -2776,7 +2793,7 @@ function ReaderPage() {
                     <Button
                       type="button"
                       variant={readingDirection === 'ltr' ? 'default' : 'soft'}
-                      className="h-11"
+                      className="h-12"
                       onClick={() => setReadingDirection('ltr')}
                     >
                       LTR
@@ -2791,7 +2808,7 @@ function ReaderPage() {
                         event.target.value === 'ltr' ? 'ltr' : 'rtl',
                       )
                     }
-                    className="h-11"
+                    className="h-12"
                     options={[
                       { value: 'rtl', label: 'Right to left' },
                       { value: 'ltr', label: 'Left to right' },
@@ -2804,7 +2821,7 @@ function ReaderPage() {
                     <Button
                       type="button"
                       variant={doublePageOffset ? 'default' : 'soft'}
-                      className="h-11 w-full px-3"
+                      className="h-12 w-full px-3"
                       onClick={() => setDoublePageOffset((value) => !value)}
                     >
                       Offset: {doublePageOffset ? 'On' : 'Off'}
@@ -2816,7 +2833,7 @@ function ReaderPage() {
                       onChange={(event) =>
                         setZoomPreset(event.target.value as ZoomPreset)
                       }
-                      className="h-11"
+                      className="h-12"
                       data-testid="zoom-select"
                       options={[
                         { value: 'fit-height', label: 'Fit to screen' },
@@ -2871,7 +2888,7 @@ function ReaderPage() {
                                 params: { chapterId: nextId },
                               })
                             }}
-                            className={`h-11 min-w-0 ${isTouchDevice ? 'col-span-2' : ''}`}
+                            className={`h-12 min-w-0 ${isTouchDevice ? 'col-span-2' : ''}`}
                             options={orderedSeriesChapters.map((chapter) => ({
                               value: chapter.id,
                               label: `Chapter ${chapter.chapterNumber}`,
@@ -2926,7 +2943,7 @@ function ReaderPage() {
                       onChange={(event) =>
                         setZoomPreset(event.target.value as ZoomPreset)
                       }
-                      className="h-11"
+                      className="h-12"
                       data-testid="zoom-select"
                       options={[
                         { value: 'fit-height', label: 'Fit to screen' },
@@ -2937,7 +2954,7 @@ function ReaderPage() {
                     <Button
                       type="button"
                       variant={doublePageOffset ? 'default' : 'soft'}
-                      className="h-11 w-full px-3"
+                      className="h-12 w-full px-3"
                       onClick={() => setDoublePageOffset((value) => !value)}
                     >
                       Offset: {doublePageOffset ? 'On' : 'Off'}
@@ -2985,7 +3002,7 @@ function ReaderPage() {
                               params: { chapterId: nextId },
                             })
                           }}
-                          className="h-11 min-w-0 col-span-2"
+                          className="h-12 min-w-0 col-span-2"
                           options={orderedSeriesChapters.map((chapter) => ({
                             value: chapter.id,
                             label: `Chapter ${chapter.chapterNumber}`,
