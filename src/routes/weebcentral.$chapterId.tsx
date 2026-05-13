@@ -3136,12 +3136,13 @@ function WeebcentralReaderPage() {
 
   if (isLoading) {
     return (
-      <div
-        className="border-2 border-border bg-surface p-6 text-muted-foreground"
-        role="status"
-        aria-live="polite"
-      >
-        <p className="delight-loading-note">{openingLine}</p>
+      <div className="reader-stage-bg flex h-[100dvh] flex-col items-center justify-center gap-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white/70" />
+          <p className="text-sm text-white/60" role="status" aria-live="polite">
+            {openingLine}
+          </p>
+        </div>
       </div>
     )
   }

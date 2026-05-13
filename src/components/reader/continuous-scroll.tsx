@@ -54,8 +54,12 @@ export function ContinuousScroll({
   }, [])
 
   useEffect(() => {
+    const savedScrollTop = parentRef.current?.scrollTop ?? 0
     measuredHeightsRef.current = {}
     setMeasureVersion((v) => v + 1)
+    requestAnimationFrame(() => {
+      parentRef.current?.scrollTo({ top: savedScrollTop })
+    })
   }, [chapterId])
 
   const estimatePageHeight = useCallback(
@@ -158,7 +162,7 @@ export function ContinuousScroll({
     return () => {
       observer.disconnect()
     }
-  }, [virtualItems])
+  }, [pages.length, measureVersion])
 
   const registerPageElement = useCallback(
     (pageIndex: number, el: HTMLDivElement | null) => {
