@@ -103,9 +103,10 @@ export const PagePane = memo(
           ? (unit.crop as 'left' | 'right')
           : null
     const isCropped = cssCrop !== null
+    const safeAspect = page.aspect > 0 ? page.aspect : 0.67
     const paneAspectRatio = isCropped
-      ? Math.max(0.1, page.aspect / 2)
-      : page.aspect
+      ? Math.max(0.1, safeAspect / 2)
+      : safeAspect
     const fetchPriority = loading === 'eager' ? 'high' : 'auto'
 
     // CSS-cropped page: show full image at 200% width, translate to show correct half
