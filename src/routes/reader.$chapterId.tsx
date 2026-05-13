@@ -2452,20 +2452,25 @@ function ReaderPage() {
     )
   }
 
+  const isFatalError =
+    error === 'Session expired. Please upload the file again from Home.'
+
   if (error) {
     return (
       <div className="flex min-h-[40dvh] flex-col items-center justify-center gap-4 p-6">
         <div className="flex max-w-sm flex-col items-center gap-4 rounded border border-destructive/30 bg-destructive/10 px-6 py-8 text-center">
           <p className="text-sm text-destructive">{error}</p>
-          <Button
-            variant="default"
-            className="h-12 min-w-[140px] px-5 text-sm"
-            onClick={() => {
-              void loadChapter()
-            }}
-          >
-            Try again
-          </Button>
+          {!isFatalError ? (
+            <Button
+              variant="default"
+              className="h-12 min-w-[140px] px-5 text-sm"
+              onClick={() => {
+                void loadChapter()
+              }}
+            >
+              Try again
+            </Button>
+          ) : null}
           <Link
             to="/"
             className="inline-flex min-h-11 items-center text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"

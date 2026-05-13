@@ -4,6 +4,7 @@ import { addBoundedSetEntry } from '#/lib/bounded-cache'
 import { resolveApiUrl } from '#/lib/http-client'
 
 const PREFETCH_URL_CACHE_LIMIT = 1200
+const MAX_CHAPTERS = 20
 
 interface PrefetchOptions {
   chapterId: string
@@ -21,6 +22,13 @@ const perChapterInFlight = new Map<string, Map<string, HTMLImageElement>>()
 function getChapterSets(chapterId: string) {
   let prefetched = perChapterPrefetched.get(chapterId)
   if (!prefetched) {
+    if (perChapterPrefetched.size >= MAX_CHAPTERS) {
+      const oldest = perChapterPrefetched.keys().next().value
+      if (oldest !== undefined) {
+        perChapterPrefetched.delete(oldest)
+        perChapterInFlight.delete(oldest)
+      }
+    }
     prefetched = new Set()
     perChapterPrefetched.set(chapterId, prefetched)
   }
@@ -135,6 +143,11 @@ export function useImagePrefetch({
 
     return () => {
       canceled = true
+      const { inFlight } = getChapterSets(currentChapterId)
+      for (const [, image] of inFlight) {
+        image.src = ''
+      }
+      inFlight.clear()
     }
   }, [
     chapterId,
