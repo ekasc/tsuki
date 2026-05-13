@@ -125,10 +125,10 @@ export function ContinuousScroll({
   const mostVisibleRef = useRef(0)
   const onVisiblePageChangeRef = useRef(onVisiblePageChange)
   onVisiblePageChangeRef.current = onVisiblePageChange
+  const observerRef = useRef<IntersectionObserver | null>(null)
 
   useEffect(() => {
     const elements = pageElementsRef.current
-    if (elements.size === 0) return
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -155,12 +155,15 @@ export function ContinuousScroll({
       { threshold: [0, 0.1, 0.2, 0.3, 0.4, 0.5] },
     )
 
+    observerRef.current = observer
+
     for (const el of elements.values()) {
       observer.observe(el)
     }
 
     return () => {
       observer.disconnect()
+      observerRef.current = null
     }
   }, [pages.length, measureVersion])
 
@@ -169,6 +172,7 @@ export function ContinuousScroll({
       if (el) {
         el.dataset.scrollPageIndex = String(pageIndex)
         pageElementsRef.current.set(pageIndex, el)
+        observerRef.current?.observe(el)
       } else {
         pageElementsRef.current.delete(pageIndex)
       }
