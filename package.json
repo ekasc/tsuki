@@ -6,7 +6,7 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "vite dev --port 3000",
+    "dev": "vite dev",
     "build": "vite build",
     "build:cloudflare": "VITE_LOCAL_LIBRARY_ENABLED=0 vite build",
     "verify:release:v1": "node scripts/verify-v1-online-release.mjs",
