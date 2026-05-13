@@ -12,6 +12,7 @@ import {
   type ThemeMode,
   type ThemePaletteMode,
   THEME_COLOR_BY_MODE,
+  THEME_PALETTE_OPTIONS,
   THEME_STORAGE_KEY,
 } from '#/lib/theme'
 
@@ -20,50 +21,12 @@ const DISPLAY_MODE_OPTIONS: Array<{ value: ThemeDisplayMode; label: string }> =
     { value: 'light', label: 'Light' },
     { value: 'dark', label: 'Dark' },
   ]
-const THEME_OPTIONS: Array<{
-  value: ThemePaletteMode
-  label: string
-  swatchLight: string
-  swatchDark: string
-}> = [
-  {
-    value: 'classic',
-    label: 'Classic',
-    swatchLight: '#efe6d3',
-    swatchDark: '#141218',
-  },
-  {
-    value: 'paper',
-    label: 'Paper',
-    swatchLight: '#f1eee6',
-    swatchDark: '#121110',
-  },
-  {
-    value: 'sakura',
-    label: 'Sakura',
-    swatchLight: '#f4e7ec',
-    swatchDark: '#170f14',
-  },
-  {
-    value: 'ocean',
-    label: 'Ocean',
-    swatchLight: '#dce8f2',
-    swatchDark: '#0b1721',
-  },
-  {
-    value: 'matcha',
-    label: 'Matcha',
-    swatchLight: '#e8ecd9',
-    swatchDark: '#10180f',
-  },
-]
-
 function formatThemeModeLabel(
   palette: ThemePaletteMode,
   displayMode: ThemeDisplayMode,
 ): string {
   const paletteLabel =
-    THEME_OPTIONS.find((option) => option.value === palette)?.label ?? 'Classic'
+    THEME_PALETTE_OPTIONS.find((option) => option.value === palette)?.label ?? 'Classic'
   return `${paletteLabel} · ${displayMode === 'dark' ? 'Dark' : 'Light'}`
 }
 
@@ -307,7 +270,7 @@ export function AppShell({
                     role="radiogroup"
                     aria-label="Theme palette"
                   >
-                    {THEME_OPTIONS.map((option) => (
+                    {THEME_PALETTE_OPTIONS.map((option) => (
                       <li key={option.value}>
                         <button
                           type="button"

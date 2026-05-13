@@ -453,7 +453,7 @@ function SeriesPage() {
                 type="button"
                 variant={chapterView === 'grid' ? 'default' : 'soft'}
                 size="icon"
-                className="size-8"
+                className="size-10"
                 onClick={() => setChapterView('grid')}
                 title="Grid view"
                 aria-label="Grid view"
@@ -464,7 +464,7 @@ function SeriesPage() {
                 type="button"
                 variant={chapterView === 'list' ? 'default' : 'soft'}
                 size="icon"
-                className="size-8"
+                className="size-10"
                 onClick={() => setChapterView('list')}
                 title="List view"
                 aria-label="List view"
@@ -475,7 +475,7 @@ function SeriesPage() {
                 type="button"
                 variant={chapterOrder === 'oldest' ? 'default' : 'soft'}
                 size="icon"
-                className="size-8"
+                className="size-10"
                 onClick={() => setChapterOrder('oldest')}
                 title="Oldest first"
                 aria-label="Oldest first"
@@ -486,7 +486,7 @@ function SeriesPage() {
                 type="button"
                 variant={chapterOrder === 'newest' ? 'default' : 'soft'}
                 size="icon"
-                className="size-8"
+                className="size-10"
                 onClick={() => setChapterOrder('newest')}
                 title="Newest first"
                 aria-label="Newest first"

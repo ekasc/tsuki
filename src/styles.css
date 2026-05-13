@@ -767,8 +767,8 @@
 
   .chapter-toggle {
     display: inline-flex;
-    width: 1.3rem;
-    height: 1.3rem;
+    width: 2.5rem;
+    height: 2.5rem;
     flex: none;
     align-items: center;
     justify-content: center;
@@ -804,9 +804,10 @@
   .delight-tip {
     display: inline-flex;
     align-items: baseline;
-    border-left: 2px solid var(--koten);
-    padding-left: 0.5rem;
-    opacity: 0.75;
+    background: var(--washi);
+    padding: 0.4rem 0.6rem;
+    border-radius: 0.3rem;
+    opacity: 0.85;
   }
 
   .delight-kbd {
@@ -1194,30 +1195,10 @@
     color var(--duration-fast) ease;
 }
 
-.exp-list-link::before,
-.exp-row::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 0;
-  background: var(--koten);
-  opacity: 0;
-  transition:
-    width var(--duration-normal) var(--spring-gentle),
-    opacity var(--duration-normal) ease;
-}
-
-.exp-list-link {
-  @apply flex items-center justify-between gap-3 px-3 py-2.5;
-}
-
-.exp-row {
-  @apply flex items-center gap-3 px-3 py-3;
-}
-
 .exp-list-link:hover,
 .exp-row:hover {
   background: var(--washi);
+  border-radius: 0.3rem;
 }
 
 .exp-list-link:hover::before,
