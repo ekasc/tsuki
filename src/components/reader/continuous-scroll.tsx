@@ -28,6 +28,8 @@ export function ContinuousScroll({
   })
   const measuredHeightsRef = useRef<Record<number, number>>({})
   const [measureVersion, setMeasureVersion] = useState(0)
+  const savedScrollTopRef = useRef(0)
+  const shouldRestoreScrollRef = useRef(false)
 
   useEffect(() => {
     const element = parentRef.current
@@ -54,12 +56,10 @@ export function ContinuousScroll({
   }, [])
 
   useEffect(() => {
-    const savedScrollTop = parentRef.current?.scrollTop ?? 0
+    savedScrollTopRef.current = parentRef.current?.scrollTop ?? 0
+    shouldRestoreScrollRef.current = true
     measuredHeightsRef.current = {}
     setMeasureVersion((v) => v + 1)
-    requestAnimationFrame(() => {
-      parentRef.current?.scrollTo({ top: savedScrollTop })
-    })
   }, [chapterId])
 
   const estimatePageHeight = useCallback(
@@ -93,6 +93,10 @@ export function ContinuousScroll({
 
   useEffect(() => {
     virtualizer.measure()
+    if (shouldRestoreScrollRef.current) {
+      virtualizer.scrollToOffset(savedScrollTopRef.current)
+      shouldRestoreScrollRef.current = false
+    }
   }, [measureVersion, viewportSize.width, virtualizer])
 
   const handleImageMeasure = useCallback(
