@@ -1637,6 +1637,26 @@ function WeebcentralReaderPage() {
   }, [loadRemoteChapter])
 
   useEffect(() => {
+    const chapterOptions = weebcentralChapterQueryOptions(params.chapterId)
+
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== 'updated') return
+      if (event.query.state.status !== 'success') return
+
+      const key = event.query.queryKey
+      if (key.length !== chapterOptions.queryKey.length) return
+      if (
+        !key.every((v: unknown, i: number) => v === chapterOptions.queryKey[i])
+      )
+        return
+
+      setChapter(event.query.state.data as WeebcentralChapterDTO)
+    })
+
+    return unsubscribe
+  }, [params.chapterId, queryClient])
+
+  useEffect(() => {
     saveReaderUiPrefs(REMOTE_READER_UI_PREFS_KEY, {
       mode,
       zoomPreset,
