@@ -2108,24 +2108,28 @@ function ReaderPage() {
       }
 
       if (event.key === 'Escape') {
-        event.preventDefault()
         if (document.fullscreenElement) {
+          event.preventDefault()
           void document.exitFullscreen()
           return
         }
         if (inlineFullscreen) {
+          event.preventDefault()
           setInlineFullscreen(false)
           return
         }
         if (sidebarOpen) {
+          event.preventDefault()
           setSidebarOpen(false)
           return
         }
         if (showShortcutHelp) {
+          event.preventDefault()
           setShowShortcutHelp(false)
           return
         }
         if (boundaryNotice) {
+          event.preventDefault()
           setBoundaryNotice(null)
           setPendingBoundaryDirection(null)
           return
@@ -2208,7 +2212,10 @@ function ReaderPage() {
       const focusable = Array.from(
         container.querySelectorAll<HTMLElement>(focusableSelector),
       )
-      if (focusable.length === 0) return
+      if (focusable.length === 0) {
+        container.focus()
+        return
+      }
 
       const first = focusable[0]!
       const last = focusable[focusable.length - 1]!
@@ -2667,8 +2674,9 @@ function ReaderPage() {
       {!fullscreenActive ? (
         <aside
           ref={sidebarRef}
-          role="complementary"
+          role={sidebarOpen ? 'complementary' : undefined}
           aria-label="Reader settings"
+          aria-hidden={!sidebarOpen}
           className={
             isTouchDevice
               ? `reader-shell-panel reader-settings-panel animate-enter relative z-30 w-full overflow-visible ${isTouchPortrait ? 'p-3' : 'px-3 py-1.5'}`
@@ -3189,8 +3197,7 @@ function ReaderPage() {
                   </Button>
                   {showShortcutHelp ? (
                     <div
-                      role="dialog"
-                      aria-modal="true"
+                      role="region"
                       aria-label="Keyboard shortcuts"
                       className="reader-shortcut-sheet mt-2 text-xs"
                     >
@@ -3235,7 +3242,6 @@ function ReaderPage() {
         <div
           ref={boundaryRef}
           role="alert"
-          aria-live="polite"
           className="pointer-events-none absolute ui-bottom-safe-stack left-4 right-4 z-30 flex items-center justify-center gap-2 rounded-sm border border-white/20 bg-black/85 px-4 py-3 text-center text-sm text-white/90 shadow-lg backdrop-blur-sm md:bottom-20 md:left-1/2 md:right-auto md:-translate-x-1/2 md:px-6"
         >
           <span>{boundaryNotice}</span>
