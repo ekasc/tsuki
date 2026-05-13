@@ -115,6 +115,8 @@ const LOCAL_READER_OPENING_LINES = [
   'Restoring your place…',
   'Aligning spread edges…',
 ] as const
+const SESSION_EXPIRED_ERROR =
+  'Session expired. Please upload the file again from Home.'
 
 function readStorageWithLegacy(key: string, legacyKey: string): string | null {
   const value = window.localStorage.getItem(key)
@@ -1019,7 +1021,7 @@ function ReaderPage() {
     ) {
       setIsLoading(false)
       setChapterPayload(null)
-      setError('Session expired. Please upload the file again from Home.')
+      setError(SESSION_EXPIRED_ERROR)
       return
     }
 
@@ -1134,11 +1136,14 @@ function ReaderPage() {
       )
         return
 
-      setChapterPayload(event.query.state.data as ChapterPayload)
+      const data = event.query.state.data as ChapterPayload | undefined
+      if (!data || data === chapterPayload) return
+
+      setChapterPayload(data)
     })
 
     return unsubscribe
-  }, [params.chapterId, queryClient])
+  }, [params.chapterId, queryClient, chapterPayload])
 
   useEffect(() => {
     saveReaderUiPrefs(LOCAL_READER_UI_PREFS_KEY, {
@@ -2242,7 +2247,7 @@ function ReaderPage() {
         container.querySelectorAll<HTMLElement>(focusableSelector),
       )
       if (focusable.length === 0) {
-        container.focus()
+        container.focus({ preventScroll: true })
         return
       }
 
@@ -2472,8 +2477,7 @@ function ReaderPage() {
     )
   }
 
-  const isFatalError =
-    error === 'Session expired. Please upload the file again from Home.'
+  const isFatalError = error === SESSION_EXPIRED_ERROR
 
   if (error) {
     return (

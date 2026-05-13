@@ -1650,11 +1650,14 @@ function WeebcentralReaderPage() {
       )
         return
 
-      setChapter(event.query.state.data as WeebcentralChapterDTO)
+      const data = event.query.state.data as WeebcentralChapterDTO | undefined
+      if (!data || data === chapter) return
+
+      setChapter(data)
     })
 
     return unsubscribe
-  }, [params.chapterId, queryClient])
+  }, [params.chapterId, queryClient, chapter])
 
   useEffect(() => {
     saveReaderUiPrefs(REMOTE_READER_UI_PREFS_KEY, {
@@ -1952,7 +1955,7 @@ function WeebcentralReaderPage() {
         container.querySelectorAll<HTMLElement>(focusableSelector),
       )
       if (focusable.length === 0) {
-        container.focus()
+        container.focus({ preventScroll: true })
         return
       }
 
