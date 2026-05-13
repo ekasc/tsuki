@@ -31,10 +31,16 @@ function getChapterSets(chapterId: string) {
     }
     prefetched = new Set()
     perChapterPrefetched.set(chapterId, prefetched)
+  } else {
+    perChapterPrefetched.delete(chapterId)
+    perChapterPrefetched.set(chapterId, prefetched)
   }
   let inFlight = perChapterInFlight.get(chapterId)
   if (!inFlight) {
     inFlight = new Map()
+    perChapterInFlight.set(chapterId, inFlight)
+  } else {
+    perChapterInFlight.delete(chapterId)
     perChapterInFlight.set(chapterId, inFlight)
   }
   return { prefetched, inFlight }
