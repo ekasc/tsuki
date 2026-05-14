@@ -8,7 +8,6 @@ interface ContinuousScrollProps {
   chapterId: string
   pages: ChapterPageManifest[]
   zoomPreset: ZoomPreset
-  isFullscreen?: boolean
   resolveImageUrl?: (page: ChapterPageManifest) => string | undefined
   onImageMeasure?: (pageIndex: number, width: number, height: number) => void
   onVisiblePageChange: (pageIndex: number) => void
@@ -18,7 +17,6 @@ export function ContinuousScroll({
   chapterId,
   pages,
   zoomPreset,
-  isFullscreen = false,
   resolveImageUrl,
   onImageMeasure,
   onVisiblePageChange,
@@ -28,9 +26,10 @@ export function ContinuousScroll({
     width: 720,
     height: 960,
   })
-  const [measuredHeights, setMeasuredHeights] = useState<
-    Record<number, number>
-  >({})
+  const measuredHeightsRef = useRef<Record<number, number>>({})
+  const [measureVersion, setMeasureVersion] = useState(0)
+  const savedScrollTopRef = useRef(0)
+  const shouldRestoreScrollRef = useRef(false)
 
   useEffect(() => {
     const element = parentRef.current
@@ -57,14 +56,17 @@ export function ContinuousScroll({
   }, [])
 
   useEffect(() => {
-    setMeasuredHeights({})
+    savedScrollTopRef.current = parentRef.current?.scrollTop ?? 0
+    shouldRestoreScrollRef.current = true
+    measuredHeightsRef.current = {}
+    setMeasureVersion((v) => v + 1)
   }, [chapterId])
 
   const estimatePageHeight = useCallback(
     (index: number) => {
-      const measuredHeight = measuredHeights[index]
-      if (typeof measuredHeight === 'number') {
-        return measuredHeight
+      const measured = measuredHeightsRef.current[index]
+      if (typeof measured === 'number') {
+        return measured
       }
 
       const page = pages[index]
@@ -75,7 +77,9 @@ export function ContinuousScroll({
       const safeAspect = page.aspect > 0 ? page.aspect : 0.67
       return Math.max(240, viewportSize.width / safeAspect)
     },
-    [measuredHeights, pages, viewportSize.height, viewportSize.width],
+    // measureVersion triggers recalculation when heights change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [measureVersion, pages, viewportSize.height, viewportSize.width],
   )
 
   const virtualizer = useVirtualizer({
@@ -89,7 +93,11 @@ export function ContinuousScroll({
 
   useEffect(() => {
     virtualizer.measure()
-  }, [measuredHeights, viewportSize.width, virtualizer])
+    if (shouldRestoreScrollRef.current) {
+      virtualizer.scrollToOffset(savedScrollTopRef.current)
+      shouldRestoreScrollRef.current = false
+    }
+  }, [measureVersion, viewportSize.width, virtualizer])
 
   const handleImageMeasure = useCallback(
     (pageIndex: number, width: number, height: number) => {
@@ -100,50 +108,86 @@ export function ContinuousScroll({
       const safeAspect = width / Math.max(height, 1)
       const nextHeight = Math.max(240, viewportSize.width / safeAspect)
 
-      setMeasuredHeights((current) => {
-        if (current[pageIndex] === nextHeight) {
-          return current
-        }
+      const current = measuredHeightsRef.current[pageIndex]
+      if (current === nextHeight) {
+        return
+      }
 
-        return {
-          ...current,
-          [pageIndex]: nextHeight,
-        }
-      })
+      measuredHeightsRef.current = {
+        ...measuredHeightsRef.current,
+        [pageIndex]: nextHeight,
+      }
+      setMeasureVersion((v) => v + 1)
 
       onImageMeasure?.(pageIndex, width, height)
     },
     [onImageMeasure, viewportSize.width],
   )
 
+  // Scroll-based page tracking via IntersectionObserver
+  const pageElementsRef = useRef<Map<number, HTMLDivElement>>(new Map())
+  const mostVisibleRef = useRef(0)
+  const onVisiblePageChangeRef = useRef(onVisiblePageChange)
+  onVisiblePageChangeRef.current = onVisiblePageChange
+  const observerRef = useRef<IntersectionObserver | null>(null)
+
   useEffect(() => {
-    if (virtualItems.length === 0) {
-      return
+    const elements = pageElementsRef.current
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let bestIndex = mostVisibleRef.current
+        let bestRatio = 0
+
+        for (const entry of entries) {
+          const index = Number(
+            (entry.target as HTMLElement).dataset.scrollPageIndex,
+          )
+          if (!Number.isFinite(index)) continue
+
+          if (entry.intersectionRatio > bestRatio) {
+            bestRatio = entry.intersectionRatio
+            bestIndex = index
+          }
+        }
+
+        if (bestRatio > 0 && bestIndex !== mostVisibleRef.current) {
+          mostVisibleRef.current = bestIndex
+          onVisiblePageChangeRef.current(bestIndex)
+        }
+      },
+      { threshold: [0, 0.1, 0.2, 0.3, 0.4, 0.5] },
+    )
+
+    observerRef.current = observer
+
+    for (const el of elements.values()) {
+      observer.observe(el)
     }
 
-    const scrollOffset = virtualizer.scrollOffset ?? 0
-    const viewportMidpoint = scrollOffset + viewportSize.height * 0.5
-    const mostVisibleItem = virtualItems.reduce((closest, item) => {
-      const itemMidpoint = item.start + item.size * 0.5
-      const currentDistance = Math.abs(itemMidpoint - viewportMidpoint)
-      const closestMidpoint = closest.start + closest.size * 0.5
-      const closestDistance = Math.abs(closestMidpoint - viewportMidpoint)
+    return () => {
+      observer.disconnect()
+      observerRef.current = null
+    }
+  }, [pages.length, measureVersion])
 
-      return currentDistance < closestDistance ? item : closest
-    })
-
-    onVisiblePageChange(mostVisibleItem.index)
-  }, [
-    onVisiblePageChange,
-    viewportSize.height,
-    virtualItems,
-    virtualizer.scrollOffset,
-  ])
+  const registerPageElement = useCallback(
+    (pageIndex: number, el: HTMLDivElement | null) => {
+      if (el) {
+        el.dataset.scrollPageIndex = String(pageIndex)
+        pageElementsRef.current.set(pageIndex, el)
+        observerRef.current?.observe(el)
+      } else {
+        pageElementsRef.current.delete(pageIndex)
+      }
+    },
+    [],
+  )
 
   return (
     <div
       ref={parentRef}
-      className={`${isFullscreen ? 'h-[100dvh]' : 'h-[72vh]'} overflow-auto bg-black`}
+      className="h-[100dvh] overflow-auto bg-black"
       style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' }}
       data-testid="reader-scroll-container"
     >
@@ -160,7 +204,10 @@ export function ContinuousScroll({
           return (
             <div
               key={item.key}
-              ref={virtualizer.measureElement}
+              ref={(el) => {
+                virtualizer.measureElement(el)
+                registerPageElement(item.index, el as HTMLDivElement | null)
+              }}
               data-index={item.index}
               style={{
                 position: 'absolute',

@@ -1,21 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
-import { openDemoSeries } from './helpers'
-
-async function rewindToStart(page: Page) {
-  let attempts = 0
-  while (attempts < 10) {
-    const text = await page
-      .getByTestId('position-label')
-      .innerText()
-      .catch(() => '')
-    if (text.startsWith('Page 1 /') || text.startsWith('Spread 1 /')) {
-      break
-    }
-    await page.keyboard.press('ArrowRight')
-    await page.waitForTimeout(200)
-    attempts++
-  }
-}
+import { expect, test } from '@playwright/test'
+import { openDemoSeries, rewindToFirstPage } from './helpers'
 
 test.beforeEach(async ({}, testInfo) => {
   test.skip(
@@ -37,7 +21,7 @@ test('library to reader flow works', async ({ page }) => {
   await expect(page.getByTestId('reader-paging-container')).toBeVisible()
   await page.mouse.move(100, 100)
   await page.getByRole('combobox').first().selectOption('single')
-  await rewindToStart(page)
+  await rewindToFirstPage(page)
 
   await page.keyboard.press('ArrowLeft')
   await expect(page.getByTestId('position-label')).toHaveText(/^Page 2 \/ \d+$/)
@@ -63,7 +47,7 @@ test('two-page mode never renders more than two containers', async ({
 
   await page.mouse.move(100, 100)
   await page.getByRole('combobox').first().selectOption('single')
-  await rewindToStart(page)
+  await rewindToFirstPage(page)
 
   await page.mouse.move(100, 100)
   await page.getByRole('combobox').first().selectOption('double')
@@ -88,7 +72,7 @@ test('split spread renders exactly two halves', async ({ page }) => {
     .click()
   await page.mouse.move(100, 100)
   await page.getByRole('combobox').first().selectOption('single')
-  await rewindToStart(page)
+  await rewindToFirstPage(page)
 
   await page.mouse.move(100, 100)
   await page.getByRole('combobox').first().selectOption('double')
@@ -110,7 +94,7 @@ test('navigating past final page opens next chapter', async ({ page }) => {
     .click()
   await page.mouse.move(100, 100)
   await page.getByRole('combobox').first().selectOption('single')
-  await rewindToStart(page)
+  await rewindToFirstPage(page)
 
   for (let index = 0; index < 10; index += 1) {
     await page.keyboard.press('ArrowLeft')
@@ -131,7 +115,7 @@ test('desktop tap zones disable while magnifier is enabled', async ({ page }) =>
     .click()
   await page.mouse.move(100, 100)
   await page.getByRole('combobox').first().selectOption('single')
-  await rewindToStart(page)
+  await rewindToFirstPage(page)
 
   await expect(page.getByLabel('Next page tap zone')).toHaveCount(1)
   await expect(page.getByLabel('Previous page tap zone')).toHaveCount(1)
@@ -153,7 +137,7 @@ test('LTR mode flips keyboard arrow direction', async ({ page }) => {
 
   await page.mouse.move(100, 100)
   await page.getByRole('combobox').first().selectOption('single')
-  await rewindToStart(page)
+  await rewindToFirstPage(page)
   await page.getByLabel('Reading direction').selectOption('ltr')
 
   await page.keyboard.press('ArrowRight')

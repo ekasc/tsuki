@@ -3,7 +3,7 @@ import Database from 'better-sqlite3'
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 
-import { DB_FILE_PATH } from '../config'
+import { getDbFilePath } from '../config'
 import { ensureDataDirectories } from '../fs'
 import * as schema from './schema'
 
@@ -17,7 +17,7 @@ function getMigrationPath(): string {
 
 export function getDatabase() {
   if (!database) {
-    sqlite = new Database(DB_FILE_PATH)
+    sqlite = new Database(getDbFilePath())
     sqlite.pragma('journal_mode = WAL')
     database = drizzle(sqlite, {
       schema,

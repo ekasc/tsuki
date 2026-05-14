@@ -15,6 +15,21 @@ export type ThemeMode =
 export const THEME_STORAGE_KEY = 'tsuki-theme-mode.v1'
 export const LEGACY_THEME_STORAGE_KEY = 'suki-theme-mode.v1'
 
+export interface ThemePaletteOption {
+  value: ThemePaletteMode
+  label: string
+  swatchLight: string
+  swatchDark: string
+}
+
+export const THEME_PALETTE_OPTIONS: ThemePaletteOption[] = [
+  { value: 'classic', label: 'Classic', swatchLight: '#efe6d3', swatchDark: '#141218' },
+  { value: 'paper', label: 'Paper', swatchLight: '#f1eee6', swatchDark: '#121110' },
+  { value: 'sakura', label: 'Sakura', swatchLight: '#f4e7ec', swatchDark: '#170f14' },
+  { value: 'ocean', label: 'Ocean', swatchLight: '#dce8f2', swatchDark: '#0b1721' },
+  { value: 'matcha', label: 'Matcha', swatchLight: '#e8ecd9', swatchDark: '#10180f' },
+]
+
 export const THEME_COLOR_BY_MODE: Record<ThemeMode, string> = {
   light: '#1d140d',
   dark: '#1c1823',

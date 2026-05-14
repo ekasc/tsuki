@@ -12,7 +12,11 @@ import {
   useState,
   type MouseEvent,
 } from 'react'
+import gsap from 'gsap'
+import { useGSAP } from '@gsap/react'
 import { flushSync } from 'react-dom'
+
+gsap.registerPlugin(useGSAP)
 
 import { ContinuousScroll } from '#/components/reader/continuous-scroll'
 import { PagePane } from '#/components/reader/page-pane'
@@ -50,6 +54,19 @@ import {
   type RenderUnit,
 } from '#/lib/reader/pairing'
 import { useTouchDevice, useTouchPortrait } from '#/hooks/use-touch-portrait'
+
+function WeebcentralPending() {
+  return (
+    <div className="reader-stage-bg flex h-[100dvh] flex-col items-center justify-center gap-4">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white/70" />
+        <p className="text-sm text-white/60" role="status" aria-live="polite">
+          Opening chapter…
+        </p>
+      </div>
+    </div>
+  )
+}
 
 export const Route = createFileRoute('/weebcentral/$chapterId')({
   headers: () => ({
@@ -93,18 +110,16 @@ export const Route = createFileRoute('/weebcentral/$chapterId')({
   staleTime: 45_000,
   preloadStaleTime: 120_000,
   gcTime: 15 * 60_000,
+  pendingMs: 100,
+  pendingMinMs: 300,
   component: WeebcentralReaderPage,
+  pendingComponent: WeebcentralPending,
 })
 
 const REMOTE_PROGRESS_STORAGE_KEY = 'tsuki-remote-progress.v1'
 const LEGACY_REMOTE_PROGRESS_STORAGE_KEY = 'suki-remote-progress.v1'
-const prefetchedRemoteChapters = new Map<string, WeebcentralChapterDTO>()
-const prefetchedRemoteSeries = new Map<string, WeebcentralSeriesDTO>()
-const inFlightRemoteChapterPrefetches = new Set<string>()
 const prefetchedRemoteImageUrls = new Set<string>()
 const inFlightRemoteImagePrefetches = new Map<string, HTMLImageElement>()
-const PREFETCHED_REMOTE_CHAPTER_LIMIT = 64
-const PREFETCHED_REMOTE_SERIES_LIMIT = 64
 const PREFETCHED_REMOTE_IMAGE_URL_LIMIT = 1600
 const REMOTE_PAGE_DIMENSIONS_LIMIT = 180
 interface RemotePageDimension {
@@ -521,6 +536,10 @@ function getDisplayUnitsForStep(
 }
 
 function clamp(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) {
+    return min
+  }
+
   return Math.min(Math.max(value, min), max)
 }
 
@@ -629,6 +648,49 @@ function createPlaceholderPages(
   })
 }
 
+interface ReaderPageState {
+  pageIndex: number
+  stepIndex: number
+  singleStepIndex: number
+}
+
+function derivePageIndices(
+  pageIndex: number,
+  pages: ChapterPageManifest[],
+  doublePageOffset: boolean,
+  isTouchPortrait: boolean,
+  readingDirection: ReaderDirection,
+): ReaderPageState {
+  const safeIdx = clamp(pageIndex, 0, Math.max(pages.length - 1, 0))
+  const pairingPages = pages.map(asPairingPage)
+  const doubleSteps = buildDoublePageStepsWithOffset(
+    pairingPages,
+    doublePageOffset,
+  )
+  const portraitSteps = expandStepsForPortraitSingle(
+    doubleSteps,
+    pages,
+    readingDirection,
+  )
+  const activeSteps = isTouchPortrait ? portraitSteps : doubleSteps
+  const singleSteps = buildSinglePageSteps(
+    pages,
+    isTouchPortrait,
+    readingDirection,
+  )
+  return {
+    pageIndex: safeIdx,
+    stepIndex: findStepIndexByPageIndex(activeSteps, safeIdx),
+    singleStepIndex: findStepIndexByPageIndex(singleSteps, safeIdx),
+  }
+}
+
+const ZERO_PAGE_STATE: ReaderPageState = {
+  pageIndex: 0,
+  stepIndex: 0,
+  singleStepIndex: 0,
+}
+
 function WeebcentralReaderPage() {
   const params = Route.useParams()
   const search = Route.useSearch() as {
@@ -647,9 +709,33 @@ function WeebcentralReaderPage() {
     ]
   }, [params.chapterId])
 
+  const cachedChapter = useMemo(() => {
+    if (typeof window === 'undefined') return null
+    if (loaderChapter?.chapterId === params.chapterId) {
+      return loaderChapter
+    }
+    const cached = queryClient.getQueryData<WeebcentralChapterDTO>(
+      weebcentralChapterQueryOptions(params.chapterId).queryKey,
+    )
+    if (cached?.chapterId === params.chapterId) return cached
+    return null
+  }, [params.chapterId, loaderChapter])
+
+  const initialCachedDimensions = useMemo(() => {
+    if (!cachedChapter) return {} as Record<number, RemotePageDimension>
+    return remotePageDimensionsCache.get(cachedChapter.chapterId) ?? {}
+  }, [cachedChapter])
+
+  const cachedPages = useMemo(() => {
+    if (!cachedChapter) return [] as ChapterPageManifest[]
+    return createPlaceholderPages(cachedChapter, initialCachedDimensions)
+  }, [cachedChapter, initialCachedDimensions])
+
   const [series, setSeries] = useState<WeebcentralSeriesDTO | null>(null)
-  const [chapter, setChapter] = useState<WeebcentralChapterDTO | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [chapter, setChapter] = useState<WeebcentralChapterDTO | null>(
+    cachedChapter,
+  )
+  const [isLoading, setIsLoading] = useState(() => !cachedChapter)
   const [error, setError] = useState<string | null>(null)
   const initialUiPrefs = useMemo(
     () =>
@@ -664,8 +750,15 @@ function WeebcentralReaderPage() {
   const [zoomPreset, setZoomPreset] = useState<ZoomPreset>(
     initialUiPrefs.zoomPreset,
   )
-  const [readingDirection, setReadingDirection] =
-    useState<ReaderDirection>('rtl')
+  const [readingDirection, setReadingDirection] = useState<ReaderDirection>(
+    () => {
+      if (typeof window === 'undefined') return 'rtl'
+      const maybeSeriesId = search.seriesId
+      if (!maybeSeriesId) return 'rtl'
+      const preset = loadReaderSeriesPreset(maybeSeriesId)
+      return preset?.readingDirection ?? 'rtl'
+    },
+  )
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(
     initialUiPrefs.sidebarOpen,
   )
@@ -711,10 +804,18 @@ function WeebcentralReaderPage() {
   } | null>(null)
   const [pageDimensions, setPageDimensions] = useState<
     Record<number, RemotePageDimension>
-  >({})
-  const [currentPageIndex, setCurrentPageIndex] = useState(0)
-  const [currentStepIndex, setCurrentStepIndex] = useState(0)
-  const [currentSingleStepIndex, setCurrentSingleStepIndex] = useState(0)
+  >(initialCachedDimensions)
+  const [pageState, setPageState] = useState<ReaderPageState>(() => {
+    if (!cachedChapter) return ZERO_PAGE_STATE
+    if (cachedPages.length === 0) return ZERO_PAGE_STATE
+    const savedProgress = loadRemoteProgress(cachedChapter.chapterId)
+    const pageIdx = clamp(
+      savedProgress?.pageIndex ?? 0,
+      0,
+      cachedPages.length - 1,
+    )
+    return derivePageIndices(pageIdx, cachedPages, false, false, 'rtl')
+  })
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [inlineFullscreen, setInlineFullscreen] = useState(false)
   const [showPageHud, setShowPageHud] = useState(false)
@@ -757,6 +858,10 @@ function WeebcentralReaderPage() {
   const nativePagerVisualLockTimeoutRef = useRef<number | null>(null)
   const nativePagerReadyRef = useRef(false)
   const nativePagerCenteringRef = useRef(false)
+  const sidebarRef = useRef<HTMLDivElement>(null)
+  const boundaryRef = useRef<HTMLDivElement>(null)
+  const hudRef = useRef<HTMLDivElement>(null)
+  const settingsContentRef = useRef<HTMLDivElement>(null)
   const isTouchDevice = useTouchDevice()
   const isTouchPortrait = useTouchPortrait()
 
@@ -838,12 +943,12 @@ function WeebcentralReaderPage() {
   const maxSingleStepIndex = Math.max(singlePageSteps.length - 1, 0)
   const currentTargetPageIndex =
     mode === 'double'
-      ? (activeDoubleSteps[currentStepIndex]?.anchorPageIndex ??
-        currentPageIndex)
+      ? (activeDoubleSteps[pageState.stepIndex]?.anchorPageIndex ??
+        pageState.pageIndex)
       : mode === 'single'
-        ? (singlePageSteps[currentSingleStepIndex]?.anchorPageIndex ??
-          currentPageIndex)
-        : currentPageIndex
+        ? (singlePageSteps[pageState.singleStepIndex]?.anchorPageIndex ??
+          pageState.pageIndex)
+        : pageState.pageIndex
   const scrubberMax = Math.max(0, pages.length - 1)
   const scrubberValue = currentTargetPageIndex
 
@@ -871,7 +976,7 @@ function WeebcentralReaderPage() {
       ? (series?.chapters[currentChapterIndex - 1]?.id ?? null)
       : null
 
-  const activeStep = activeDoubleSteps[currentStepIndex] ?? null
+  const activeStep = activeDoubleSteps[pageState.stepIndex] ?? null
 
   const displayUnits = useMemo(() => {
     if (mode !== 'double') {
@@ -889,12 +994,12 @@ function WeebcentralReaderPage() {
   const currentRenderUnits = useMemo(
     () =>
       mode === 'single'
-        ? (singlePageSteps[currentSingleStepIndex]?.units ??
-          ([{ type: 'page', pageIndex: currentPageIndex }] as const))
+        ? (singlePageSteps[pageState.singleStepIndex]?.units ??
+          ([{ type: 'page', pageIndex: pageState.pageIndex }] as const))
         : displayUnits,
     [
-      currentPageIndex,
-      currentSingleStepIndex,
+      pageState.pageIndex,
+      pageState.singleStepIndex,
       displayUnits,
       mode,
       singlePageSteps,
@@ -914,23 +1019,23 @@ function WeebcentralReaderPage() {
 
   const nextRenderUnits = useMemo(() => {
     if (mode === 'single') {
-      if (currentSingleStepIndex >= maxSingleStepIndex) {
+      if (pageState.singleStepIndex >= maxSingleStepIndex) {
         return [] as typeof displayUnits
       }
 
-      return singlePageSteps[currentSingleStepIndex + 1]?.units ?? []
+      return singlePageSteps[pageState.singleStepIndex + 1]?.units ?? []
     }
 
     return getDisplayUnitsForStep(
-      activeDoubleSteps[currentStepIndex + 1] ?? null,
+      activeDoubleSteps[pageState.stepIndex + 1] ?? null,
       pageByIndex,
       isTouchPortrait,
       readingDirection,
     )
   }, [
     activeDoubleSteps,
-    currentSingleStepIndex,
-    currentStepIndex,
+    pageState.singleStepIndex,
+    pageState.stepIndex,
     isTouchPortrait,
     maxSingleStepIndex,
     mode,
@@ -941,23 +1046,23 @@ function WeebcentralReaderPage() {
 
   const previousRenderUnits = useMemo(() => {
     if (mode === 'single') {
-      if (currentSingleStepIndex <= 0) {
+      if (pageState.singleStepIndex <= 0) {
         return [] as typeof displayUnits
       }
 
-      return singlePageSteps[currentSingleStepIndex - 1]?.units ?? []
+      return singlePageSteps[pageState.singleStepIndex - 1]?.units ?? []
     }
 
     return getDisplayUnitsForStep(
-      activeDoubleSteps[currentStepIndex - 1] ?? null,
+      activeDoubleSteps[pageState.stepIndex - 1] ?? null,
       pageByIndex,
       isTouchPortrait,
       readingDirection,
     )
   }, [
     activeDoubleSteps,
-    currentSingleStepIndex,
-    currentStepIndex,
+    pageState.singleStepIndex,
+    pageState.stepIndex,
     isTouchPortrait,
     mode,
     pageByIndex,
@@ -1062,7 +1167,7 @@ function WeebcentralReaderPage() {
     }
 
     if (mode === 'single') {
-      return `Page ${currentSingleStepIndex + 1} / ${Math.max(singlePageSteps.length, 1)}`
+      return `Page ${pageState.singleStepIndex + 1} / ${Math.max(singlePageSteps.length, 1)}`
     }
 
     if (mode !== 'double') {
@@ -1082,7 +1187,7 @@ function WeebcentralReaderPage() {
     const last = visibleIndexes[visibleIndexes.length - 1]!
     return `Pages ${first + 1}-${last + 1} / ${pages.length}`
   }, [
-    currentSingleStepIndex,
+    pageState.singleStepIndex,
     currentTargetPageIndex,
     displayUnits,
     mode,
@@ -1118,11 +1223,39 @@ function WeebcentralReaderPage() {
           </Button>
           <Button
             type="button"
-            variant={focusMode ? 'default' : 'soft'}
-            className="h-11 w-full px-3"
-            onClick={() => setFocusMode((value) => !value)}
+            variant={mode === 'single' ? 'default' : 'soft'}
+            className="h-12 px-3 text-xs"
+            aria-label="Switch to single-page mode"
+            onClick={() => {
+              setMode('single')
+              goToPage(currentTargetPageIndex)
+            }}
           >
-            Distraction-free mode: {focusMode ? 'On' : 'Off'}
+            Single
+          </Button>
+          <Button
+            type="button"
+            variant={mode === 'double' ? 'default' : 'soft'}
+            className="h-12 px-3 text-xs"
+            aria-label="Switch to two-page mode"
+            onClick={() => {
+              setMode('double')
+              goToPage(currentTargetPageIndex)
+            }}
+          >
+            Double
+          </Button>
+          <Button
+            type="button"
+            variant={mode === 'scroll' ? 'default' : 'soft'}
+            className="h-12 px-3 text-xs"
+            aria-label="Switch to scroll mode"
+            onClick={() => {
+              setMode('scroll')
+              goToPage(currentTargetPageIndex)
+            }}
+          >
+            Scroll
           </Button>
         </div>
       ) : null}
@@ -1406,48 +1539,41 @@ function WeebcentralReaderPage() {
     ],
   )
 
-  useEffect(() => {
-    if (!loaderChapter) {
-      return
-    }
+  const remoteChapterChangeRef = useRef<string | null>(null)
 
-    setBoundedMapEntry(
-      prefetchedRemoteChapters,
-      params.chapterId,
-      loaderChapter,
-      PREFETCHED_REMOTE_CHAPTER_LIMIT,
-    )
-  }, [loaderChapter, params.chapterId])
+  useEffect(() => {
+    const prev = remoteChapterChangeRef.current
+    remoteChapterChangeRef.current = params.chapterId
+
+    if (prev === params.chapterId) return
+
+    if (prev !== null) {
+      setChapter(null)
+      setSeries(null)
+      setPageDimensions({})
+      setPageState(ZERO_PAGE_STATE)
+      setIsLoading(true)
+    }
+  }, [params.chapterId])
 
   const loadRemoteChapter = useCallback(async () => {
     const chapterOptions = weebcentralChapterQueryOptions(params.chapterId)
-    const prefetchedChapter = prefetchedRemoteChapters.get(params.chapterId)
-    const cachedChapter =
-      prefetchedChapter ??
-      queryClient.getQueryData<WeebcentralChapterDTO>(chapterOptions.queryKey)
-
-    if (prefetchedChapter) {
-      prefetchedRemoteChapters.delete(params.chapterId)
-    }
+    const cachedChapter = queryClient.getQueryData<WeebcentralChapterDTO>(
+      chapterOptions.queryKey,
+    )
 
     setIsLoading(!cachedChapter)
     setError(null)
     setPageDimensions({})
-    setCurrentPageIndex(0)
-    setCurrentStepIndex(0)
-    setCurrentSingleStepIndex(0)
+    setPageState(ZERO_PAGE_STATE)
 
     const applyChapterState = (chapterPayload: WeebcentralChapterDTO) => {
       setChapter(chapterPayload)
 
-      const cachedDimensions =
+      const cachedDims =
         remotePageDimensionsCache.get(chapterPayload.chapterId) ?? {}
-      setPageDimensions(cachedDimensions)
-
-      const chapterPages = createPlaceholderPages(
-        chapterPayload,
-        cachedDimensions,
-      )
+      const chapterPages = createPlaceholderPages(chapterPayload, cachedDims)
+      setPageDimensions(cachedDims)
 
       const savedProgress = loadRemoteProgress(chapterPayload.chapterId)
       const initialPageIndex = clamp(
@@ -1455,20 +1581,13 @@ function WeebcentralReaderPage() {
         0,
         chapterPayload.pages.length - 1,
       )
-      setCurrentPageIndex(initialPageIndex)
-      setCurrentStepIndex(
-        findStepIndexByPageIndex(
-          buildDoublePageStepsWithOffset(
-            chapterPages.map(asPairingPage),
-            doublePageOffset,
-          ),
+      setPageState(
+        derivePageIndices(
           initialPageIndex,
-        ),
-      )
-      setCurrentSingleStepIndex(
-        findStepIndexByPageIndex(
-          buildSinglePageSteps(chapterPages, false, 'rtl'),
-          initialPageIndex,
+          chapterPages,
+          doublePageOffset,
+          isTouchPortrait,
+          readingDirection,
         ),
       )
     }
@@ -1489,23 +1608,10 @@ function WeebcentralReaderPage() {
       const seriesInput =
         search.seriesId?.trim() || chapterPayload.seriesId || params.chapterId
       const seriesOptions = weebcentralSeriesQueryOptions(seriesInput)
-      const cachedSeries =
-        prefetchedRemoteSeries.get(seriesInput) ??
-        prefetchedRemoteSeries.get(chapterPayload.seriesId) ??
-        queryClient.getQueryData<WeebcentralSeriesDTO>(seriesOptions.queryKey)
+      const cachedSeries = queryClient.getQueryData<WeebcentralSeriesDTO>(
+        seriesOptions.queryKey,
+      )
       if (cachedSeries) {
-        setBoundedMapEntry(
-          prefetchedRemoteSeries,
-          seriesInput,
-          cachedSeries,
-          PREFETCHED_REMOTE_SERIES_LIMIT,
-        )
-        setBoundedMapEntry(
-          prefetchedRemoteSeries,
-          cachedSeries.id,
-          cachedSeries,
-          PREFETCHED_REMOTE_SERIES_LIMIT,
-        )
         setSeries(cachedSeries)
       }
 
@@ -1513,18 +1619,6 @@ function WeebcentralReaderPage() {
         try {
           const seriesPayload =
             cachedSeries ?? (await queryClient.fetchQuery(seriesOptions))
-          setBoundedMapEntry(
-            prefetchedRemoteSeries,
-            seriesInput,
-            seriesPayload,
-            PREFETCHED_REMOTE_SERIES_LIMIT,
-          )
-          setBoundedMapEntry(
-            prefetchedRemoteSeries,
-            seriesPayload.id,
-            seriesPayload,
-            PREFETCHED_REMOTE_SERIES_LIMIT,
-          )
           setSeries(seriesPayload)
         } catch {
           // Ignore series metadata failure; chapter can still render.
@@ -1541,6 +1635,29 @@ function WeebcentralReaderPage() {
   useEffect(() => {
     void loadRemoteChapter()
   }, [loadRemoteChapter])
+
+  useEffect(() => {
+    const chapterOptions = weebcentralChapterQueryOptions(params.chapterId)
+
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== 'updated') return
+      if (event.query.state.status !== 'success') return
+
+      const key = event.query.queryKey
+      if (key.length !== chapterOptions.queryKey.length) return
+      if (
+        !key.every((v: unknown, i: number) => v === chapterOptions.queryKey[i])
+      )
+        return
+
+      const data = event.query.state.data as WeebcentralChapterDTO | undefined
+      if (!data || data === chapter) return
+
+      setChapter(data)
+    })
+
+    return unsubscribe
+  }, [params.chapterId, queryClient, chapter])
 
   useEffect(() => {
     saveReaderUiPrefs(REMOTE_READER_UI_PREFS_KEY, {
@@ -1615,30 +1732,35 @@ function WeebcentralReaderPage() {
   ])
 
   const cycleMode = useCallback(() => {
-    setMode((current) => {
-      const next: ReaderMode =
-        current === 'single'
-          ? 'double'
-          : current === 'double'
-            ? 'scroll'
-            : 'single'
+    const next: ReaderMode =
+      mode === 'single' ? 'double' : mode === 'double' ? 'scroll' : 'single'
 
-      if (next === 'double') {
-        setCurrentStepIndex(
-          findStepIndexByPageIndex(activeDoubleSteps, currentTargetPageIndex),
-        )
-      } else if (next === 'single') {
-        setCurrentSingleStepIndex(
-          findStepIndexByPageIndex(singlePageSteps, currentTargetPageIndex),
-        )
-        setCurrentPageIndex(currentTargetPageIndex)
-      } else {
-        setCurrentPageIndex(currentTargetPageIndex)
-      }
+    if (next === 'double') {
+      setPageState((prev) => ({
+        ...prev,
+        stepIndex: findStepIndexByPageIndex(
+          activeDoubleSteps,
+          currentTargetPageIndex,
+        ),
+      }))
+    } else if (next === 'single') {
+      setPageState({
+        pageIndex: currentTargetPageIndex,
+        stepIndex: findStepIndexByPageIndex(
+          activeDoubleSteps,
+          currentTargetPageIndex,
+        ),
+        singleStepIndex: findStepIndexByPageIndex(
+          singlePageSteps,
+          currentTargetPageIndex,
+        ),
+      })
+    } else {
+      setPageState((prev) => ({ ...prev, pageIndex: currentTargetPageIndex }))
+    }
 
-      return next
-    })
-  }, [activeDoubleSteps, currentTargetPageIndex, singlePageSteps])
+    setMode(next)
+  }, [activeDoubleSteps, currentTargetPageIndex, mode, singlePageSteps])
 
   useEffect(() => {
     if (!chapter) {
@@ -1738,32 +1860,21 @@ function WeebcentralReaderPage() {
       return
     }
 
-    if (
-      prefetchedRemoteChapters.has(nextChapterId) ||
-      inFlightRemoteChapterPrefetches.has(nextChapterId)
-    ) {
+    const chapterOptions = weebcentralChapterQueryOptions(nextChapterId, {
+      prefetch: true,
+    })
+    if (queryClient.getQueryData(chapterOptions.queryKey)) {
       return
     }
 
     const controller = new AbortController()
-    inFlightRemoteChapterPrefetches.add(nextChapterId)
 
     void (async () => {
       try {
-        const chapterOptions = weebcentralChapterQueryOptions(nextChapterId, {
-          prefetch: true,
-        })
         const payload =
           queryClient.getQueryData<WeebcentralChapterDTO>(
             chapterOptions.queryKey,
           ) ?? (await queryClient.fetchQuery(chapterOptions))
-
-        setBoundedMapEntry(
-          prefetchedRemoteChapters,
-          nextChapterId,
-          payload,
-          PREFETCHED_REMOTE_CHAPTER_LIMIT,
-        )
 
         const warmCount = Math.min(nextChapterWarmPages, payload.pages.length)
         const workerCount = Math.max(
@@ -1798,8 +1909,6 @@ function WeebcentralReaderPage() {
         await Promise.all(Array.from({ length: workerCount }, warmWorker))
       } catch {
         // Ignore prefetch failures; regular navigation still works.
-      } finally {
-        inFlightRemoteChapterPrefetches.delete(nextChapterId)
       }
     })()
 
@@ -1831,6 +1940,58 @@ function WeebcentralReaderPage() {
       document.removeEventListener('fullscreenchange', onFullscreenChange)
     }
   }, [])
+
+  useEffect(() => {
+    if (!fullscreenActive || !readerStageRef.current) return
+
+    const container = readerStageRef.current
+    const focusableSelector =
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+
+    const handleTabKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+
+      const focusable = Array.from(
+        container.querySelectorAll<HTMLElement>(focusableSelector),
+      )
+      if (focusable.length === 0) {
+        container.focus({ preventScroll: true })
+        return
+      }
+
+      const first = focusable[0]!
+      const last = focusable[focusable.length - 1]!
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+
+    container.addEventListener('keydown', handleTabKey)
+
+    const firstFocusable =
+      container.querySelector<HTMLElement>(focusableSelector)
+    requestAnimationFrame(() => {
+      firstFocusable?.focus()
+    })
+
+    return () => {
+      container.removeEventListener('keydown', handleTabKey)
+    }
+  }, [fullscreenActive])
+
+  useEffect(() => {
+    if (!chapter || isLoading || fullscreenActive || sidebarOpen) return
+    readerStageRef.current?.focus()
+  }, [chapter, isLoading, fullscreenActive, sidebarOpen])
 
   useEffect(() => {
     if (!focusMode) {
@@ -1952,15 +2113,17 @@ function WeebcentralReaderPage() {
   const goToPage = useCallback(
     (nextPageIndex: number) => {
       const safeIndex = clamp(nextPageIndex, 0, maxPageIndex)
-      setCurrentPageIndex(safeIndex)
-      setCurrentStepIndex(
-        findStepIndexByPageIndex(activeDoubleSteps, safeIndex),
-      )
-      setCurrentSingleStepIndex(
-        findStepIndexByPageIndex(singlePageSteps, safeIndex),
+      setPageState(
+        derivePageIndices(
+          safeIndex,
+          pages,
+          doublePageOffset,
+          isTouchPortrait,
+          readingDirection,
+        ),
       )
     },
-    [activeDoubleSteps, maxPageIndex, singlePageSteps],
+    [doublePageOffset, isTouchPortrait, maxPageIndex, pages, readingDirection],
   )
 
   const toggleFullscreen = useCallback(async () => {
@@ -2027,7 +2190,7 @@ function WeebcentralReaderPage() {
     }
 
     if (mode === 'double') {
-      if (currentStepIndex >= maxStepIndex) {
+      if (pageState.stepIndex >= maxStepIndex) {
         if (pendingBoundaryDirection === 'next' && nextChapterId) {
           goToChapter(nextChapterId)
         } else {
@@ -2036,18 +2199,21 @@ function WeebcentralReaderPage() {
         return
       }
 
-      const next = clamp(currentStepIndex + 1, 0, maxStepIndex)
-      setCurrentStepIndex(next)
-      setCurrentPageIndex(
-        activeDoubleSteps[next]?.anchorPageIndex ?? currentPageIndex,
-      )
+      setPageState((prev) => {
+        const next = clamp(prev.stepIndex + 1, 0, maxStepIndex)
+        return {
+          ...prev,
+          stepIndex: next,
+          pageIndex: activeDoubleSteps[next]?.anchorPageIndex ?? prev.pageIndex,
+        }
+      })
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
       return
     }
 
     if (mode === 'single') {
-      if (currentSingleStepIndex >= maxSingleStepIndex) {
+      if (pageState.singleStepIndex >= maxSingleStepIndex) {
         if (pendingBoundaryDirection === 'next' && nextChapterId) {
           goToChapter(nextChapterId)
         } else {
@@ -2057,20 +2223,22 @@ function WeebcentralReaderPage() {
       }
 
       const nextSingle = clamp(
-        currentSingleStepIndex + 1,
+        pageState.singleStepIndex + 1,
         0,
         maxSingleStepIndex,
       )
-      setCurrentSingleStepIndex(nextSingle)
-      setCurrentPageIndex(
-        singlePageSteps[nextSingle]?.anchorPageIndex ?? currentPageIndex,
-      )
+      setPageState((prev) => ({
+        ...prev,
+        singleStepIndex: nextSingle,
+        pageIndex:
+          singlePageSteps[nextSingle]?.anchorPageIndex ?? prev.pageIndex,
+      }))
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
       return
     }
 
-    if (currentPageIndex >= maxPageIndex) {
+    if (pageState.pageIndex >= maxPageIndex) {
       if (pendingBoundaryDirection === 'next' && nextChapterId) {
         goToChapter(nextChapterId)
       } else {
@@ -2081,11 +2249,11 @@ function WeebcentralReaderPage() {
 
     setPendingBoundaryDirection(null)
     setBoundaryNotice(null)
-    goToPage(currentPageIndex + 1)
+    goToPage(pageState.pageIndex + 1)
   }, [
-    currentPageIndex,
-    currentStepIndex,
-    currentSingleStepIndex,
+    pageState.pageIndex,
+    pageState.stepIndex,
+    pageState.singleStepIndex,
     goToChapter,
     goToPage,
     maxPageIndex,
@@ -2131,7 +2299,7 @@ function WeebcentralReaderPage() {
     }
 
     if (mode === 'double') {
-      if (currentStepIndex <= 0) {
+      if (pageState.stepIndex <= 0) {
         if (pendingBoundaryDirection === 'prev' && previousChapterId) {
           goToChapter(previousChapterId)
         } else {
@@ -2140,18 +2308,22 @@ function WeebcentralReaderPage() {
         return
       }
 
-      const previous = clamp(currentStepIndex - 1, 0, maxStepIndex)
-      setCurrentStepIndex(previous)
-      setCurrentPageIndex(
-        activeDoubleSteps[previous]?.anchorPageIndex ?? currentPageIndex,
-      )
+      setPageState((prev) => {
+        const previous = clamp(prev.stepIndex - 1, 0, maxStepIndex)
+        return {
+          ...prev,
+          stepIndex: previous,
+          pageIndex:
+            activeDoubleSteps[previous]?.anchorPageIndex ?? prev.pageIndex,
+        }
+      })
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
       return
     }
 
     if (mode === 'single') {
-      if (currentSingleStepIndex <= 0) {
+      if (pageState.singleStepIndex <= 0) {
         if (pendingBoundaryDirection === 'prev' && previousChapterId) {
           goToChapter(previousChapterId)
         } else {
@@ -2160,21 +2332,25 @@ function WeebcentralReaderPage() {
         return
       }
 
-      const previousSingle = clamp(
-        currentSingleStepIndex - 1,
-        0,
-        maxSingleStepIndex,
-      )
-      setCurrentSingleStepIndex(previousSingle)
-      setCurrentPageIndex(
-        singlePageSteps[previousSingle]?.anchorPageIndex ?? currentPageIndex,
-      )
+      setPageState((prev) => {
+        const previousSingle = clamp(
+          prev.singleStepIndex - 1,
+          0,
+          maxSingleStepIndex,
+        )
+        return {
+          ...prev,
+          singleStepIndex: previousSingle,
+          pageIndex:
+            singlePageSteps[previousSingle]?.anchorPageIndex ?? prev.pageIndex,
+        }
+      })
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
       return
     }
 
-    if (currentPageIndex <= 0) {
+    if (pageState.pageIndex <= 0) {
       if (pendingBoundaryDirection === 'prev' && previousChapterId) {
         goToChapter(previousChapterId)
       } else {
@@ -2185,11 +2361,11 @@ function WeebcentralReaderPage() {
 
     setPendingBoundaryDirection(null)
     setBoundaryNotice(null)
-    goToPage(currentPageIndex - 1)
+    goToPage(pageState.pageIndex - 1)
   }, [
-    currentPageIndex,
-    currentStepIndex,
-    currentSingleStepIndex,
+    pageState.pageIndex,
+    pageState.stepIndex,
+    pageState.singleStepIndex,
     goToChapter,
     goToPage,
     maxSingleStepIndex,
@@ -2666,9 +2842,9 @@ function WeebcentralReaderPage() {
 
     recenterNativePager({ attempts: 1 })
   }, [
-    currentPageIndex,
-    currentSingleStepIndex,
-    currentStepIndex,
+    pageState.pageIndex,
+    pageState.singleStepIndex,
+    pageState.stepIndex,
     gallerySwipeEnabled,
     mode,
     recenterNativePager,
@@ -2830,6 +3006,40 @@ function WeebcentralReaderPage() {
         return
       }
 
+      if (event.key === 'Escape') {
+        if (document.fullscreenElement) {
+          event.preventDefault()
+          void document.exitFullscreen()
+          return
+        }
+        if (inlineFullscreen) {
+          event.preventDefault()
+          setInlineFullscreen(false)
+          return
+        }
+        if (sidebarOpen) {
+          event.preventDefault()
+          setSidebarOpen(false)
+          return
+        }
+        if (showShortcutHelp) {
+          event.preventDefault()
+          setShowShortcutHelp(false)
+          return
+        }
+        if (focusMode) {
+          event.preventDefault()
+          setFocusMode(false)
+          return
+        }
+        if (boundaryNotice) {
+          event.preventDefault()
+          setBoundaryNotice(null)
+          setPendingBoundaryDirection(null)
+          return
+        }
+      }
+
       if (event.key === '?') {
         event.preventDefault()
         blurReaderFocusTarget()
@@ -2862,7 +3072,92 @@ function WeebcentralReaderPage() {
     readingDirection,
     revealReaderUi,
     toggleFullscreen,
+    sidebarOpen,
+    inlineFullscreen,
+    boundaryNotice,
+    showShortcutHelp,
   ])
+
+  useGSAP(
+    () => {
+      if (typeof window === 'undefined') return
+      const mm = gsap.matchMedia()
+      mm.add('(prefers-reduced-motion: no-preference)', () => {
+        if (sidebarRef.current) {
+          gsap.fromTo(
+            sidebarRef.current,
+            { x: sidebarOpen ? '-100%' : '0%', autoAlpha: sidebarOpen ? 0 : 1 },
+            {
+              x: sidebarOpen ? '0%' : '-100%',
+              autoAlpha: sidebarOpen ? 1 : 0,
+              duration: 0.25,
+              ease: 'power3.out',
+            },
+          )
+        }
+      })
+      return () => mm.revert()
+    },
+    { dependencies: [sidebarOpen], scope: sidebarRef },
+  )
+
+  useGSAP(
+    () => {
+      if (!boundaryNotice) return
+      if (typeof window === 'undefined') return
+      const mm = gsap.matchMedia()
+      mm.add('(prefers-reduced-motion: no-preference)', () => {
+        gsap.fromTo(
+          boundaryRef.current,
+          { autoAlpha: 0, y: 12, scale: 0.96 },
+          {
+            autoAlpha: 1,
+            y: 0,
+            scale: 1,
+            duration: 0.22,
+            ease: 'back.out(1.7)',
+          },
+        )
+      })
+      return () => mm.revert()
+    },
+    { dependencies: [boundaryNotice], scope: boundaryRef },
+  )
+
+  useGSAP(
+    () => {
+      if (!showPageHud || !hudRef.current) return
+      if (typeof window === 'undefined') return
+      const mm = gsap.matchMedia()
+      mm.add('(prefers-reduced-motion: no-preference)', () => {
+        gsap.fromTo(
+          hudRef.current,
+          { autoAlpha: 0, y: 6 },
+          { autoAlpha: 1, y: 0, duration: 0.15, ease: 'power2.out' },
+        )
+      })
+      return () => mm.revert()
+    },
+    { dependencies: [showPageHud, pageState.pageIndex], scope: hudRef },
+  )
+
+  useGSAP(
+    () => {
+      if (typeof window === 'undefined') return
+      const el = settingsContentRef.current
+      if (!el) return
+      const mm = gsap.matchMedia()
+      mm.add('(prefers-reduced-motion: no-preference)', () => {
+        if (mobileSettingsMinimized) {
+          gsap.to(el, { autoAlpha: 0, duration: 0.15, ease: 'power2.in' })
+        } else {
+          gsap.to(el, { autoAlpha: 1, duration: 0.2, ease: 'power2.out' })
+        }
+      })
+      return () => mm.revert()
+    },
+    { dependencies: [mobileSettingsMinimized], scope: settingsContentRef },
+  )
 
   const remoteSeriesTitle =
     series?.title ?? search.seriesTitle ?? 'Online series'
@@ -2873,20 +3168,40 @@ function WeebcentralReaderPage() {
 
   if (isLoading) {
     return (
-      <div
-        className="border-2 border-border bg-surface p-6 text-muted-foreground"
-        role="status"
-        aria-live="polite"
-      >
-        <p className="delight-loading-note">{openingLine}</p>
+      <div className="reader-stage-bg flex h-[100dvh] flex-col items-center justify-center gap-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/20 border-t-white/70" />
+          <p className="text-sm text-white/60" role="status" aria-live="polite">
+            {openingLine}
+          </p>
+        </div>
       </div>
     )
   }
 
   if (error || !chapter) {
     return (
-      <div className="border-2 border-destructive/30 bg-destructive/10 p-6 text-destructive">
-        We could not open this chapter. Please go back and try another one.
+      <div className="flex min-h-[40dvh] flex-col items-center justify-center gap-4 p-6">
+        <div className="flex max-w-sm flex-col items-center gap-4 rounded border border-destructive/30 bg-destructive/10 px-6 py-8 text-center">
+          <p className="text-sm text-destructive">
+            {error ?? 'Could not open this chapter.'}
+          </p>
+          <Button
+            variant="default"
+            className="h-12 min-w-[140px] px-5 text-sm"
+            onClick={() => {
+              void loadRemoteChapter()
+            }}
+          >
+            Try again
+          </Button>
+          <Link
+            to="/"
+            className="inline-flex min-h-11 items-center text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            Go back to home
+          </Link>
+        </div>
       </div>
     )
   }
@@ -2937,6 +3252,10 @@ function WeebcentralReaderPage() {
 
       {!fullscreenActive ? (
         <aside
+          ref={sidebarRef}
+          role={sidebarOpen ? 'complementary' : undefined}
+          aria-label="Reader settings"
+          aria-hidden={!sidebarOpen}
           className={
             isTouchDevice
               ? 'reader-shell-panel reader-settings-panel animate-enter relative z-30 w-full overflow-visible p-3'
@@ -2958,7 +3277,7 @@ function WeebcentralReaderPage() {
                 type="button"
                 variant="soft"
                 size="sm"
-                className="h-11 px-3 text-xs"
+                className="h-12 px-3 text-xs"
                 onClick={() =>
                   setMobileSettingsMinimized((current) => !current)
                 }
@@ -2969,7 +3288,10 @@ function WeebcentralReaderPage() {
           ) : null}
 
           <div
-            className={isTouchDevice && mobileSettingsMinimized ? 'hidden' : ''}
+            ref={settingsContentRef}
+            className={
+              isTouchDevice && mobileSettingsMinimized ? 'invisible' : ''
+            }
           >
             <div className="reader-settings-surface space-y-2 text-xs text-muted-foreground">
               <Link
@@ -3004,16 +3326,10 @@ function WeebcentralReaderPage() {
                   <Button
                     type="button"
                     variant={mode === 'single' ? 'default' : 'soft'}
-                    className="h-11"
+                    className="h-12"
                     onClick={() => {
                       setMode('single')
-                      setCurrentSingleStepIndex(
-                        findStepIndexByPageIndex(
-                          singlePageSteps,
-                          currentTargetPageIndex,
-                        ),
-                      )
-                      setCurrentPageIndex(currentTargetPageIndex)
+                      goToPage(currentTargetPageIndex)
                     }}
                   >
                     Single
@@ -3021,15 +3337,10 @@ function WeebcentralReaderPage() {
                   <Button
                     type="button"
                     variant={mode === 'double' ? 'default' : 'soft'}
-                    className="h-11"
+                    className="h-12"
                     onClick={() => {
                       setMode('double')
-                      setCurrentStepIndex(
-                        findStepIndexByPageIndex(
-                          activeDoubleSteps,
-                          currentTargetPageIndex,
-                        ),
-                      )
+                      goToPage(currentTargetPageIndex)
                     }}
                   >
                     Double
@@ -3037,10 +3348,10 @@ function WeebcentralReaderPage() {
                   <Button
                     type="button"
                     variant={mode === 'scroll' ? 'default' : 'soft'}
-                    className="h-11"
+                    className="h-12"
                     onClick={() => {
                       setMode('scroll')
-                      setCurrentPageIndex(currentTargetPageIndex)
+                      goToPage(currentTargetPageIndex)
                     }}
                   >
                     Scroll
@@ -3053,25 +3364,7 @@ function WeebcentralReaderPage() {
                   onChange={(event) => {
                     const nextMode = event.target.value as ReaderMode
                     setMode(nextMode)
-
-                    if (nextMode === 'double') {
-                      setCurrentStepIndex(
-                        findStepIndexByPageIndex(
-                          activeDoubleSteps,
-                          currentTargetPageIndex,
-                        ),
-                      )
-                    } else if (nextMode === 'single') {
-                      setCurrentSingleStepIndex(
-                        findStepIndexByPageIndex(
-                          singlePageSteps,
-                          currentTargetPageIndex,
-                        ),
-                      )
-                      setCurrentPageIndex(currentTargetPageIndex)
-                    } else {
-                      setCurrentPageIndex(currentTargetPageIndex)
-                    }
+                    goToPage(currentTargetPageIndex)
                   }}
                   options={[
                     { value: 'single', label: 'Single page' },
@@ -3094,7 +3387,7 @@ function WeebcentralReaderPage() {
                   <Button
                     type="button"
                     variant={readingDirection === 'rtl' ? 'default' : 'soft'}
-                    className="h-11"
+                    className="h-12"
                     onClick={() => setReadingDirection('rtl')}
                   >
                     RTL
@@ -3102,7 +3395,7 @@ function WeebcentralReaderPage() {
                   <Button
                     type="button"
                     variant={readingDirection === 'ltr' ? 'default' : 'soft'}
-                    className="h-11"
+                    className="h-12"
                     onClick={() => setReadingDirection('ltr')}
                   >
                     LTR
@@ -3117,7 +3410,7 @@ function WeebcentralReaderPage() {
                       event.target.value === 'ltr' ? 'ltr' : 'rtl',
                     )
                   }
-                  className="h-11"
+                  className="h-12"
                   options={[
                     { value: 'rtl', label: 'Right to left' },
                     { value: 'ltr', label: 'Left to right' },
@@ -3130,7 +3423,7 @@ function WeebcentralReaderPage() {
                   <Button
                     type="button"
                     variant={doublePageOffset ? 'default' : 'soft'}
-                    className="h-11 w-full px-3"
+                    className="h-12 w-full px-3"
                     onClick={() => setDoublePageOffset((value) => !value)}
                   >
                     Offset: {doublePageOffset ? 'On' : 'Off'}
@@ -3142,7 +3435,7 @@ function WeebcentralReaderPage() {
                     onChange={(event) =>
                       setZoomPreset(event.target.value as ZoomPreset)
                     }
-                    className="h-11"
+                    className="h-12"
                     options={[
                       { value: 'fit-height', label: 'Fit to screen' },
                       { value: 'fit-width', label: 'Fit to width' },
@@ -3183,7 +3476,7 @@ function WeebcentralReaderPage() {
                             }
                             goToChapter(nextId)
                           }}
-                          className="h-11 min-w-0"
+                          className="h-12 min-w-0"
                           options={orderedSeriesChapters.map((entry) => ({
                             value: entry.id,
                             label: `Chapter ${entry.number}`,
@@ -3232,7 +3525,7 @@ function WeebcentralReaderPage() {
                     onChange={(event) =>
                       setZoomPreset(event.target.value as ZoomPreset)
                     }
-                    className="h-11"
+                    className="h-12"
                     options={[
                       { value: 'fit-height', label: 'Fit to screen' },
                       { value: 'fit-width', label: 'Fit to width' },
@@ -3242,7 +3535,7 @@ function WeebcentralReaderPage() {
                   <Button
                     type="button"
                     variant={doublePageOffset ? 'default' : 'soft'}
-                    className="h-11 w-full px-3"
+                    className="h-12 w-full px-3"
                     onClick={() => setDoublePageOffset((value) => !value)}
                   >
                     Offset: {doublePageOffset ? 'On' : 'Off'}
@@ -3283,7 +3576,7 @@ function WeebcentralReaderPage() {
                           }
                           goToChapter(nextId)
                         }}
-                        className="h-11 min-w-0 col-span-2"
+                        className="h-12 min-w-0 col-span-2"
                         options={orderedSeriesChapters.map((entry) => ({
                           value: entry.id,
                           label: `Chapter ${entry.number}`,
@@ -3352,7 +3645,11 @@ function WeebcentralReaderPage() {
                     : 'Keyboard shortcuts'}
                 </Button>
                 {showShortcutHelp ? (
-                  <div className="reader-shortcut-sheet mt-2 text-xs">
+                  <div
+                    role="region"
+                    aria-label="Keyboard shortcuts"
+                    className="reader-shortcut-sheet mt-2 text-xs"
+                  >
                     <p>Nav: A/D or arrows, Space, [ ]</p>
                     <p>View: Q mode, 0 reset zoom, F fullscreen</p>
                     <p>UI: S sidebar, X focus, Z magnifier</p>
@@ -3390,7 +3687,11 @@ function WeebcentralReaderPage() {
       ) : null}
 
       {boundaryNotice ? (
-        <div className="reader-hud pointer-events-none absolute ui-bottom-safe-stack left-1/2 z-30 -translate-x-1/2 px-3 py-1 text-xs">
+        <div
+          ref={boundaryRef}
+          role="alert"
+          className="reader-hud pointer-events-none absolute ui-bottom-safe-stack left-1/2 z-30 -translate-x-1/2 px-3 py-1 text-xs"
+        >
           {boundaryNotice}
         </div>
       ) : null}
@@ -3407,6 +3708,8 @@ function WeebcentralReaderPage() {
       ) : null}
 
       <section
+        tabIndex={-1}
+        style={{ outline: 'none' }}
         className={
           fullscreenActive ? '' : isTouchDevice ? 'min-h-[100dvh]' : 'h-full'
         }
@@ -3426,15 +3729,22 @@ function WeebcentralReaderPage() {
               chapterId={chapter.chapterId}
               pages={pages}
               zoomPreset={zoomPreset}
-              isFullscreen={fullscreenActive}
               resolveImageUrl={(page) => pageUrlMap.get(page.pageIndex)}
               onImageMeasure={rememberPageDimension}
               onVisiblePageChange={(pageIndex) =>
-                setCurrentPageIndex(pageIndex)
+                setPageState((prev) => ({
+                  ...prev,
+                  pageIndex,
+                  stepIndex: 0,
+                  singleStepIndex: 0,
+                }))
               }
             />
             {fullscreenActive && showPageHud ? (
-              <div className="reader-hud pointer-events-none absolute ui-bottom-safe-hud left-1/2 -translate-x-1/2 px-3 py-1 text-sm">
+              <div
+                ref={hudRef}
+                className="reader-hud pointer-events-none absolute ui-bottom-safe-hud left-1/2 -translate-x-1/2 px-3 py-1 text-sm"
+              >
                 {hudPageLabel}
               </div>
             ) : null}
@@ -3557,7 +3867,10 @@ function WeebcentralReaderPage() {
               </>
             ) : null}
             {fullscreenActive && showPageHud ? (
-              <div className="reader-hud pointer-events-none absolute ui-bottom-safe-hud left-1/2 -translate-x-1/2 px-3 py-1 text-sm">
+              <div
+                ref={hudRef}
+                className="reader-hud pointer-events-none absolute ui-bottom-safe-hud left-1/2 -translate-x-1/2 px-3 py-1 text-sm"
+              >
                 {hudPageLabel}
               </div>
             ) : null}

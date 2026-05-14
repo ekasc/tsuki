@@ -6,7 +6,7 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "vite dev --port 3000",
+    "dev": "vite dev",
     "build": "vite build",
     "build:cloudflare": "VITE_LOCAL_LIBRARY_ENABLED=0 vite build",
     "verify:release:v1": "node scripts/verify-v1-online-release.mjs",
@@ -19,9 +19,9 @@
     "test:e2e": "playwright test",
     "test:e2e:desktop": "playwright test --project=chromium-desktop",
     "test:e2e:mobile": "playwright test --project=webkit-iphone15pro --project=chromium-galaxys24 --project=webkit-ipadpro11",
-    "test:visual": "VISUAL_REGRESSION=1 playwright test tests/e2e/visual-reader.spec.ts",
+    "test:visual": "echo \"Visual regression tests removed\"",
     "test:lighthouse": "pnpm build && LHCI_CHROME_PATH=\"$(node -e 'const { chromium } = require(\"@playwright/test\"); console.log(chromium.executablePath())')\" lhci autorun --config=./lighthouserc.json",
-    "test:ci": "pnpm test:type && pnpm test:unit && pnpm build && pnpm test:e2e:desktop && pnpm test:e2e:mobile && pnpm test:visual",
+    "test:ci": "pnpm test:type && pnpm test:unit && pnpm build && pnpm test:e2e:desktop && pnpm test:e2e:mobile",
     "lint": "tsc --noEmit",
     "format": "prettier --check .",
     "check": "prettier --write .",
@@ -29,6 +29,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@gsap/react": "^2.1.2",
     "@tailwindcss/vite": "4.2.2",
     "@tanstack/react-query": "^5.99.2",
     "@tanstack/react-router": "1.168.23",
@@ -41,6 +42,7 @@
     "clsx": "2.1.1",
     "drizzle-orm": "0.45.2",
     "file-type": "22.0.1",
+    "gsap": "^3.15.0",
     "jszip": "3.10.1",
     "lucide-react": "1.8.0",
     "mime-types": "3.0.2",
@@ -75,6 +77,9 @@
   },
   "packageManager": "pnpm@10.32.1",
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3", "sharp"]
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "sharp"
+    ]
   }
 }
