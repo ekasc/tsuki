@@ -16,7 +16,9 @@ import gsap from 'gsap'
 import { useGSAP } from '@gsap/react'
 import { flushSync } from 'react-dom'
 
-gsap.registerPlugin(useGSAP)
+if (typeof window !== 'undefined') {
+  gsap.registerPlugin(useGSAP)
+}
 
 import { ContinuousScroll } from '#/components/reader/continuous-scroll'
 import { PagePane } from '#/components/reader/page-pane'

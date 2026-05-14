@@ -1302,8 +1302,28 @@
   The page shell cross-fades. The logo holds position.
   Entry animations are suppressed during view transitions to prevent
   the double-fade flicker (view transition fade + animate-enter fade).
+
+  `*` matches all named view transitions. Root/logo specific selectors
+  override below (same pseudo-element specificity, source-order wins).
 */
 
+/* Cover morph: defaults for all named view transitions */
+::view-transition-group(*) {
+  animation-duration: 320ms;
+  animation-timing-function: var(--ease-out-quint);
+}
+
+::view-transition-old(*) {
+  animation: 280ms ease-out both vt-fade-out;
+  object-fit: cover;
+}
+
+::view-transition-new(*) {
+  animation: 320ms var(--ease-out-quint) both vt-fade-in;
+  object-fit: cover;
+}
+
+/* Root: faster cross-fade */
 ::view-transition-old(root) {
   animation: 160ms ease-out both vt-fade-out;
 }
@@ -1314,22 +1334,6 @@
 
 ::view-transition-group(root) {
   animation-duration: 200ms;
-}
-
-/* Cover morph: smooth size + position interpolation */
-::view-transition-group(*:not(root)) {
-  animation-duration: 320ms;
-  animation-timing-function: var(--ease-out-quint);
-}
-
-::view-transition-old(*:not(root)) {
-  animation: 280ms ease-out both vt-fade-out;
-  object-fit: cover;
-}
-
-::view-transition-new(*:not(root)) {
-  animation: 320ms var(--ease-out-quint) both vt-fade-in;
-  object-fit: cover;
 }
 
 /* Logo stays in place — no morph */
@@ -1361,16 +1365,13 @@
 /* Reduce motion: skip morphs */
 
 @media (prefers-reduced-motion: reduce) {
-  ::view-transition-old(root),
-  ::view-transition-new(root),
-  ::view-transition-old(*:not(root)),
-  ::view-transition-new(*:not(root)) {
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
     animation-duration: 0.01ms !important;
     mix-blend-mode: normal !important;
   }
 
-  ::view-transition-group(root),
-  ::view-transition-group(*:not(root)) {
+  ::view-transition-group(*) {
     animation-duration: 0.01ms !important;
   }
 }
