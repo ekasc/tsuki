@@ -2,7 +2,7 @@ import type { ReaderMode, ReadingHistoryItem } from './contracts'
 
 const HISTORY_STORAGE_KEY = 'tsuki-reading-history.v1'
 const LEGACY_HISTORY_STORAGE_KEY = 'suki-reading-history.v1'
-const MAX_HISTORY_ITEMS = 15
+const MAX_HISTORY_ITEMS = 500
 
 function readHistoryRaw(): string | null {
   const nextValue = window.localStorage.getItem(HISTORY_STORAGE_KEY)

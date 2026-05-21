@@ -2,6 +2,8 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import {
   ArrowDownWideNarrow,
   ArrowUpNarrowWide,
+  ChevronLeft,
+  ChevronRight,
   LayoutGrid,
   List,
 } from 'lucide-react'
@@ -19,6 +21,8 @@ import { localSeriesQueryOptions } from '#/lib/query-options'
 import type { AppRouterContext } from '#/lib/router-context'
 import { loadReadingHistory, upsertReadingHistory } from '#/lib/reading-history'
 import { cn } from '#/lib/utils'
+
+const CHAPTERS_PER_PAGE = 50
 
 const LOCAL_SERIES_LOADING_LINES = [
   'Opening your shelf…',
@@ -82,6 +86,7 @@ function SeriesPage() {
   )
   const [chapterView, setChapterView] = useState<'list' | 'grid'>('list')
   const [chapterQuery, setChapterQuery] = useState('')
+  const [chapterPage, setChapterPage] = useState(1)
   const [previewCoverPageIndex, setPreviewCoverPageIndex] = useState(0)
   const [loadingLineIndex, setLoadingLineIndex] = useState(0)
 
@@ -139,6 +144,10 @@ function SeriesPage() {
     setLatestHistoryEntry(history[0] ?? null)
   }, [params.seriesId])
 
+  useEffect(() => {
+    setChapterPage(1)
+  }, [chapterQuery, chapterOrder])
+
   const ascendingChapters = useMemo(() => {
     return [...(series?.chapters ?? [])].sort((left, right) => {
       if (left.chapterNumber !== right.chapterNumber) {
@@ -194,6 +203,14 @@ function SeriesPage() {
       )
     })
   }, [chapterQuery, sortedChapters])
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredChapters.length / CHAPTERS_PER_PAGE),
+  )
+  const paginatedChapters = useMemo(() => {
+    const start = (chapterPage - 1) * CHAPTERS_PER_PAGE
+    return filteredChapters.slice(start, start + CHAPTERS_PER_PAGE)
+  }, [filteredChapters, chapterPage])
   const completedCount = sortedChapters.filter((chapter) =>
     completedChapters.has(chapter.id),
   ).length
@@ -509,7 +526,7 @@ function SeriesPage() {
                 : 'space-y-1.5'
             }
           >
-            {filteredChapters.map((chapter) => {
+            {paginatedChapters.map((chapter) => {
               const completed = completedChapters.has(chapter.id)
 
               if (chapterView === 'grid') {
@@ -611,6 +628,31 @@ function SeriesPage() {
               )
             })}
           </div>
+          {filteredChapters.length > CHAPTERS_PER_PAGE && (
+            <div className="flex items-center justify-center gap-3 pt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={chapterPage <= 1}
+                onClick={() => setChapterPage((p) => p - 1)}
+              >
+                <ChevronLeft className="size-4" />
+                Prev
+              </Button>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {chapterPage} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={chapterPage >= totalPages}
+                onClick={() => setChapterPage((p) => p + 1)}
+              >
+                Next
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
+          )}
           {filteredChapters.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               {chapterQuery.trim().length > 0

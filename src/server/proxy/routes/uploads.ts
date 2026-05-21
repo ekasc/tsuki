@@ -15,6 +15,8 @@ import {
   writeUploadChapter,
 } from '../utils/storage'
 
+const MAX_ENTRY_BYTES = 25 * 1024 * 1024
+
 const ALLOWED_IMAGE_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
@@ -61,7 +63,7 @@ async function extractUploadPagesFromArchive(
   const buffer = await toBuffer(file)
   const detected = await fileTypeFromBuffer(buffer)
 
-  if (detected?.mime && detected.mime !== 'application/zip') {
+  if (!detected || detected.mime !== 'application/zip') {
     throw new HttpError(400, 'Uploaded archive is not a ZIP/CBZ file')
   }
 
@@ -89,6 +91,14 @@ async function extractUploadPagesFromArchive(
     }
 
     const entryBuffer = await zipEntry.async('nodebuffer')
+
+    if (entryBuffer.length > MAX_ENTRY_BYTES) {
+      throw new HttpError(
+        413,
+        `Archive entry exceeds size limit (${Math.floor(MAX_ENTRY_BYTES / (1024 * 1024))}MB).`,
+      )
+    }
+
     const entryType = await fileTypeFromBuffer(entryBuffer)
     const mime = entryType?.mime
 

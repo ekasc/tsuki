@@ -2,6 +2,8 @@ import { Link, createFileRoute } from '@tanstack/react-router'
 import {
   ArrowDownWideNarrow,
   ArrowUpNarrowWide,
+  ChevronLeft,
+  ChevronRight,
   History,
   LayoutGrid,
   List,
@@ -15,7 +17,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '#/components/ui/button'
 import { FadeImage } from '#/components/ui/fade-image'
 import { Input } from '#/components/ui/input'
-import type { ReadingHistoryItem, WeebcentralSeriesDTO } from '#/lib/contracts'
+import type {
+  ReadingHistoryItem,
+  SavedSeriesSummary,
+  WeebcentralSeriesDTO,
+} from '#/lib/contracts'
 import { weebcentralSeriesQueryOptions } from '#/lib/query-options'
 import {
   buildRemoteSeriesSourceUrl,
@@ -40,6 +46,8 @@ import {
   removeSavedWeebcentralSeries,
   upsertSavedWeebcentralSeries,
 } from '#/lib/weebcentral-library'
+
+const CHAPTERS_PER_PAGE = 50
 
 const REMOTE_SERIES_LOADING_LINES = [
   'Fetching chapter map…',
@@ -123,6 +131,8 @@ function WeebcentralSeriesPage() {
     'oldest',
   )
   const [chapterQuery, setChapterQuery] = useState('')
+  const [chapterReadFilter, setChapterReadFilter] = useState<'all' | 'read' | 'unread'>('all')
+  const [chapterPage, setChapterPage] = useState(1)
   const [isSavedInLibrary, setIsSavedInLibrary] = useState(false)
   const [isSyncingMetadata, setIsSyncingMetadata] = useState(false)
   const [syncTimedOut, setSyncTimedOut] = useState(false)
@@ -248,6 +258,10 @@ function WeebcentralSeriesPage() {
       window.removeEventListener('keydown', onShortcut)
     }
   }, [chapterSearchInputId])
+
+  useEffect(() => {
+    setChapterPage(1)
+  }, [chapterQuery, chapterOrder, chapterReadFilter])
 
   const syncSeriesMetadata = useCallback(async () => {
     setSyncTimedOut(false)
@@ -425,18 +439,35 @@ function WeebcentralSeriesPage() {
   }, [ascendingChapters, formatChapterLabel, latestHistoryEntry])
   const filteredChapters = useMemo(() => {
     const query = chapterQuery.trim().toLowerCase()
-    if (!query) {
-      return chapters
+
+    let list = chapters
+
+    if (query) {
+      list = list.filter((chapter) => {
+        const chapterNumber = String(chapter.number)
+        return (
+          chapter.title.toLowerCase().includes(query) ||
+          chapterNumber.includes(query)
+        )
+      })
     }
 
-    return chapters.filter((chapter) => {
-      const chapterNumber = String(chapter.number)
-      return (
-        chapter.title.toLowerCase().includes(query) ||
-        chapterNumber.includes(query)
-      )
-    })
-  }, [chapterQuery, chapters])
+    if (chapterReadFilter === 'read') {
+      list = list.filter((chapter) => completedChapterIds.has(chapter.id))
+    } else if (chapterReadFilter === 'unread') {
+      list = list.filter((chapter) => !completedChapterIds.has(chapter.id))
+    }
+
+    return list
+  }, [chapterQuery, chapters, chapterReadFilter, completedChapterIds])
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredChapters.length / CHAPTERS_PER_PAGE),
+  )
+  const paginatedChapters = useMemo(() => {
+    const start = (chapterPage - 1) * CHAPTERS_PER_PAGE
+    return filteredChapters.slice(start, start + CHAPTERS_PER_PAGE)
+  }, [filteredChapters, chapterPage])
 
   const toggleChapterRead = useCallback(
     (chapterId: string, chapterTitle: string, chapterNumber: number) => {
@@ -599,7 +630,17 @@ function WeebcentralSeriesPage() {
                   removeSavedWeebcentralSeries(series.id)
                   setIsSavedInLibrary(false)
                 } else {
-                  upsertSavedWeebcentralSeries(series)
+                  const summary: SavedSeriesSummary = {
+                    id: series.id,
+                    title: series.title,
+                    coverUrl: series.coverUrl,
+                    author: series.author,
+                    description: series.description,
+                    chapterCount: series.chapters.length,
+                    provider: series.provider ?? 'weebcentral',
+                    savedAt: Date.now(),
+                  }
+                  upsertSavedWeebcentralSeries(summary)
                   setIsSavedInLibrary(true)
                 }
               }}
@@ -737,6 +778,44 @@ function WeebcentralSeriesPage() {
             >
               <ArrowDownWideNarrow className="size-3.5" />
             </Button>
+            <div className="flex items-center gap-1 rounded border border-border p-0.5">
+              <button
+                type="button"
+                onClick={() => setChapterReadFilter('all')}
+                className={cn(
+                  'h-6 rounded px-2 text-xs font-medium transition-colors',
+                  chapterReadFilter === 'all'
+                    ? 'bg-koten text-[var(--active-contrast)]'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setChapterReadFilter('unread')}
+                className={cn(
+                  'h-6 rounded px-2 text-xs font-medium transition-colors',
+                  chapterReadFilter === 'unread'
+                    ? 'bg-koten text-[var(--active-contrast)]'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                Unread
+              </button>
+              <button
+                type="button"
+                onClick={() => setChapterReadFilter('read')}
+                className={cn(
+                  'h-6 rounded px-2 text-xs font-medium transition-colors',
+                  chapterReadFilter === 'read'
+                    ? 'bg-koten text-[var(--active-contrast)]'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                Read
+              </button>
+            </div>
             <Input
               id={chapterSearchInputId}
               value={chapterQuery}
@@ -753,7 +832,7 @@ function WeebcentralSeriesPage() {
               : 'space-y-1.5'
           }
         >
-          {filteredChapters.map((chapter) => {
+          {paginatedChapters.map((chapter) => {
             const completed = historyByChapterId[chapter.id]?.completed === true
 
             if (chapterView === 'grid') {
@@ -857,6 +936,31 @@ function WeebcentralSeriesPage() {
             )
           })}
         </div>
+        {filteredChapters.length > CHAPTERS_PER_PAGE && (
+          <div className="flex items-center justify-center gap-3 pt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={chapterPage <= 1}
+              onClick={() => setChapterPage((p) => p - 1)}
+            >
+              <ChevronLeft className="size-4" />
+              Prev
+            </Button>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {chapterPage} / {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={chapterPage >= totalPages}
+              onClick={() => setChapterPage((p) => p + 1)}
+            >
+              Next
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+        )}
         {filteredChapters.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             {chapterQuery.trim().length > 0

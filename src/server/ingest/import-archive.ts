@@ -77,7 +77,7 @@ async function assertArchiveMime(buffer: Buffer) {
   const fileType = await fileTypeFromBuffer(buffer)
 
   if (!fileType) {
-    return
+    throw new HttpError(400, 'Cannot verify archive format.')
   }
 
   const accepted = ['application/zip', 'application/x-zip', 'application/x-cbz']
@@ -195,7 +195,7 @@ export async function ingestArchiveUpload(input: {
   const buffer = Buffer.from(await input.file.arrayBuffer())
   await assertArchiveMime(buffer)
 
-  await writeImportSnapshot(input.file.name, buffer)
+  const snapshotPath = await writeImportSnapshot(input.file.name, buffer)
 
   const zip = await JSZip.loadAsync(buffer)
   const entries = pickImageEntries(zip)
@@ -256,11 +256,14 @@ export async function ingestArchiveUpload(input: {
     insertPages(pageInputs)
     updateSeriesCoverByChapter(chapterId)
 
+    await fs.rm(snapshotPath, { force: true })
+
     return {
       seriesId,
       chapterId,
     }
   } catch (error) {
+    await fs.rm(snapshotPath, { force: true })
     deleteSeriesById(seriesId)
     await fs.rm(path.join(LIBRARY_DIR, seriesId), {
       recursive: true,

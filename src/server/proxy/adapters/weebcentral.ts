@@ -1,5 +1,6 @@
 import { HttpError } from '#/server/errors'
 import type { RemoteProvider } from '#/lib/remote-provider'
+import type { SearchResult } from '#/lib/contracts'
 
 import type { ProxyServerConfig } from '../server'
 import {
@@ -698,6 +699,79 @@ async function fetchTextWithWeebcentralGuards(
         text,
         responseUrl: response.url,
     }
+}
+
+export async function searchWeebcentral(
+    query: string,
+    config: ProxyServerConfig = proxyConfig,
+    options?: { telemetry?: UpstreamTelemetryContext },
+): Promise<SearchResult[]> {
+    const searchUrl = new URL(
+        '/search/simple?location=main',
+        config.weebcentralOrigin,
+    )
+    const body = new URLSearchParams({ text: query })
+
+    const response = await fetchWithWeebcentralPolicy(
+        searchUrl,
+        {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                Accept: 'text/html,application/xhtml+xml',
+            },
+            body: body.toString(),
+        },
+        {
+            allowedHostnames: ['weebcentral.com'],
+            cacheClass: 'metadata',
+            telemetry: options?.telemetry,
+        },
+        config,
+    )
+
+    if (!response.ok) {
+        throw new HttpError(
+            502,
+            `Search upstream request failed with status ${response.status}`,
+        )
+    }
+
+    const html = await response.text()
+
+    if (html.trim().length === 0) {
+        return []
+    }
+
+    const results: SearchResult[] = []
+    const anchorPattern =
+        /<a\s+href="https:\/\/weebcentral\.com\/series\/([^"/]+)\/[^"]*"[^>]*>[\s\S]*?<\/a>/gi
+    let anchorMatch: RegExpExecArray | null
+
+    while ((anchorMatch = anchorPattern.exec(html)) !== null) {
+        const anchorHtml = anchorMatch[0]
+        const id = anchorMatch[1]
+        if (!id) continue
+
+        const titleMatch = anchorHtml.match(
+            /<div\s+class="flex-1[^"]*">([^<]*)<\/div>/,
+        )
+        const title = titleMatch?.[1]?.trim() ?? ''
+
+        const coverMatch = anchorHtml.match(
+            /<source\s+srcset="([^"]+)"[^>]*>/,
+        )
+        const coverUrl = coverMatch?.[1] ?? null
+
+        results.push({
+            id,
+            title,
+            coverUrl: coverUrl ?? undefined,
+            provider: 'weebcentral',
+        })
+    }
+
+    return results
 }
 
 async function resolveSeriesIdFromChapterInput(

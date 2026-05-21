@@ -1,21 +1,23 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useQueryClient } from '@tanstack/react-query'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import {
   Download,
   EllipsisVertical,
   Monitor,
+  Search,
   Share2,
   Smartphone,
   Trash2,
+  X,
 } from 'lucide-react'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '#/components/ui/button'
 import { FadeImage } from '#/components/ui/fade-image'
 import { Input } from '#/components/ui/input'
-import type { ReadingHistoryItem, WeebcentralSeriesDTO } from '#/lib/contracts'
-import { weebcentralSeriesQueryOptions } from '#/lib/query-options'
+import type { ReadingHistoryItem, SavedSeriesSummary } from '#/lib/contracts'
+import { weebcentralSearchQueryOptions } from '#/lib/query-options'
 import { loadReadingHistory } from '#/lib/reading-history'
 import {
   absoluteUrl,
@@ -23,13 +25,13 @@ import {
   DEFAULT_OG_IMAGE_PATH,
   SITE_URL,
 } from '#/lib/seo'
-
+import {
+  downloadExport,
+  exportAllData,
+  importData,
+  validateImportData,
+} from '#/lib/export-import'
 const HOME_ONBOARDING_KEY = 'tsuki-home-onboarding-dismissed.v1'
-const HOME_LOADING_LINES = [
-  'Dusting off the shelves…',
-  'Lining up chapter cards…',
-  'Checking page turn gears…',
-] as const
 const HOME_READING_TIPS = [
   'Tip: press F in the reader for full-screen focus mode.',
   'Tip: double-page mode shines on landscape tablets.',
@@ -77,25 +79,28 @@ export const Route = createFileRoute('/')({
 })
 
 function LibraryPage() {
-  const remoteSeriesInputId = 'remote-series-url-input'
-  const remoteSeriesHelpId = 'remote-series-url-help'
-  const remoteSeriesErrorId = 'remote-series-url-error'
+  const searchInputId = 'search-series-input'
   const [history, setHistory] = useState<ReadingHistoryItem[]>([])
   const [hydrated, setHydrated] = useState(false)
-  const [remoteInput, setRemoteInput] = useState('')
-  const [isRemoteLoading, setIsRemoteLoading] = useState(false)
-  const [remoteError, setRemoteError] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
   const [savedRemoteSeries, setSavedRemoteSeries] = useState<
-    WeebcentralSeriesDTO[]
+    SavedSeriesSummary[]
   >([])
   const [showOnboardingHint, setShowOnboardingHint] = useState(false)
-  const [loadingLineIndex, setLoadingLineIndex] = useState(0)
   const [undoToast, setUndoToast] = useState<{
-    item: WeebcentralSeriesDTO
+    item: SavedSeriesSummary
     timer: number | null
   } | null>(null)
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
+  const [libraryFilter, setLibraryFilter] = useState('')
+  const [librarySort, setLibrarySort] = useState<'title' | 'recent' | 'chapters'>('recent')
+  const [importMessage, setImportMessage] = useState<string | null>(null)
+  const debounceTimer = useRef<number | null>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
+
+  const { data: searchResults, isFetching: isSearching } = useQuery({
+    ...weebcentralSearchQueryOptions(debouncedQuery),
+  })
 
   const dismissOnboardingHint = useCallback(() => {
     setShowOnboardingHint(false)
@@ -139,21 +144,18 @@ function LibraryPage() {
   }, [])
 
   useEffect(() => {
-    if (!isRemoteLoading) {
-      setLoadingLineIndex(0)
-      return
+    if (debounceTimer.current !== null) {
+      window.clearTimeout(debounceTimer.current)
     }
-
-    const timer = window.setInterval(() => {
-      setLoadingLineIndex(
-        (current) => (current + 1) % HOME_LOADING_LINES.length,
-      )
-    }, 900)
-
+    debounceTimer.current = window.setTimeout(() => {
+      setDebouncedQuery(searchQuery.trim())
+    }, 300)
     return () => {
-      window.clearInterval(timer)
+      if (debounceTimer.current !== null) {
+        window.clearTimeout(debounceTimer.current)
+      }
     }
-  }, [isRemoteLoading])
+  }, [searchQuery])
 
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
@@ -181,7 +183,7 @@ function LibraryPage() {
       }
 
       const input = document.getElementById(
-        remoteSeriesInputId,
+        searchInputId,
       ) as HTMLInputElement | null
       if (!input) {
         return
@@ -196,40 +198,10 @@ function LibraryPage() {
     return () => {
       window.removeEventListener('keydown', onShortcut)
     }
-  }, [remoteSeriesInputId])
-
-  const loadRemoteSeries = useCallback(async () => {
-    const inputValue = remoteInput.trim()
-
-    if (inputValue.length === 0) {
-      setRemoteError('Paste an online series link first')
-      return
-    }
-
-    setIsRemoteLoading(true)
-    setRemoteError(null)
-
-    try {
-      const payload = await queryClient.fetchQuery(
-        weebcentralSeriesQueryOptions(inputValue),
-      )
-      dismissOnboardingHint()
-      void navigate({
-        to: '/weebcentral-series/$seriesId',
-        params: { seriesId: payload.id },
-      })
-    } catch (requestError) {
-      void requestError
-      setRemoteError(
-        'Could not find that series. Please check the link and try again.',
-      )
-    } finally {
-      setIsRemoteLoading(false)
-    }
-  }, [dismissOnboardingHint, navigate, queryClient, remoteInput])
+  }, [searchInputId])
 
   const handleRemoveSeries = useCallback(
-    (item: WeebcentralSeriesDTO) => {
+    (item: SavedSeriesSummary) => {
       if (undoToast?.timer) {
         window.clearTimeout(undoToast.timer)
       }
@@ -257,7 +229,7 @@ function LibraryPage() {
   const hasHistory = recentHistory.length > 0
   const totalSeries = savedRemoteSeries.length
   const savedRemoteSeriesById = useMemo(() => {
-    const entries = new Map<string, WeebcentralSeriesDTO>()
+    const entries = new Map<string, SavedSeriesSummary>()
     savedRemoteSeries.forEach((entry) => {
       entries.set(entry.id, entry)
     })
@@ -313,6 +285,41 @@ function LibraryPage() {
       })
   }, [history, savedRemoteSeriesById])
 
+  const completedChaptersBySeriesId = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const h of history) {
+      if (h.completed === true) {
+        counts.set(h.seriesId, (counts.get(h.seriesId) ?? 0) + 1)
+      }
+    }
+    return counts
+  }, [history])
+
+  const filteredLibrarySeries = useMemo(() => {
+    let list = savedRemoteSeries
+
+    const query = libraryFilter.trim().toLowerCase()
+    if (query) {
+      list = list.filter((s) => s.title.toLowerCase().includes(query))
+    }
+
+    const sorted = [...list]
+    switch (librarySort) {
+      case 'title':
+        sorted.sort((a, b) => a.title.localeCompare(b.title))
+        break
+      case 'chapters':
+        sorted.sort((a, b) => b.chapterCount - a.chapterCount)
+        break
+      case 'recent':
+      default:
+        sorted.sort((a, b) => b.savedAt - a.savedAt)
+        break
+    }
+
+    return sorted
+  }, [savedRemoteSeries, libraryFilter, librarySort])
+
   return (
     <div className="pb-10">
       <section className="exp-hero pb-8">
@@ -326,8 +333,8 @@ function LibraryPage() {
             </h1>
             <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
               {hydrated && hasHistory
-                ? 'Resume a recent chapter or reopen any saved online series.'
-                : 'Paste a WeebCentral or MangaDex series link to open its chapter list.'}
+                ? 'Resume a recent chapter or browse your saved series.'
+                : 'Search for a WeebCentral series below and start reading.'}
             </p>
             <div className="mt-6 flex flex-wrap gap-2">
               {hydrated && topHistory ? (
@@ -347,7 +354,7 @@ function LibraryPage() {
                   href="#proxy"
                   className="delight-cta inline-flex h-11 items-center bg-koten px-5 text-sm font-semibold text-[var(--active-contrast)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-koten"
                 >
-                  Open an online series
+                  Search for a series
                 </a>
               )}
             </div>
@@ -365,7 +372,7 @@ function LibraryPage() {
             {showOnboardingHint ? (
               <div className="exp-note mt-3 justify-between text-sm">
                 <p>
-                  Start with <strong>Open an online series</strong>, then pick a
+                  Start with <strong>Search for a series</strong>, then pick a
                   chapter.
                 </p>
                 <button
@@ -436,7 +443,7 @@ function LibraryPage() {
                 <ol className="space-y-2 pt-1 text-sm text-muted-foreground">
                   <li className="flex gap-2">
                     <span className="text-koten font-semibold">1.</span>
-                    <span>Open an online series</span>
+                    <span>Search for a series</span>
                   </li>
                   <li className="flex gap-2">
                     <span className="text-koten font-semibold">2.</span>
@@ -462,14 +469,14 @@ function LibraryPage() {
             No recent reads yet
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Start in one step: open an online series and choose a chapter.
+            Search for a series below to get started.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <a
               href="#proxy"
               className="delight-cta inline-flex h-10 items-center border border-border bg-surface px-4 text-sm font-semibold text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-koten"
             >
-              Open an online series
+              Search for a series
             </a>
           </div>
         </section>
@@ -528,127 +535,181 @@ function LibraryPage() {
       <div className="manga-divider" aria-hidden />
 
       <section id="proxy" className="scroll-reveal pt-6 pb-8">
-        <span className="issue-label">Online</span>
+        <span className="issue-label">Search</span>
         <h2 className="manga-title mt-2 text-xl font-bold tracking-tight text-foreground md:text-2xl">
-          Open an online series
+          Find a series to read
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Paste a WeebCentral or MangaDex series link, then choose the chapter
-          you want to read.
+          Search by title to find a WeebCentral series. Press{' '}
+          <kbd className="delight-kbd">/</kbd> to focus search.
         </p>
-        <label
-          htmlFor={remoteSeriesInputId}
-          className="mt-4 block text-xs font-semibold uppercase tracking-[0.08em] text-foreground"
-        >
-          Series URL
-        </label>
-        <p
-          id={remoteSeriesHelpId}
-          className="mt-1 text-xs text-muted-foreground"
-        >
-          Paste the series page URL from WeebCentral or MangaDex. Press{' '}
-          <kbd className="delight-kbd">/</kbd> to jump here from anywhere on the
-          page.
-        </p>
-
-        <form
-          className="mt-2 flex flex-col gap-2 sm:flex-row"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void loadRemoteSeries()
-          }}
-        >
+        <div className="relative mt-4">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <Input
-            id={remoteSeriesInputId}
-            type="url"
-            inputMode="url"
+            id={searchInputId}
+            type="search"
             autoCapitalize="off"
             autoCorrect="off"
-            autoComplete="url"
+            autoComplete="off"
             spellCheck={false}
-            value={remoteInput}
-            onChange={(event) => setRemoteInput(event.target.value)}
-            placeholder="Paste WeebCentral or MangaDex series link"
-            aria-invalid={remoteError ? true : undefined}
-            aria-describedby={
-              remoteError
-                ? `${remoteSeriesHelpId} ${remoteSeriesErrorId}`
-                : remoteSeriesHelpId
-            }
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search manga series…"
+            className="h-12 pl-10 pr-4"
           />
-          <Button
-            type="submit"
-            variant="soft"
-            className="delight-cta sm:w-28"
-            disabled={isRemoteLoading}
-          >
-            {isRemoteLoading ? 'Opening…' : 'Open series'}
-          </Button>
-        </form>
+          {searchQuery.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              aria-label="Clear search"
+            >
+              <X className="size-4" />
+            </button>
+          ) : null}
+        </div>
 
-        {isRemoteLoading ? (
-          <p className="delight-loading-note mt-2 text-xs text-muted-foreground">
-            {HOME_LOADING_LINES[loadingLineIndex]}
-          </p>
+        {debouncedQuery.length >= 2 && isSearching ? (
+          <div className="mt-3">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <div className="size-3 animate-spin rounded-full border border-current border-t-transparent" />
+              Searching…
+            </div>
+          </div>
         ) : null}
 
-        {remoteError ? (
-          <p
-            id={remoteSeriesErrorId}
-            role="alert"
-            aria-live="assertive"
-            className="mt-2 text-sm text-destructive"
-          >
-            {remoteError}
+        {debouncedQuery.length >= 2 && !isSearching && searchResults && searchResults.length > 0 ? (
+          <div className="mt-3 space-y-1.5">
+            <p className="text-xs text-muted-foreground">
+              Found {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
+            </p>
+            {searchResults.map((result) => (
+              <Link
+                key={`search:${result.id}`}
+                to="/weebcentral-series/$seriesId"
+                params={{ seriesId: result.id }}
+                className="exp-row group flex items-center gap-3"
+              >
+                {result.coverUrl ? (
+                  <FadeImage
+                    className="cover-hover h-20 w-14 shrink-0 border border-border object-cover"
+                    src={result.coverUrl}
+                    alt={`${result.title} cover`}
+                    loading="lazy"
+                    decoding="async"
+                    fetchPriority="low"
+                    style={{ viewTransitionName: `cover-${result.id}` }}
+                  />
+                ) : (
+                  <div className="flex h-20 w-14 shrink-0 items-center justify-center border border-border bg-surface-soft text-[10px] text-muted-foreground">
+                    No img
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <h4 className="truncate text-sm font-semibold text-foreground transition-colors group-hover:text-primary md:text-base">
+                    {result.title}
+                  </h4>
+                  <p className="text-xs text-muted-foreground">
+                    {result.year ? `${result.year} · ` : ''}WeebCentral
+                    {result.chapterCount ? ` · ${result.chapterCount} chapters` : ''}
+                  </p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        ) : null}
+
+        {debouncedQuery.length >= 2 && !isSearching && searchResults && searchResults.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">
+            No results found for &ldquo;{debouncedQuery}&rdquo;. Try a different search term.
           </p>
         ) : null}
 
         {savedRemoteSeries.length > 0 ? (
-          <div className="mt-5 space-y-1.5">
-            <p className="text-xs text-muted-foreground">Saved online series</p>
-            {savedRemoteSeries.map((item) => (
-              <article key={`remote:${item.id}`} className="exp-row">
-                <Link
-                  to="/weebcentral-series/$seriesId"
-                  params={{ seriesId: item.id }}
-                  className="group flex min-w-0 flex-1 items-center gap-3"
+          <div className="mt-5 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                Saved series
+                {filteredLibrarySeries.length < savedRemoteSeries.length
+                  ? ` (${filteredLibrarySeries.length} shown)`
+                  : ''}
+              </p>
+              <div className="flex items-center gap-1.5">
+                <Input
+                  value={libraryFilter}
+                  onChange={(e) => setLibraryFilter(e.target.value)}
+                  placeholder="Filter saved…"
+                  className="h-7 w-32 text-xs"
+                />
+                <select
+                  value={librarySort}
+                  onChange={(e) => setLibrarySort(e.target.value as 'title' | 'recent' | 'chapters')}
+                  className="h-7 rounded border border-border bg-surface px-1.5 text-xs text-foreground"
+                  aria-label="Sort order"
                 >
-                  {item.coverUrl ? (
-                    <FadeImage
-                      className="cover-hover h-20 w-14 shrink-0 border border-border object-cover"
-                      src={item.coverUrl}
-                      alt={`${item.title} cover`}
-                      loading="lazy"
-                      decoding="async"
-                      fetchPriority="low"
-                      style={{ viewTransitionName: `cover-${item.id}` }}
-                    />
-                  ) : (
-                    <div className="flex h-20 w-14 shrink-0 items-center justify-center border border-border bg-surface-soft text-[10px] text-muted-foreground">
-                      None
+                  <option value="recent">Recent</option>
+                  <option value="title">Title</option>
+                  <option value="chapters">Chapters</option>
+                </select>
+              </div>
+            </div>
+            {filteredLibrarySeries.map((item) => {
+              const completedCount = completedChaptersBySeriesId.get(item.id) ?? 0
+              const progress = item.chapterCount > 0 ? completedCount / item.chapterCount : 0
+
+              return (
+                <article key={`remote:${item.id}`} className="exp-row">
+                  <Link
+                    to="/weebcentral-series/$seriesId"
+                    params={{ seriesId: item.id }}
+                    className="group flex min-w-0 flex-1 items-center gap-3"
+                  >
+                    {item.coverUrl ? (
+                      <FadeImage
+                        className="cover-hover h-20 w-14 shrink-0 border border-border object-cover"
+                        src={item.coverUrl}
+                        alt={`${item.title} cover`}
+                        loading="lazy"
+                        decoding="async"
+                        fetchPriority="low"
+                        style={{ viewTransitionName: `cover-${item.id}` }}
+                      />
+                    ) : (
+                      <div className="flex h-20 w-14 shrink-0 items-center justify-center border border-border bg-surface-soft text-[10px] text-muted-foreground">
+                        None
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <h4 className="truncate text-sm font-semibold text-foreground transition-colors group-hover:text-primary md:text-base">
+                        {item.title}
+                      </h4>
+                      <p className="text-xs text-muted-foreground">
+                        {item.chapterCount} chapters
+                        {completedCount > 0 ? ` · ${completedCount} read` : ''}
+                      </p>
+                      {item.chapterCount > 0 ? (
+                        <div className="mt-1 h-1 w-24 rounded-full bg-border" role="progressbar" aria-valuenow={completedCount} aria-valuemin={0} aria-valuemax={item.chapterCount} aria-label={`${Math.round(progress * 100)}% read`}>
+                          <div
+                            className="h-full rounded-full bg-koten transition-all"
+                            style={{ width: `${Math.min(100, Math.round(progress * 100))}%` }}
+                          />
+                        </div>
+                      ) : null}
                     </div>
-                  )}
-                  <div className="min-w-0">
-                    <h4 className="truncate text-sm font-semibold text-foreground transition-colors group-hover:text-primary md:text-base">
-                      {item.title}
-                    </h4>
-                    <p className="text-xs text-muted-foreground">
-                      {item.chapters.length} chapters
-                    </p>
-                  </div>
-                </Link>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-8 text-destructive/90 hover:text-destructive"
-                  aria-label={`Remove saved series ${item.title}`}
-                  title={`Remove saved series ${item.title}`}
-                  onClick={() => handleRemoveSeries(item)}
-                >
-                  <Trash2 className="size-4" aria-hidden />
-                </Button>
-              </article>
-            ))}
+                  </Link>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 text-destructive/90 hover:text-destructive"
+                    aria-label={`Remove saved series ${item.title}`}
+                    title={`Remove saved series ${item.title}`}
+                    onClick={() => handleRemoveSeries(item)}
+                  >
+                    <Trash2 className="size-4" aria-hidden />
+                  </Button>
+                </article>
+              )
+            })}
           </div>
         ) : null}
       </section>
@@ -726,6 +787,68 @@ function LibraryPage() {
             Built for keyboard and touch reading, with persistent progress and
             installable PWA support.
           </p>
+        </details>
+        <details className="exp-details-panel px-3 py-2">
+          <summary className="exp-details-summary">
+            Data management
+          </summary>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Export your library, reading history, and progress as a JSON file.
+            Import a backup to restore your data on another device or after
+            clearing browser data.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="soft"
+              size="sm"
+              onClick={() => {
+                const data = exportAllData()
+                downloadExport(data)
+              }}
+            >
+              Export data
+            </Button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={async (event) => {
+                const file = event.target.files?.[0]
+                if (!file) return
+                setImportMessage(null)
+                try {
+                  const text = await file.text()
+                  const parsed = JSON.parse(text)
+                  if (!validateImportData(parsed)) {
+                    setImportMessage('Invalid backup file format.')
+                    return
+                  }
+                  const count = importData(parsed)
+                  setImportMessage(
+                    `Imported ${count} item${count !== 1 ? 's' : ''}. Reloading page…`,
+                  )
+                  refreshSideData()
+                  setTimeout(() => window.location.reload(), 1500)
+                } catch {
+                  setImportMessage('Could not read the file. Please try again.')
+                }
+                event.target.value = ''
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => importInputRef.current?.click()}
+            >
+              Import data
+            </Button>
+          </div>
+          {importMessage ? (
+            <p className="mt-2 text-xs text-muted-foreground">{importMessage}</p>
+          ) : null}
         </details>
       </section>
 

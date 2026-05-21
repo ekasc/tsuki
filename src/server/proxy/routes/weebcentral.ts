@@ -2,6 +2,7 @@ import { detectRemoteProviderFromInput } from '#/lib/remote-provider'
 import {
   getWeebcentralChapter,
   getWeebcentralSeries,
+  searchWeebcentral,
 } from '../adapters/weebcentral'
 import { getMangaDexChapter, getMangaDexSeries } from '../adapters/mangadex'
 import { proxyConfig } from '../server'
@@ -167,6 +168,42 @@ export async function getChapterDtoForRequest(request: Request) {
       requestPath,
       requestId,
       provider,
+      prefetch,
+      cachePolicy: 'metadata',
+      startedAt,
+    },
+  )
+}
+
+export async function searchSeriesDtoForRequest(request: Request) {
+  const startedAt = Date.now()
+  const requestPath = new URL(request.url).pathname
+  const requestId = resolveRequestId(request)
+  const prefetch = isPrefetchRequest(request)
+  await enforceWeebcentralApiRateLimit(request, proxyConfig)
+  const url = new URL(request.url)
+  const query = url.searchParams.get('q')?.trim()
+  if (!query) {
+    throw new HttpError(400, 'Missing query parameter: q')
+  }
+  const telemetry = {
+    route: '/v1/weebcentral/search',
+    requestId,
+    method: request.method,
+    path: requestPath,
+    provider: 'weebcentral',
+    prefetch,
+  }
+
+  return traceProxy(
+    () => searchWeebcentral(query, proxyConfig, { telemetry }),
+    {
+      route: '/v1/weebcentral/search',
+      metricName: 'proxy.search',
+      request,
+      requestPath,
+      requestId,
+      provider: 'weebcentral',
       prefetch,
       cachePolicy: 'metadata',
       startedAt,

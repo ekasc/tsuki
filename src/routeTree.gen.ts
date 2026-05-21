@@ -17,6 +17,7 @@ import { Route as ReaderChapterIdRouteImport } from './routes/reader.$chapterId'
 import { Route as ApiUploadRouteImport } from './routes/api.upload'
 import { Route as ApiSeriesRouteImport } from './routes/api.series'
 import { Route as V1WeebcentralSeriesRouteImport } from './routes/v1.weebcentral.series'
+import { Route as V1WeebcentralSearchRouteImport } from './routes/v1.weebcentral.search'
 import { Route as V1WeebcentralChapterRouteImport } from './routes/v1.weebcentral.chapter'
 import { Route as V1UploadChapterRouteImport } from './routes/v1.upload.chapter'
 import { Route as V1ImageB64RouteImport } from './routes/v1.image.$b64'
@@ -66,6 +67,11 @@ const ApiSeriesRoute = ApiSeriesRouteImport.update({
 const V1WeebcentralSeriesRoute = V1WeebcentralSeriesRouteImport.update({
   id: '/v1/weebcentral/series',
   path: '/v1/weebcentral/series',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const V1WeebcentralSearchRoute = V1WeebcentralSearchRouteImport.update({
+  id: '/v1/weebcentral/search',
+  path: '/v1/weebcentral/search',
   getParentRoute: () => rootRouteImport,
 } as any)
 const V1WeebcentralChapterRoute = V1WeebcentralChapterRouteImport.update({
@@ -131,6 +137,7 @@ export interface FileRoutesByFullPath {
   '/v1/image/$b64': typeof V1ImageB64Route
   '/v1/upload/chapter': typeof V1UploadChapterRoute
   '/v1/weebcentral/chapter': typeof V1WeebcentralChapterRoute
+  '/v1/weebcentral/search': typeof V1WeebcentralSearchRoute
   '/v1/weebcentral/series': typeof V1WeebcentralSeriesRoute
   '/api/chapter/$chapterId/progress': typeof ApiChapterChapterIdProgressRoute
   '/api/image/$chapterId/$pageIndex': typeof ApiImageChapterIdPageIndexRoute
@@ -150,6 +157,7 @@ export interface FileRoutesByTo {
   '/v1/image/$b64': typeof V1ImageB64Route
   '/v1/upload/chapter': typeof V1UploadChapterRoute
   '/v1/weebcentral/chapter': typeof V1WeebcentralChapterRoute
+  '/v1/weebcentral/search': typeof V1WeebcentralSearchRoute
   '/v1/weebcentral/series': typeof V1WeebcentralSeriesRoute
   '/api/chapter/$chapterId/progress': typeof ApiChapterChapterIdProgressRoute
   '/api/image/$chapterId/$pageIndex': typeof ApiImageChapterIdPageIndexRoute
@@ -170,6 +178,7 @@ export interface FileRoutesById {
   '/v1/image/$b64': typeof V1ImageB64Route
   '/v1/upload/chapter': typeof V1UploadChapterRoute
   '/v1/weebcentral/chapter': typeof V1WeebcentralChapterRoute
+  '/v1/weebcentral/search': typeof V1WeebcentralSearchRoute
   '/v1/weebcentral/series': typeof V1WeebcentralSeriesRoute
   '/api/chapter/$chapterId/progress': typeof ApiChapterChapterIdProgressRoute
   '/api/image/$chapterId/$pageIndex': typeof ApiImageChapterIdPageIndexRoute
@@ -191,6 +200,7 @@ export interface FileRouteTypes {
     | '/v1/image/$b64'
     | '/v1/upload/chapter'
     | '/v1/weebcentral/chapter'
+    | '/v1/weebcentral/search'
     | '/v1/weebcentral/series'
     | '/api/chapter/$chapterId/progress'
     | '/api/image/$chapterId/$pageIndex'
@@ -210,6 +220,7 @@ export interface FileRouteTypes {
     | '/v1/image/$b64'
     | '/v1/upload/chapter'
     | '/v1/weebcentral/chapter'
+    | '/v1/weebcentral/search'
     | '/v1/weebcentral/series'
     | '/api/chapter/$chapterId/progress'
     | '/api/image/$chapterId/$pageIndex'
@@ -229,6 +240,7 @@ export interface FileRouteTypes {
     | '/v1/image/$b64'
     | '/v1/upload/chapter'
     | '/v1/weebcentral/chapter'
+    | '/v1/weebcentral/search'
     | '/v1/weebcentral/series'
     | '/api/chapter/$chapterId/progress'
     | '/api/image/$chapterId/$pageIndex'
@@ -248,6 +260,7 @@ export interface RootRouteChildren {
   V1ImageB64Route: typeof V1ImageB64Route
   V1UploadChapterRoute: typeof V1UploadChapterRoute
   V1WeebcentralChapterRoute: typeof V1WeebcentralChapterRoute
+  V1WeebcentralSearchRoute: typeof V1WeebcentralSearchRoute
   V1WeebcentralSeriesRoute: typeof V1WeebcentralSeriesRoute
   ApiImageChapterIdPageIndexRoute: typeof ApiImageChapterIdPageIndexRoute
   V1LocalChapterIdFilenameRoute: typeof V1LocalChapterIdFilenameRoute
@@ -309,6 +322,13 @@ declare module '@tanstack/react-router' {
       path: '/v1/weebcentral/series'
       fullPath: '/v1/weebcentral/series'
       preLoaderRoute: typeof V1WeebcentralSeriesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/v1/weebcentral/search': {
+      id: '/v1/weebcentral/search'
+      path: '/v1/weebcentral/search'
+      fullPath: '/v1/weebcentral/search'
+      preLoaderRoute: typeof V1WeebcentralSearchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/v1/weebcentral/chapter': {
@@ -414,6 +434,7 @@ const rootRouteChildren: RootRouteChildren = {
   V1ImageB64Route: V1ImageB64Route,
   V1UploadChapterRoute: V1UploadChapterRoute,
   V1WeebcentralChapterRoute: V1WeebcentralChapterRoute,
+  V1WeebcentralSearchRoute: V1WeebcentralSearchRoute,
   V1WeebcentralSeriesRoute: V1WeebcentralSeriesRoute,
   ApiImageChapterIdPageIndexRoute: ApiImageChapterIdPageIndexRoute,
   V1LocalChapterIdFilenameRoute: V1LocalChapterIdFilenameRoute,

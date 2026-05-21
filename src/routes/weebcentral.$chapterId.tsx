@@ -22,6 +22,7 @@ if (typeof window !== 'undefined') {
 
 import { ContinuousScroll } from '#/components/reader/continuous-scroll'
 import { PagePane } from '#/components/reader/page-pane'
+import { ChapterPanel } from '#/components/ChapterPanel'
 import { Button } from '#/components/ui/button'
 import {
   ReaderEdgeArrowButton,
@@ -767,6 +768,7 @@ function WeebcentralReaderPage() {
   const [doublePageOffset, setDoublePageOffset] = useState<boolean>(
     initialUiPrefs.doublePageOffset,
   )
+  const [showChapterPanel, setShowChapterPanel] = useState(false)
   const [mobileSettingsMinimized, setMobileSettingsMinimized] = useState(false)
   const [preloadAhead, setPreloadAhead] = useState<number>(
     initialUiPrefs.preloadAhead,
@@ -852,7 +854,6 @@ function WeebcentralReaderPage() {
   const swipeTrackRef = useRef<HTMLDivElement>(null)
   const swipeOffsetRef = useRef(0)
   const swipeDraggingRef = useRef(false)
-  const chapterJumpInteractionRef = useRef(false)
   const nativePagerRef = useRef<HTMLDivElement>(null)
   const pagerSettleTimeoutRef = useRef<number | null>(null)
   const nativePagerCenterRafRef = useRef<number | null>(null)
@@ -3446,50 +3447,14 @@ function WeebcentralReaderPage() {
                   />
 
                   {orderedSeriesChapters.length ? (
-                    <>
-                      <p className="reader-settings-heading">Chapter jump</p>
-                      {orderedSeriesChapters.length > 0 ? (
-                        <SelectField
-                          value={chapter.chapterId}
-                          aria-label="Chapter jump"
-                          onPointerDown={() => {
-                            chapterJumpInteractionRef.current = true
-                          }}
-                          onKeyDown={(event) => {
-                            if (
-                              event.key === 'ArrowLeft' ||
-                              event.key === 'ArrowRight'
-                            ) {
-                              chapterJumpInteractionRef.current = false
-                              event.preventDefault()
-                              event.stopPropagation()
-                              return
-                            }
-                            chapterJumpInteractionRef.current = true
-                          }}
-                          onChange={(event) => {
-                            if (!chapterJumpInteractionRef.current) {
-                              return
-                            }
-                            chapterJumpInteractionRef.current = false
-                            const nextId = event.target.value
-                            if (nextId === chapter.chapterId) {
-                              return
-                            }
-                            goToChapter(nextId)
-                          }}
-                          className="h-12 min-w-0"
-                          options={orderedSeriesChapters.map((entry) => ({
-                            value: entry.id,
-                            label: `Chapter ${entry.number}`,
-                          }))}
-                        />
-                      ) : (
-                        <p className="col-span-2 px-1 text-xs text-muted-foreground">
-                          No chapter found. Try a different number.
-                        </p>
-                      )}
-                    </>
+                    <Button
+                      type="button"
+                      variant="soft"
+                      className="h-12 w-full"
+                      onClick={() => setShowChapterPanel(true)}
+                    >
+                      Chapters ({orderedSeriesChapters.length})
+                    </Button>
                   ) : null}
                 </>
               ) : null}
@@ -3545,50 +3510,14 @@ function WeebcentralReaderPage() {
                 </div>
                 {orderedSeriesChapters.length ? (
                   <div className="mt-2">
-                    <p className="reader-settings-heading col-span-2">
-                      Chapter jump
-                    </p>
-                    {orderedSeriesChapters.length > 0 ? (
-                      <SelectField
-                        value={chapter.chapterId}
-                        aria-label="Chapter jump"
-                        onPointerDown={() => {
-                          chapterJumpInteractionRef.current = true
-                        }}
-                        onKeyDown={(event) => {
-                          if (
-                            event.key === 'ArrowLeft' ||
-                            event.key === 'ArrowRight'
-                          ) {
-                            chapterJumpInteractionRef.current = false
-                            event.preventDefault()
-                            event.stopPropagation()
-                            return
-                          }
-                          chapterJumpInteractionRef.current = true
-                        }}
-                        onChange={(event) => {
-                          if (!chapterJumpInteractionRef.current) {
-                            return
-                          }
-                          chapterJumpInteractionRef.current = false
-                          const nextId = event.target.value
-                          if (nextId === chapter.chapterId) {
-                            return
-                          }
-                          goToChapter(nextId)
-                        }}
-                        className="h-12 min-w-0 col-span-2"
-                        options={orderedSeriesChapters.map((entry) => ({
-                          value: entry.id,
-                          label: `Chapter ${entry.number}`,
-                        }))}
-                      />
-                    ) : (
-                      <p className="col-span-2 px-1 text-xs text-muted-foreground">
-                        No chapter found. Try a different number.
-                      </p>
-                    )}
+                    <Button
+                      type="button"
+                      variant="soft"
+                      className="h-10 w-full"
+                      onClick={() => setShowChapterPanel(true)}
+                    >
+                      Chapters ({orderedSeriesChapters.length})
+                    </Button>
                   </div>
                 ) : null}
                 <details className="reader-settings-advanced mt-2 text-xs text-muted-foreground">
@@ -3905,6 +3834,18 @@ function WeebcentralReaderPage() {
           <div className="absolute inset-0 border border-border/70" />
         </div>
       ) : null}
+
+      {showChapterPanel && series && (
+        <ChapterPanel
+          chapters={series.chapters}
+          currentChapterId={params.chapterId}
+          onSelectChapter={(nextId) => {
+            setShowChapterPanel(false)
+            goToChapter(nextId)
+          }}
+          onClose={() => setShowChapterPanel(false)}
+        />
+      )}
     </div>
   )
 }

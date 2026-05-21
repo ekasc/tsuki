@@ -2,6 +2,7 @@ import { queryOptions } from '@tanstack/react-query'
 
 import type {
   ChapterPayload,
+  SearchResult,
   SeriesDetail,
   WeebcentralChapterDTO,
   WeebcentralSeriesDTO,
@@ -102,5 +103,18 @@ export function weebcentralSeriesQueryOptions(
       : (failureCount, error) =>
           failureCount < 2 && isRetryableUpstreamError(error),
     retryDelay: (attempt) => (attempt === 1 ? 220 : 520),
+  })
+}
+
+export function weebcentralSearchQueryOptions(query: string) {
+  return queryOptions({
+    queryKey: ['weebcentral-search', query] as const,
+    queryFn: () =>
+      fetchJson<SearchResult[]>(
+        `/v1/weebcentral/search?q=${encodeURIComponent(query)}`,
+      ),
+    staleTime: REMOTE_STALE_TIME_MS,
+    gcTime: GC_TIME_MS,
+    enabled: query.trim().length >= 2,
   })
 }

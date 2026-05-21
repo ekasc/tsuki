@@ -16,7 +16,6 @@ export function getRouter() {
     defaultStaleTime: 30_000,
     defaultPreloadStaleTime: 60_000,
     defaultGcTime: 15 * 60_000,
-    defaultViewTransition: true,
   })
 
   setupRouterSsrQueryIntegration({ router, queryClient })

@@ -83,6 +83,27 @@ export interface ReadingHistoryItem {
   updatedAt: number
 }
 
+export interface SavedSeriesSummary {
+  id: string
+  title: string
+  coverUrl?: string
+  author?: string
+  description?: string
+  chapterCount: number
+  provider: RemoteProvider
+  savedAt: number
+}
+
+export interface SearchResult {
+  id: string
+  title: string
+  coverUrl?: string
+  provider: RemoteProvider
+  year?: number
+  status?: string
+  chapterCount?: number
+}
+
 export interface WeebcentralSeriesDTO {
   provider?: RemoteProvider
   id: string

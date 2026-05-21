@@ -121,6 +121,18 @@ export async function proxyImageByEncodedUrl(
       )
     }
 
+    const upstreamContentType = pickHeader(
+      upstreamResponse.headers,
+      'content-type',
+    )
+
+    if (
+      !upstreamContentType ||
+      !upstreamContentType.startsWith('image/')
+    ) {
+      throw new HttpError(502, 'Upstream response is not an image')
+    }
+
     const headers = new Headers()
     headers.set('Cache-Control', IMAGE_PROXY_CACHE_CONTROL)
     headers.set('X-Content-Type-Options', 'nosniff')
@@ -188,11 +200,7 @@ export async function proxyImageByEncodedUrl(
       })
     }
 
-    headers.set(
-      'Content-Type',
-      pickHeader(upstreamResponse.headers, 'content-type') ??
-        'application/octet-stream',
-    )
+    headers.set('Content-Type', upstreamContentType)
 
     const copyHeaders = ['content-length', 'etag', 'last-modified']
 
