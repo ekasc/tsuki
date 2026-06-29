@@ -340,3 +340,206 @@
     animation: none;
   }
 }
+
+/* ── Image rendering quality per zoom mode ── */
+
+.reader-image-actual {
+  image-rendering: crisp-edges;
+  image-rendering: -webkit-optimize-contrast;
+}
+
+.reader-image-fit-height,
+.reader-image-fit-width {
+  image-rendering: auto;
+}
+
+/* ── GSAP-powered page transition wrappers ── */
+
+.reader-page-enter {
+  opacity: 0;
+}
+
+.reader-page-enter-active {
+  transition: opacity 160ms ease-out;
+}
+
+.reader-page-exit {
+  opacity: 0;
+}
+
+.reader-page-exit-active {
+  transition: opacity 120ms ease-in;
+}
+
+/* ── Broken image placeholder icon ── */
+
+.reader-broken-icon {
+  opacity: 0.5;
+  width: 48px;
+  height: 48px;
+  position: relative;
+}
+
+.reader-broken-icon::before,
+.reader-broken-icon::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+}
+
+.reader-broken-icon::before {
+  width: 32px;
+  height: 24px;
+  border: 2px solid rgba(255,255,255,0.5);
+  border-radius: 2px;
+  top: -4px;
+}
+
+.reader-broken-icon::after {
+  width: 14px;
+  height: 14px;
+  border-left: 2px solid rgba(255,255,255,0.5);
+  border-bottom: 2px solid rgba(255,255,255,0.5);
+  transform: rotate(-45deg);
+  top: 6px;
+  left: 4px;
+}
+
+/* ── Smooth page turn animation target ── */
+
+.reader-page-frame {
+  will-change: transform, opacity;
+}
+
+/* ── Mobile bottom navigation bar ── */
+.reader-mobile-bottom-bar {
+  position: fixed;
+  left: max(0.5rem, calc(var(--safe-left) + 0.5rem));
+  right: max(0.5rem, calc(var(--safe-right) + 0.5rem));
+  bottom: max(0.75rem, calc(var(--safe-bottom) + 0.5rem));
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid color-mix(in oklab, var(--border), transparent 18%);
+  background: color-mix(in oklab, var(--surface-soft) 90%, var(--bg) 10%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 14px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  transition: opacity 300ms ease, transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+[data-platform='ios'] .reader-mobile-bottom-bar {
+  border-radius: 14px;
+}
+
+[data-platform='android'] .reader-mobile-bottom-bar {
+  border-radius: 10px;
+}
+
+.reader-mobile-bottom-bar.hidden {
+  opacity: 0;
+  transform: translateY(16px);
+  pointer-events: none;
+}
+
+/* ── Mobile bottom sheet ── */
+.reader-bottom-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.4);
+  animation: bottom-sheet-fade-in 200ms ease-out both;
+}
+
+.reader-bottom-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 41;
+  padding-bottom: var(--safe-bottom);
+  background: color-mix(in oklab, var(--surface) 96%, var(--bg) 4%);
+  border-top: 1px solid color-mix(in oklab, var(--border), transparent 18%);
+  border-radius: 16px 16px 0 0;
+  max-height: 70vh;
+  overflow-y: auto;
+  animation: bottom-sheet-slide-up 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.reader-bottom-sheet-drag-handle {
+  width: 36px;
+  height: 5px;
+  margin: 10px auto;
+  background: color-mix(in oklab, var(--border), transparent 30%);
+  border-radius: 3px;
+}
+
+@keyframes bottom-sheet-slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes bottom-sheet-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ── Mobile tap zone feedback ── */
+.reader-mobile-tap-feedback {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.reader-mobile-tap-feedback::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  transition: background 80ms ease;
+}
+
+.reader-mobile-tap-feedback:active::after {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ── Mobile touch safety ── */
+.reader-touch-root {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Mobile page scrubber thumb-friendly ── */
+.mobile-scrubber input[type='range'] {
+  height: 32px;
+  cursor: pointer;
+}
+
+.mobile-scrubber input[type='range']::-webkit-slider-thumb {
+  width: 24px;
+  height: 24px;
+  margin-top: -10px;
+}
+
+/* ── Smooth theme-aware touch targets ── */
+.touch-min-44 {
+  min-height: 44px;
+}
+
+.touch-min-44-wide {
+  min-height: 44px;
+  min-width: 44px;
+}

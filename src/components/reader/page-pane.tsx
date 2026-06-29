@@ -19,17 +19,15 @@ interface PagePaneProps {
 
 function imageClassName(zoomPreset: ZoomPreset) {
   if (zoomPreset === 'fit-width') {
-    return 'h-auto w-full'
+    return 'h-auto w-full reader-image-fit-width'
   }
 
   if (zoomPreset === 'actual') {
-    return 'h-auto w-auto max-w-none'
+    return 'h-auto w-auto max-w-none reader-image-actual'
   }
 
-  return 'h-full w-auto'
-}
-
-export const PagePane = memo(
+  return 'h-full w-auto reader-image-fit-height'
+}export const PagePane = memo(
   function PagePane({
     chapterId,
     unit,
@@ -83,8 +81,9 @@ export const PagePane = memo(
     }, [])
 
     const errorOverlay = imageError ? (
-      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-black/80">
-        <p className="text-sm text-white/80">Image failed to load</p>
+      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/85">
+        <div className="reader-broken-icon" aria-hidden="true" />
+        <p className="text-xs text-white/50">Image failed to load</p>
         <Button
           variant="soft"
           className="h-8 px-3 text-xs"

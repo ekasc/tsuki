@@ -1,5 +1,5 @@
 {
-  "name": "suki",
+  "name": "tsuki",
   "private": true,
   "type": "module",
   "imports": {
@@ -31,7 +31,7 @@
   "dependencies": {
     "@gsap/react": "^2.1.2",
     "@tailwindcss/vite": "4.2.2",
-    "@tanstack/react-query": "^5.99.2",
+    "@tanstack/react-query": "^5.101.2",
     "@tanstack/react-router": "1.168.23",
     "@tanstack/react-router-ssr-query": "1.166.11",
     "@tanstack/react-start": "1.167.42",
@@ -58,7 +58,7 @@
     "zod": "4.3.6"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.32.3",
+    "@cloudflare/vite-plugin": "^1.42.3",
     "@lhci/cli": "^0.15.1",
     "@playwright/test": "1.59.1",
     "@types/better-sqlite3": "7.6.13",
@@ -73,13 +73,11 @@
     "typescript": "6.0.3",
     "vite": "8.0.8",
     "vitest": "4.1.4",
-    "wrangler": "^4.83.0"
+    "wrangler": "^4.105.0"
   },
-  "packageManager": "pnpm@10.32.1",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "better-sqlite3",
-      "sharp"
-    ]
-  }
+  "packageManager": "pnpm@11.9.0",
+  "onlyBuiltDependencies": [
+    "better-sqlite3",
+    "sharp"
+  ]
 }

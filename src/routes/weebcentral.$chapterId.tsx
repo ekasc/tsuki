@@ -56,6 +56,7 @@ import {
   type PairingStep,
   type RenderUnit,
 } from '#/lib/reader/pairing'
+import * as ReaderUI from '#/lib/reader/reader-ui-storage'
 import { useTouchDevice, useTouchPortrait } from '#/hooks/use-touch-portrait'
 
 function WeebcentralPending() {
@@ -135,55 +136,7 @@ const remotePageDimensionsCache = new Map<
 >()
 const REMOTE_READER_UI_PREFS_KEY = 'tsuki-remote-reader-ui.v1'
 const LEGACY_REMOTE_READER_UI_PREFS_KEY = 'suki-remote-reader-ui.v1'
-const REMOTE_READER_SERIES_PRESETS_KEY = 'tsuki-remote-reader-series-presets.v1'
-const LEGACY_REMOTE_READER_SERIES_PRESETS_KEY =
-  'suki-remote-reader-series-presets.v1'
-const REMOTE_READER_OPENING_LINES = [
-  'Warming up page turns…',
-  'Pulling chapter pages…',
-  'Locking in your reading lane…',
-] as const
-const useIsomorphicLayoutEffect =
-  typeof window === 'undefined' ? useEffect : useLayoutEffect
-
-function readStorageWithLegacy(key: string, legacyKey: string): string | null {
-  const value = window.localStorage.getItem(key)
-  if (value) {
-    return value
-  }
-
-  const legacyValue = window.localStorage.getItem(legacyKey)
-  if (!legacyValue) {
-    return null
-  }
-
-  window.localStorage.setItem(key, legacyValue)
-  return legacyValue
-}
-
-interface StoredRemoteProgress {
-  pageIndex: number
-  mode: ReaderMode
-  direction: ReaderDirection
-  zoomPreset: ZoomPreset
-}
-
-interface ReaderUiPrefs {
-  mode: ReaderMode
-  zoomPreset: ZoomPreset
-  sidebarOpen: boolean
-  doublePageOffset: boolean
-  preloadAhead: number
-  preloadBehind: number
-  prefetchConcurrency: number
-  nextChapterPrefetchThreshold: number
-  nextChapterWarmPages: number
-  uiAutoHideMs: number
-  magnifierSize: number
-  magnifierZoom: number
-}
-
-const DEFAULT_REMOTE_READER_UI_PREFS: ReaderUiPrefs = {
+const DEFAULT_REMOTE_READER_UI_PREFS: ReaderUI.ReaderUiPrefs = {
   mode: 'single',
   zoomPreset: 'fit-width',
   sidebarOpen: false,
@@ -198,249 +151,43 @@ const DEFAULT_REMOTE_READER_UI_PREFS: ReaderUiPrefs = {
   magnifierZoom: 2.4,
 }
 
-interface ReaderSeriesPreset {
+const REMOTE_READER_SERIES_PRESETS_KEY = 'tsuki-remote-reader-series-presets.v1'
+const LEGACY_REMOTE_READER_SERIES_PRESETS_KEY =
+  'suki-remote-reader-series-presets.v1'
+const REMOTE_READER_OPENING_LINES = [
+  'Warming up page turns…',
+  'Pulling chapter pages…',
+  'Locking in your reading lane…',
+] as const
+const useIsomorphicLayoutEffect =
+  typeof window === 'undefined' ? useEffect : useLayoutEffect
+
+
+
+interface StoredRemoteProgress {
+  pageIndex: number
   mode: ReaderMode
+  direction: ReaderDirection
   zoomPreset: ZoomPreset
-  readingDirection: ReaderDirection
-  doublePageOffset: boolean
-  magnifierEnabled: boolean
-  focusMode: boolean
 }
 
-function loadReaderSeriesPreset(seriesId: string): ReaderSeriesPreset | null {
-  if (typeof window === 'undefined') {
-    return null
-  }
 
-  try {
-    const raw = readStorageWithLegacy(
-      REMOTE_READER_SERIES_PRESETS_KEY,
-      LEGACY_REMOTE_READER_SERIES_PRESETS_KEY,
-    )
-    if (!raw) {
-      return null
-    }
 
-    const payload = JSON.parse(raw) as Record<
-      string,
-      Partial<ReaderSeriesPreset>
-    >
-    const preset = payload[seriesId]
-    if (!preset) {
-      return null
-    }
 
-    return {
-      mode:
-        preset.mode === 'double' || preset.mode === 'scroll'
-          ? preset.mode
-          : 'single',
-      zoomPreset:
-        preset.zoomPreset === 'fit-width' || preset.zoomPreset === 'actual'
-          ? preset.zoomPreset
-          : 'fit-width',
-      readingDirection: preset.readingDirection === 'ltr' ? 'ltr' : 'rtl',
-      doublePageOffset: Boolean(preset.doublePageOffset),
-      magnifierEnabled: Boolean(preset.magnifierEnabled),
-      focusMode: Boolean(preset.focusMode),
-    }
-  } catch {
-    return null
-  }
-}
 
-function saveReaderSeriesPreset(seriesId: string, preset: ReaderSeriesPreset) {
-  if (typeof window === 'undefined') {
-    return
-  }
 
-  try {
-    const raw = readStorageWithLegacy(
-      REMOTE_READER_SERIES_PRESETS_KEY,
-      LEGACY_REMOTE_READER_SERIES_PRESETS_KEY,
-    )
-    const payload = raw
-      ? (JSON.parse(raw) as Record<string, ReaderSeriesPreset>)
-      : {}
 
-    payload[seriesId] = preset
-    window.localStorage.setItem(
-      REMOTE_READER_SERIES_PRESETS_KEY,
-      JSON.stringify(payload),
-    )
-  } catch {
-    // Ignore localStorage persistence failures.
-  }
-}
 
-function loadReaderUiPrefs(
-  storageKey: string,
-  legacyKey?: string,
-): ReaderUiPrefs | null {
-  if (typeof window === 'undefined') {
-    return null
-  }
 
-  try {
-    const raw = legacyKey
-      ? readStorageWithLegacy(storageKey, legacyKey)
-      : window.localStorage.getItem(storageKey)
-    if (!raw) {
-      return null
-    }
 
-    const parsed = JSON.parse(raw) as Partial<ReaderUiPrefs>
-    if (!parsed) {
-      return null
-    }
 
-    return {
-      mode:
-        parsed.mode === 'double' || parsed.mode === 'scroll'
-          ? parsed.mode
-          : 'single',
-      zoomPreset:
-        parsed.zoomPreset === 'fit-width' || parsed.zoomPreset === 'actual'
-          ? parsed.zoomPreset
-          : 'fit-width',
-      sidebarOpen: Boolean(parsed.sidebarOpen),
-      doublePageOffset: Boolean(parsed.doublePageOffset),
-      preloadAhead:
-        typeof parsed.preloadAhead === 'number'
-          ? Math.max(1, Math.min(16, Math.floor(parsed.preloadAhead)))
-          : 6,
-      preloadBehind:
-        typeof parsed.preloadBehind === 'number'
-          ? Math.max(0, Math.min(8, Math.floor(parsed.preloadBehind)))
-          : 2,
-      prefetchConcurrency:
-        typeof parsed.prefetchConcurrency === 'number'
-          ? Math.max(1, Math.min(4, Math.floor(parsed.prefetchConcurrency)))
-          : 2,
-      nextChapterPrefetchThreshold:
-        typeof parsed.nextChapterPrefetchThreshold === 'number'
-          ? Math.max(
-              1,
-              Math.min(12, Math.floor(parsed.nextChapterPrefetchThreshold)),
-            )
-          : 6,
-      nextChapterWarmPages:
-        typeof parsed.nextChapterWarmPages === 'number'
-          ? Math.max(1, Math.min(6, Math.floor(parsed.nextChapterWarmPages)))
-          : 2,
-      uiAutoHideMs:
-        typeof parsed.uiAutoHideMs === 'number'
-          ? Math.max(400, Math.min(5000, Math.floor(parsed.uiAutoHideMs)))
-          : 1400,
-      magnifierSize:
-        typeof parsed.magnifierSize === 'number'
-          ? Math.max(120, Math.min(420, Math.floor(parsed.magnifierSize)))
-          : 220,
-      magnifierZoom:
-        typeof parsed.magnifierZoom === 'number'
-          ? Math.max(2, Math.min(5, parsed.magnifierZoom))
-          : 2.4,
-    }
-  } catch {
-    return null
-  }
-}
 
-function saveReaderUiPrefs(storageKey: string, prefs: ReaderUiPrefs) {
-  if (typeof window === 'undefined') {
-    return
-  }
 
-  window.localStorage.setItem(storageKey, JSON.stringify(prefs))
-}
 
-function buildDoublePageStepsWithOffset(
-  pages: PairingPage[],
-  offsetEnabled: boolean,
-): PairingStep[] {
-  if (!offsetEnabled || pages.length === 0) {
-    return buildTwoPageSteps(pages)
-  }
 
-  const first = pages[0]
-  if (!first || first.autoIsSpread || first.splitSpread) {
-    return buildTwoPageSteps(pages)
-  }
 
-  const rest = pages.slice(1)
-  const restSteps = buildTwoPageSteps(rest)
 
-  return [
-    {
-      kind: 'single',
-      anchorPageIndex: first.index,
-      units: [{ type: 'page', pageIndex: first.index }],
-    },
-    ...restSteps,
-  ]
-}
 
-function expandStepsForPortraitSingle(
-  steps: PairingStep[],
-  pages: ChapterPageManifest[],
-  readingDirection: ReaderDirection,
-): PairingStep[] {
-  if (steps.length === 0) {
-    return []
-  }
-
-  const inferredFlags = inferAutoSpreadFlags(
-    pages.map((page) => ({
-      width: page.width,
-      height: page.height,
-    })),
-  )
-  const inferredByPageIndex = new Map<number, boolean>()
-  pages.forEach((page, index) => {
-    inferredByPageIndex.set(page.pageIndex, Boolean(inferredFlags[index]))
-  })
-
-  return steps.flatMap((step) => {
-    return step.units.flatMap((unit) => {
-      if (unit.type === 'page') {
-        const page = pages.find((entry) => entry.pageIndex === unit.pageIndex)
-        const isSpread = page
-          ? page.autoIsSpread ||
-            page.splitSpread === true ||
-            page.aspect >= 0.95 ||
-            inferredByPageIndex.get(unit.pageIndex) === true
-          : inferredByPageIndex.get(unit.pageIndex) === true
-
-        if (isSpread) {
-          const cropOrder =
-            readingDirection === 'ltr'
-              ? (['left', 'right'] as const)
-              : (['right', 'left'] as const)
-
-          return cropOrder.map((crop) => ({
-            kind: 'single' as const,
-            anchorPageIndex: unit.pageIndex,
-            units: [
-              {
-                type: 'page' as const,
-                pageIndex: unit.pageIndex,
-                crop,
-              },
-            ],
-          }))
-        }
-      }
-
-      return [
-        {
-          kind: 'single' as const,
-          anchorPageIndex: unit.pageIndex,
-          units: [unit],
-        },
-      ]
-    })
-  })
-}
 
 function buildSinglePageSteps(
   pages: ChapterPageManifest[],
@@ -576,7 +323,7 @@ function blurReaderFocusTarget() {
 
 function loadRemoteProgress(chapterId: string): StoredRemoteProgress | null {
   try {
-    const raw = readStorageWithLegacy(
+    const raw = ReaderUI.readStorageWithLegacy(
       REMOTE_PROGRESS_STORAGE_KEY,
       LEGACY_REMOTE_PROGRESS_STORAGE_KEY,
     )
@@ -611,7 +358,7 @@ function loadRemoteProgress(chapterId: string): StoredRemoteProgress | null {
 
 function saveRemoteProgress(chapterId: string, progress: StoredRemoteProgress) {
   try {
-    const raw = readStorageWithLegacy(
+    const raw = ReaderUI.readStorageWithLegacy(
       REMOTE_PROGRESS_STORAGE_KEY,
       LEGACY_REMOTE_PROGRESS_STORAGE_KEY,
     )
@@ -666,11 +413,11 @@ function derivePageIndices(
 ): ReaderPageState {
   const safeIdx = clamp(pageIndex, 0, Math.max(pages.length - 1, 0))
   const pairingPages = pages.map(asPairingPage)
-  const doubleSteps = buildDoublePageStepsWithOffset(
+  const doubleSteps = ReaderUI.buildDoublePageStepsWithOffset(
     pairingPages,
     doublePageOffset,
   )
-  const portraitSteps = expandStepsForPortraitSingle(
+  const portraitSteps = ReaderUI.expandStepsForPortraitSingle(
     doubleSteps,
     pages,
     readingDirection,
@@ -742,9 +489,10 @@ function WeebcentralReaderPage() {
   const [error, setError] = useState<string | null>(null)
   const initialUiPrefs = useMemo(
     () =>
-      loadReaderUiPrefs(
+      ReaderUI.loadReaderUiPrefs(
         REMOTE_READER_UI_PREFS_KEY,
         LEGACY_REMOTE_READER_UI_PREFS_KEY,
+        DEFAULT_REMOTE_READER_UI_PREFS,
       ) ?? DEFAULT_REMOTE_READER_UI_PREFS,
     [],
   )
@@ -758,7 +506,7 @@ function WeebcentralReaderPage() {
       if (typeof window === 'undefined') return 'rtl'
       const maybeSeriesId = search.seriesId
       if (!maybeSeriesId) return 'rtl'
-      const preset = loadReaderSeriesPreset(maybeSeriesId)
+      const preset = ReaderUI.loadReaderSeriesPreset(maybeSeriesId, REMOTE_READER_SERIES_PRESETS_KEY, LEGACY_REMOTE_READER_SERIES_PRESETS_KEY)
       return preset?.readingDirection ?? 'rtl'
     },
   )
@@ -919,14 +667,14 @@ function WeebcentralReaderPage() {
 
   const twoPageSteps = useMemo(
     () =>
-      buildDoublePageStepsWithOffset(
+      ReaderUI.buildDoublePageStepsWithOffset(
         pages.map(asPairingPage),
         doublePageOffset,
       ),
     [doublePageOffset, pages],
   )
   const portraitSingleSteps = useMemo(
-    () => expandStepsForPortraitSingle(twoPageSteps, pages, readingDirection),
+    () => ReaderUI.expandStepsForPortraitSingle(twoPageSteps, pages, readingDirection),
     [pages, readingDirection, twoPageSteps],
   )
   const singlePageSteps = useMemo(
@@ -1663,7 +1411,7 @@ function WeebcentralReaderPage() {
   }, [params.chapterId, queryClient, chapter])
 
   useEffect(() => {
-    saveReaderUiPrefs(REMOTE_READER_UI_PREFS_KEY, {
+    ReaderUI.saveReaderUiPrefs(REMOTE_READER_UI_PREFS_KEY, {
       mode,
       zoomPreset,
       sidebarOpen,
@@ -1697,7 +1445,7 @@ function WeebcentralReaderPage() {
       return
     }
 
-    const preset = loadReaderSeriesPreset(activeSeriesId)
+    const preset = ReaderUI.loadReaderSeriesPreset(activeSeriesId, REMOTE_READER_SERIES_PRESETS_KEY, LEGACY_REMOTE_READER_SERIES_PRESETS_KEY)
     setReadingDirection(preset?.readingDirection ?? 'rtl')
 
     if (!preset) {
@@ -1716,14 +1464,14 @@ function WeebcentralReaderPage() {
       return
     }
 
-    saveReaderSeriesPreset(activeSeriesId, {
+    ReaderUI.saveReaderSeriesPreset(activeSeriesId, {
       mode,
       zoomPreset,
       readingDirection,
       doublePageOffset,
       magnifierEnabled,
       focusMode,
-    })
+    }, REMOTE_READER_SERIES_PRESETS_KEY, LEGACY_REMOTE_READER_SERIES_PRESETS_KEY)
   }, [
     activeSeriesId,
     doublePageOffset,

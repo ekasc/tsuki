@@ -1,5 +1,9 @@
 node_modules
 .DS_Store
+.pnpm-store/
+.stfolder/
+.stversions/
+.stignore
 dist
 dist-ssr
 *.local

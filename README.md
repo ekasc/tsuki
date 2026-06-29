@@ -72,7 +72,7 @@ If you intentionally changed reader visuals, update snapshots in a dedicated PR:
 pnpm exec playwright test tests/e2e/visual-reader.spec.ts --update-snapshots
 ```
 
-Release checklist: `/Users/ekassinghchhabra/Projects/ts/suki/docs/release-v1-online-checklist.md`
+Release checklist: `docs/release-v1-online-checklist.md`
 
 ## Contributing
 

@@ -54,7 +54,10 @@ import {
   type PairingStep,
   type RenderUnit,
 } from '#/lib/reader/pairing'
-import { useImagePrefetch } from '#/hooks/use-image-prefetch'
+import * as ReaderUI from '#/lib/reader/reader-ui-storage'
+import { useAdaptivePrefetch } from '#/hooks/use-adaptive-prefetch'
+import { usePageTransition } from '#/hooks/use-page-transition'
+import { useDoubleTapZoom } from '#/hooks/use-double-tap-zoom'
 import { useTouchDevice, useTouchPortrait } from '#/hooks/use-touch-portrait'
 
 function ReaderPending() {
@@ -109,48 +112,7 @@ const optimisticLocalProgress = new Map<string, ChapterProgress>()
 const OPTIMISTIC_PROGRESS_LIMIT = 240
 const LOCAL_READER_UI_PREFS_KEY = 'tsuki-local-reader-ui.v1'
 const LEGACY_LOCAL_READER_UI_PREFS_KEY = 'suki-local-reader-ui.v1'
-const LOCAL_READER_SERIES_PRESETS_KEY = 'tsuki-local-reader-series-presets.v1'
-const LEGACY_LOCAL_READER_SERIES_PRESETS_KEY =
-  'suki-local-reader-series-presets.v1'
-const LOCAL_READER_OPENING_LINES = [
-  'Warming up page turns…',
-  'Restoring your place…',
-  'Aligning spread edges…',
-] as const
-const SESSION_EXPIRED_ERROR =
-  'Session expired. Please upload the file again from Home.'
-
-function readStorageWithLegacy(key: string, legacyKey: string): string | null {
-  const value = window.localStorage.getItem(key)
-  if (value) {
-    return value
-  }
-
-  const legacyValue = window.localStorage.getItem(legacyKey)
-  if (!legacyValue) {
-    return null
-  }
-
-  window.localStorage.setItem(key, legacyValue)
-  return legacyValue
-}
-
-interface ReaderUiPrefs {
-  mode: ReaderMode
-  zoomPreset: ZoomPreset
-  sidebarOpen: boolean
-  doublePageOffset: boolean
-  preloadAhead: number
-  preloadBehind: number
-  prefetchConcurrency: number
-  nextChapterPrefetchThreshold: number
-  nextChapterWarmPages: number
-  uiAutoHideMs: number
-  magnifierSize: number
-  magnifierZoom: number
-}
-
-const DEFAULT_LOCAL_READER_UI_PREFS: ReaderUiPrefs = {
+const DEFAULT_LOCAL_READER_UI_PREFS: ReaderUI.ReaderUiPrefs = {
   mode: 'single',
   zoomPreset: 'fit-width',
   sidebarOpen: false,
@@ -165,249 +127,36 @@ const DEFAULT_LOCAL_READER_UI_PREFS: ReaderUiPrefs = {
   magnifierZoom: 2.4,
 }
 
-interface ReaderSeriesPreset {
-  mode: ReaderMode
-  zoomPreset: ZoomPreset
-  readingDirection: ReaderDirection
-  doublePageOffset: boolean
-  magnifierEnabled: boolean
-  focusMode: boolean
-}
+const LOCAL_READER_SERIES_PRESETS_KEY = 'tsuki-local-reader-series-presets.v1'
+const LEGACY_LOCAL_READER_SERIES_PRESETS_KEY =
+  'suki-local-reader-series-presets.v1'
+const LOCAL_READER_OPENING_LINES = [
+  'Warming up page turns…',
+  'Restoring your place…',
+  'Aligning spread edges…',
+] as const
+const SESSION_EXPIRED_ERROR =
+  'Session expired. Please upload the file again from Home.'
 
-function loadReaderSeriesPreset(seriesId: string): ReaderSeriesPreset | null {
-  if (typeof window === 'undefined') {
-    return null
-  }
 
-  try {
-    const raw = readStorageWithLegacy(
-      LOCAL_READER_SERIES_PRESETS_KEY,
-      LEGACY_LOCAL_READER_SERIES_PRESETS_KEY,
-    )
-    if (!raw) {
-      return null
-    }
 
-    const payload = JSON.parse(raw) as Record<
-      string,
-      Partial<ReaderSeriesPreset>
-    >
-    const preset = payload[seriesId]
-    if (!preset) {
-      return null
-    }
 
-    return {
-      mode:
-        preset.mode === 'double' || preset.mode === 'scroll'
-          ? preset.mode
-          : 'single',
-      zoomPreset:
-        preset.zoomPreset === 'fit-width' || preset.zoomPreset === 'actual'
-          ? preset.zoomPreset
-          : 'fit-width',
-      readingDirection: preset.readingDirection === 'ltr' ? 'ltr' : 'rtl',
-      doublePageOffset: Boolean(preset.doublePageOffset),
-      magnifierEnabled: Boolean(preset.magnifierEnabled),
-      focusMode: Boolean(preset.focusMode),
-    }
-  } catch {
-    return null
-  }
-}
 
-function saveReaderSeriesPreset(seriesId: string, preset: ReaderSeriesPreset) {
-  if (typeof window === 'undefined') {
-    return
-  }
 
-  try {
-    const raw = readStorageWithLegacy(
-      LOCAL_READER_SERIES_PRESETS_KEY,
-      LEGACY_LOCAL_READER_SERIES_PRESETS_KEY,
-    )
-    const payload = raw
-      ? (JSON.parse(raw) as Record<string, ReaderSeriesPreset>)
-      : {}
 
-    payload[seriesId] = preset
-    window.localStorage.setItem(
-      LOCAL_READER_SERIES_PRESETS_KEY,
-      JSON.stringify(payload),
-    )
-  } catch {
-    // Ignore localStorage persistence failures.
-  }
-}
 
-function loadReaderUiPrefs(
-  storageKey: string,
-  legacyKey?: string,
-): ReaderUiPrefs | null {
-  if (typeof window === 'undefined') {
-    return null
-  }
 
-  try {
-    const raw = legacyKey
-      ? readStorageWithLegacy(storageKey, legacyKey)
-      : window.localStorage.getItem(storageKey)
-    if (!raw) {
-      return null
-    }
 
-    const parsed = JSON.parse(raw) as Partial<ReaderUiPrefs>
-    if (!parsed) {
-      return null
-    }
 
-    return {
-      mode:
-        parsed.mode === 'double' || parsed.mode === 'scroll'
-          ? parsed.mode
-          : 'single',
-      zoomPreset:
-        parsed.zoomPreset === 'fit-width' || parsed.zoomPreset === 'actual'
-          ? parsed.zoomPreset
-          : 'fit-width',
-      sidebarOpen: Boolean(parsed.sidebarOpen),
-      doublePageOffset: Boolean(parsed.doublePageOffset),
-      preloadAhead:
-        typeof parsed.preloadAhead === 'number'
-          ? Math.max(1, Math.min(24, Math.floor(parsed.preloadAhead)))
-          : 8,
-      preloadBehind:
-        typeof parsed.preloadBehind === 'number'
-          ? Math.max(0, Math.min(12, Math.floor(parsed.preloadBehind)))
-          : 4,
-      prefetchConcurrency:
-        typeof parsed.prefetchConcurrency === 'number'
-          ? Math.max(1, Math.min(8, Math.floor(parsed.prefetchConcurrency)))
-          : 2,
-      nextChapterPrefetchThreshold:
-        typeof parsed.nextChapterPrefetchThreshold === 'number'
-          ? Math.max(
-              1,
-              Math.min(24, Math.floor(parsed.nextChapterPrefetchThreshold)),
-            )
-          : 8,
-      nextChapterWarmPages:
-        typeof parsed.nextChapterWarmPages === 'number'
-          ? Math.max(1, Math.min(16, Math.floor(parsed.nextChapterWarmPages)))
-          : 4,
-      uiAutoHideMs:
-        typeof parsed.uiAutoHideMs === 'number'
-          ? Math.max(400, Math.min(5000, Math.floor(parsed.uiAutoHideMs)))
-          : 1400,
-      magnifierSize:
-        typeof parsed.magnifierSize === 'number'
-          ? Math.max(120, Math.min(420, Math.floor(parsed.magnifierSize)))
-          : 220,
-      magnifierZoom:
-        typeof parsed.magnifierZoom === 'number'
-          ? Math.max(2, Math.min(5, parsed.magnifierZoom))
-          : 2.4,
-    }
-  } catch {
-    return null
-  }
-}
 
-function saveReaderUiPrefs(storageKey: string, prefs: ReaderUiPrefs) {
-  if (typeof window === 'undefined') {
-    return
-  }
 
-  window.localStorage.setItem(storageKey, JSON.stringify(prefs))
-}
 
-function buildDoublePageStepsWithOffset(
-  pages: PairingPage[],
-  offsetEnabled: boolean,
-): PairingStep[] {
-  if (!offsetEnabled || pages.length === 0) {
-    return buildTwoPageSteps(pages)
-  }
 
-  const first = pages[0]
-  if (!first || first.autoIsSpread || first.splitSpread) {
-    return buildTwoPageSteps(pages)
-  }
 
-  const rest = pages.slice(1)
-  const restSteps = buildTwoPageSteps(rest)
 
-  return [
-    {
-      kind: 'single',
-      anchorPageIndex: first.index,
-      units: [{ type: 'page', pageIndex: first.index }],
-    },
-    ...restSteps,
-  ]
-}
 
-function expandStepsForPortraitSingle(
-  steps: PairingStep[],
-  pages: ChapterPageManifest[],
-  readingDirection: ReaderDirection,
-): PairingStep[] {
-  if (steps.length === 0) {
-    return []
-  }
 
-  const inferredFlags = inferAutoSpreadFlags(
-    pages.map((page) => ({
-      width: page.width,
-      height: page.height,
-    })),
-  )
-  const inferredByPageIndex = new Map<number, boolean>()
-  pages.forEach((page, index) => {
-    inferredByPageIndex.set(page.pageIndex, Boolean(inferredFlags[index]))
-  })
 
-  return steps.flatMap((step) => {
-    return step.units.flatMap((unit) => {
-      if (unit.type === 'page') {
-        const page = pages.find((entry) => entry.pageIndex === unit.pageIndex)
-        const isSpread = page
-          ? page.autoIsSpread ||
-            page.splitSpread === true ||
-            page.aspect >= 0.95 ||
-            inferredByPageIndex.get(unit.pageIndex) === true
-          : inferredByPageIndex.get(unit.pageIndex) === true
-
-        if (isSpread) {
-          const cropOrder =
-            readingDirection === 'ltr'
-              ? (['left', 'right'] as const)
-              : (['right', 'left'] as const)
-
-          return cropOrder.map((crop) => ({
-            kind: 'single' as const,
-            anchorPageIndex: unit.pageIndex,
-            units: [
-              {
-                type: 'page' as const,
-                pageIndex: unit.pageIndex,
-                crop,
-              },
-            ],
-          }))
-        }
-      }
-
-      return [
-        {
-          kind: 'single' as const,
-          anchorPageIndex: unit.pageIndex,
-          units: [unit],
-        },
-      ]
-    })
-  })
-}
 
 function buildSinglePageSteps(
   pages: ChapterPageManifest[],
@@ -577,11 +326,11 @@ function derivePageIndicesForLocal(
 ): ReaderPageState {
   const safeIdx = clamp(pageIndex, 0, Math.max(pages.length - 1, 0))
   const pairingPages = pages.map(asPairingPage)
-  const doubleSteps = buildDoublePageStepsWithOffset(
+  const doubleSteps = ReaderUI.buildDoublePageStepsWithOffset(
     pairingPages,
     doublePageOffset,
   )
-  const portraitSteps = expandStepsForPortraitSingle(
+  const portraitSteps = ReaderUI.expandStepsForPortraitSingle(
     doubleSteps,
     pages,
     readingDirection,
@@ -644,9 +393,10 @@ function ReaderPage() {
   const [seriesTitle, setSeriesTitle] = useState<string | null>(null)
   const initialUiPrefs = useMemo(
     () =>
-      loadReaderUiPrefs(
+      ReaderUI.loadReaderUiPrefs(
         LOCAL_READER_UI_PREFS_KEY,
         LEGACY_LOCAL_READER_UI_PREFS_KEY,
+        DEFAULT_LOCAL_READER_UI_PREFS,
       ) ?? DEFAULT_LOCAL_READER_UI_PREFS,
     [],
   )
@@ -660,7 +410,7 @@ function ReaderPage() {
       if (typeof window === 'undefined') return 'rtl'
       const payload = chapterPayload
       if (!payload) return 'rtl'
-      const preset = loadReaderSeriesPreset(payload.manifest.seriesId)
+      const preset = ReaderUI.loadReaderSeriesPreset(payload.manifest.seriesId, LOCAL_READER_SERIES_PRESETS_KEY, LEGACY_LOCAL_READER_SERIES_PRESETS_KEY)
       return preset?.readingDirection ?? 'rtl'
     },
   )
@@ -670,7 +420,7 @@ function ReaderPage() {
   const [doublePageOffset, setDoublePageOffset] = useState<boolean>(
     initialUiPrefs.doublePageOffset,
   )
-  const [mobileSettingsMinimized, setMobileSettingsMinimized] = useState(false)
+  const [mobileSettingsMinimized, setMobileSettingsMinimized] = useState(true)
   const [preloadAhead, setPreloadAhead] = useState<number>(
     initialUiPrefs.preloadAhead,
   )
@@ -774,14 +524,14 @@ function ReaderPage() {
 
   const twoPageSteps = useMemo(
     () =>
-      buildDoublePageStepsWithOffset(
+      ReaderUI.buildDoublePageStepsWithOffset(
         pages.map(asPairingPage),
         doublePageOffset,
       ),
     [doublePageOffset, pages],
   )
   const portraitSingleSteps = useMemo(
-    () => expandStepsForPortraitSingle(twoPageSteps, pages, readingDirection),
+    () => ReaderUI.expandStepsForPortraitSingle(twoPageSteps, pages, readingDirection),
     [pages, readingDirection, twoPageSteps],
   )
   const singlePageSteps = useMemo(
@@ -911,15 +661,29 @@ function ReaderPage() {
 
   const activeSeriesId = chapterPayload?.manifest.seriesId ?? null
 
-  useImagePrefetch({
+  const { onPageChange } = useAdaptivePrefetch({
     chapterId,
-    startPageIndex: currentTargetPageIndex,
+    currentPageIndex: currentTargetPageIndex,
     totalPages: pages.length,
     enabled: pages.length > 0,
-    lookahead: preloadAhead,
-    lookbehind: preloadBehind,
-    concurrency: prefetchConcurrency,
   })
+
+  const onPageChangeRef = useRef(onPageChange)
+  onPageChangeRef.current = onPageChange
+
+  // --- GSAP page turn transition ---
+  const { withTransition } = usePageTransition(swipeTrackRef)
+
+  // --- Double-tap to cycle zoom ---
+  const cycleZoom = useCallback(() => {
+    setZoomPreset((current) => {
+      if (current === "fit-height") return "fit-width"
+      if (current === "fit-width") return "actual"
+      return "fit-height"
+    })
+  }, [])
+  const { handleTap: handleDoubleTap } = useDoubleTapZoom(cycleZoom)
+
 
   useEffect(() => {
     if (!nextChapterId || pages.length === 0) {
@@ -1148,7 +912,7 @@ function ReaderPage() {
   }, [params.chapterId, queryClient, chapterPayload])
 
   useEffect(() => {
-    saveReaderUiPrefs(LOCAL_READER_UI_PREFS_KEY, {
+    ReaderUI.saveReaderUiPrefs(LOCAL_READER_UI_PREFS_KEY, {
       mode,
       zoomPreset,
       sidebarOpen,
@@ -1182,7 +946,7 @@ function ReaderPage() {
       return
     }
 
-    const preset = loadReaderSeriesPreset(activeSeriesId)
+    const preset = ReaderUI.loadReaderSeriesPreset(activeSeriesId, LOCAL_READER_SERIES_PRESETS_KEY, LEGACY_LOCAL_READER_SERIES_PRESETS_KEY)
     setReadingDirection(preset?.readingDirection ?? 'rtl')
 
     if (!preset) {
@@ -1201,14 +965,14 @@ function ReaderPage() {
       return
     }
 
-    saveReaderSeriesPreset(activeSeriesId, {
+    ReaderUI.saveReaderSeriesPreset(activeSeriesId, {
       mode,
       zoomPreset,
       readingDirection,
       doublePageOffset,
       magnifierEnabled,
       focusMode,
-    })
+    }, LOCAL_READER_SERIES_PRESETS_KEY, LEGACY_LOCAL_READER_SERIES_PRESETS_KEY)
   }, [
     activeSeriesId,
     doublePageOffset,
@@ -1312,6 +1076,7 @@ function ReaderPage() {
 
   const goToPage = useCallback(
     (nextPageIndex: number) => {
+      withTransition(nextPageIndex > currentTargetPageIndex ? 'next' : 'prev', () => {
       setPageState(
         derivePageIndicesForLocal(
           nextPageIndex,
@@ -1321,6 +1086,8 @@ function ReaderPage() {
           readingDirection,
         ),
       )
+      onPageChangeRef.current(nextPageIndex)
+      })
     },
     [doublePageOffset, isTouchPortrait, pages, readingDirection],
   )
@@ -1579,6 +1346,7 @@ function ReaderPage() {
         return
       }
 
+      withTransition('next', () => {
       setPageState((prev) => {
         const next = Math.min(prev.stepIndex + 1, maxStepIndex)
         return {
@@ -1586,6 +1354,7 @@ function ReaderPage() {
           stepIndex: next,
           pageIndex: activeDoubleSteps[next]?.anchorPageIndex ?? prev.pageIndex,
         }
+      })
       })
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
@@ -1602,6 +1371,7 @@ function ReaderPage() {
         return
       }
 
+      withTransition('next', () => {
       setPageState((prev) => {
         const next = Math.min(prev.singleStepIndex + 1, maxSingleStepIndex)
         return {
@@ -1609,6 +1379,7 @@ function ReaderPage() {
           singleStepIndex: next,
           pageIndex: singlePageSteps[next]?.anchorPageIndex ?? prev.pageIndex,
         }
+      })
       })
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
@@ -1685,6 +1456,7 @@ function ReaderPage() {
         return
       }
 
+      withTransition('prev', () => {
       setPageState((prev) => {
         const next = Math.max(prev.stepIndex - 1, 0)
         return {
@@ -1692,6 +1464,7 @@ function ReaderPage() {
           stepIndex: next,
           pageIndex: activeDoubleSteps[next]?.anchorPageIndex ?? prev.pageIndex,
         }
+      })
       })
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
@@ -1708,6 +1481,7 @@ function ReaderPage() {
         return
       }
 
+      withTransition('prev', () => {
       setPageState((prev) => {
         const next = Math.max(prev.singleStepIndex - 1, 0)
         return {
@@ -1715,6 +1489,7 @@ function ReaderPage() {
           singleStepIndex: next,
           pageIndex: singlePageSteps[next]?.anchorPageIndex ?? prev.pageIndex,
         }
+      })
       })
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
@@ -1997,6 +1772,13 @@ function ReaderPage() {
         return
       }
 
+
+      // Check for double-tap to cycle zoom
+      if (handleDoubleTap(event.clientX, event.clientY)) {
+        suppressTapRef.current = true
+        return
+      }
+
       const rect = event.currentTarget.getBoundingClientRect()
       const tapX = event.clientX - rect.left
 
@@ -2076,13 +1858,18 @@ function ReaderPage() {
         return
       }
 
-      if (event.code === 'KeyQ') {
+      if (event.code === 'KeyQ' && !event.shiftKey) {
         event.preventDefault()
         blurReaderFocusTarget()
         cycleMode()
         return
-      }
+      } else if (event.code === 'KeyQ' && event.shiftKey) {
 
+        event.preventDefault()
+        blurReaderFocusTarget()
+        cycleZoom()
+        return
+      }
       if (event.key === '[') {
         event.preventDefault()
         blurReaderFocusTarget()
@@ -2720,7 +2507,7 @@ function ReaderPage() {
           aria-hidden={!sidebarOpen}
           className={
             isTouchDevice
-              ? `reader-shell-panel reader-settings-panel animate-enter relative z-30 w-full overflow-visible ${isTouchPortrait ? 'p-3' : 'px-3 py-1.5'}`
+              ? `reader-shell-panel reader-settings-panel animate-enter relative z-30 w-full overflow-visible ${isTouchPortrait ? 'p-3' : 'px-3 py-1.5'} ${isTouchDevice && !mobileSettingsMinimized ? 'hidden' : ''}`
               : `reader-shell-panel reader-settings-panel animate-enter absolute inset-y-0 left-0 z-40 w-[min(88vw,360px)] overflow-y-auto p-3 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`
           }
           style={{
@@ -2731,20 +2518,15 @@ function ReaderPage() {
           }}
         >
           {isTouchDevice && isTouchPortrait ? (
-            <div className="reader-settings-bar mb-2 flex items-center justify-between border border-border bg-surface-soft px-2 py-1.5">
-              <span className="text-xs font-semibold text-foreground">
-                Settings
-              </span>
+            <div className="flex items-center justify-between px-1 pb-1">
+              <span className="text-xs font-semibold text-foreground">Settings</span>
               <Button
                 type="button"
                 variant="soft"
-                size="sm"
-                className="h-11 px-3 text-xs"
-                onClick={() =>
-                  setMobileSettingsMinimized((current) => !current)
-                }
+                className="h-11 px-4 text-xs"
+                onClick={() => setMobileSettingsMinimized((current) => !current)}
               >
-                {mobileSettingsMinimized ? 'Show' : 'Minimize'}
+                {mobileSettingsMinimized ? 'Open settings' : 'Close'}
               </Button>
             </div>
           ) : null}
@@ -2833,7 +2615,7 @@ function ReaderPage() {
             <div
               ref={settingsContentRef}
               className={
-                isTouchDevice && mobileSettingsMinimized ? 'invisible' : ''
+                isTouchDevice ? 'invisible' : ''
               }
             >
               <div className="reader-settings-surface space-y-2 text-xs text-muted-foreground">
@@ -3243,7 +3025,7 @@ function ReaderPage() {
                       className="reader-shortcut-sheet mt-2 text-xs"
                     >
                       <p>Nav: A/D or arrows, Space, [ ]</p>
-                      <p>View: Q mode, 0 reset zoom, F fullscreen</p>
+                      <p>View: Q mode, Shift+Q zoom, 0 reset zoom, F fullscreen</p>
                       <p>UI: S sidebar, X focus, Z magnifier</p>
                     </div>
                   ) : null}
@@ -3333,13 +3115,15 @@ function ReaderPage() {
               chapterId={chapterId}
               pages={pages}
               zoomPreset={zoomPreset}
-              onVisiblePageChange={(pageIndex) =>
+              onVisiblePageChange={(pageIndex) => {
                 setPageState((prev) => ({
                   ...prev,
                   pageIndex,
                   stepIndex: 0,
                   singleStepIndex: 0,
-                }))
+                }));
+                onPageChangeRef.current(pageIndex);
+              }
               }
             />
             {fullscreenActive && showPageHud ? (
@@ -3439,6 +3223,182 @@ function ReaderPage() {
         )}
       </section>
 
+
+    {/* Mobile bottom sheet overlay */}
+    {isTouchDevice && !mobileSettingsMinimized && !fullscreenActive ? (
+      <>
+        <div
+          className="reader-bottom-sheet-overlay"
+          onClick={() => setMobileSettingsMinimized(true)}
+        />
+        <div className="reader-bottom-sheet">
+          <div className="reader-bottom-sheet-drag-handle" />
+          <div className="px-3 pb-4 pt-1 text-xs text-muted-foreground">
+            {seriesTitle ? (
+              <p className="truncate text-sm font-semibold text-foreground">
+                {seriesTitle}
+              </p>
+            ) : null}
+            <p className="mt-1">Ch {chapterPayload?.manifest?.chapterNumber ?? "?"} · {chapterPayload?.manifest?.pageCount ?? "?"}p</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 px-3 pb-3">
+            <Button
+              type="button"
+              variant={mode === "single" ? "default" : "soft"}
+              className="h-12"
+              onClick={() => { setMode("single"); goToPage(currentTargetPageIndex); }}
+            >
+              Single
+            </Button>
+            <Button
+              type="button"
+              variant={mode === "double" ? "default" : "soft"}
+              className="h-12"
+              onClick={() => { setMode("double"); goToPage(currentTargetPageIndex); }}
+            >
+              Double
+            </Button>
+            <Button
+              type="button"
+              variant={mode === "scroll" ? "default" : "soft"}
+              className="h-12"
+              onClick={() => { setMode("scroll"); goToPage(currentTargetPageIndex); }}
+            >
+              Scroll
+            </Button>
+            <Button
+              type="button"
+              variant={readingDirection === "rtl" ? "default" : "soft"}
+              className="h-12"
+              onClick={() => setReadingDirection("rtl")}
+            >
+              RTL
+            </Button>
+            <Button
+              type="button"
+              variant={readingDirection === "ltr" ? "default" : "soft"}
+              className="h-12"
+              onClick={() => setReadingDirection("ltr")}
+            >
+              LTR
+            </Button>
+            <Button
+              type="button"
+              variant={zoomPreset === "fit-height" ? "default" : "soft"}
+              className="h-12"
+              onClick={() => setZoomPreset("fit-height")}
+            >
+              Fit screen
+            </Button>
+            <Button
+              type="button"
+              variant={zoomPreset === "fit-width" ? "default" : "soft"}
+              className="h-12"
+              onClick={() => setZoomPreset("fit-width")}
+            >
+              Fit width
+            </Button>
+            <Button
+              type="button"
+              variant={zoomPreset === "actual" ? "default" : "soft"}
+              className="h-12"
+              onClick={() => setZoomPreset("actual")}
+            >
+              Actual size
+            </Button>
+            <Button
+              type="button"
+              variant={doublePageOffset ? "default" : "soft"}
+              className="h-12"
+              onClick={() => setDoublePageOffset((v) => !v)}
+            >
+              Offset: {doublePageOffset ? "On" : "Off"}
+            </Button>
+          </div>
+          <div className="flex gap-2 px-3 pb-4">
+            <Link
+              to="/series/$seriesId"
+              params={{ seriesId: chapterPayload?.manifest?.seriesId ?? "" }}
+              className="reader-settings-action inline-flex h-12 flex-1 items-center justify-center border border-border bg-surface-soft px-3 text-xs text-muted-foreground hover:bg-surface"
+              onClick={() => setMobileSettingsMinimized(true)}
+            >
+              Back to series
+            </Link>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-12 flex-1 border border-border text-xs"
+              onClick={() => { setMobileSettingsMinimized(true); goToNextChapter(); }}
+              disabled={!nextChapterId}
+            >
+              Next chapter
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-12 flex-1 border border-border text-xs"
+              onClick={() => { setMobileSettingsMinimized(true); goToPreviousChapter(); }}
+              disabled={!previousChapterId}
+            >
+              Previous chapter
+            </Button>
+          </div>
+        </div>
+      </>
+    ) : null}
+
+    {/* Mobile bottom navigation bar */}
+    {isTouchDevice && mode !== "scroll" && !fullscreenActive ? (
+      <div className="reader-mobile-bottom-bar" style={{
+        opacity: mobileSettingsMinimized ? 1 : 0,
+        transform: mobileSettingsMinimized ? "translateY(0)" : "translateY(16px)",
+        pointerEvents: mobileSettingsMinimized ? "auto" : "none",
+      }}>
+        <Button
+          type="button"
+          variant="ghost"
+          className="touch-min-44-wide flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-0 bg-transparent p-0 text-foreground/80"
+          onClick={goPrevious}
+          aria-label="Previous page"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+        </Button>
+        <span className="shrink-0 text-xs tabular-nums text-foreground/70" style={{ minWidth: 48, textAlign: "center" }}>
+          {currentTargetPageIndex + 1}
+        </span>
+        <div className="mobile-scrubber flex-1 mx-1">
+          <RangeSlider
+            min={0}
+            max={scrubberMax}
+            value={scrubberValue}
+            onChange={(event) => goToPage(Number.parseInt(event.target.value, 10))}
+            className="w-full accent-primary"
+            style={readingDirection === "rtl" ? { transform: "scaleX(-1)" } : undefined}
+          />
+        </div>
+        <span className="shrink-0 text-xs tabular-nums text-foreground/70" style={{ minWidth: 48, textAlign: "center" }}>
+          {pages.length}
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          className="touch-min-44-wide flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-0 bg-transparent p-0 text-foreground/80"
+          onClick={goNext}
+          aria-label="Next page"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </Button>
+        <Button
+          type="button"
+          variant="soft"
+          className="touch-min-44-wide flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-0 bg-surface-soft p-0 text-foreground/80"
+          onClick={() => setMobileSettingsMinimized(false)}
+          aria-label="Open settings"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </Button>
+      </div>
+    ) : null}
       {magnifierEnabled && magnifierFrame ? (
         <div
           className="pointer-events-none fixed z-[90] overflow-hidden border border-border bg-surface/80"
