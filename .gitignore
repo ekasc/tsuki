@@ -22,3 +22,4 @@ coverage/
 .lighthouseci/
 dev.log
 .pi/
+src/test-setup.ts
