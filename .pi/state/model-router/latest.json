@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "currentAlias": "gpt",
+  "lastRule": "failure-escalation",
+  "lastReason": "failure count 3 >= 2",
+  "failureCount": 3,
+  "updatedAt": "2026-06-29T21:55:35.103Z"
+}
