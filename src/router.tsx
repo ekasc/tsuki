@@ -13,6 +13,7 @@ export function getRouter() {
     },
     scrollRestoration: true,
     defaultPreload: 'intent',
+    defaultViewTransition: true,
     defaultStaleTime: 30_000,
     defaultPreloadStaleTime: 60_000,
     defaultGcTime: 15 * 60_000,

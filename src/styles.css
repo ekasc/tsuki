@@ -45,6 +45,20 @@
 
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *, [data-theme='paper-dark'], [data-theme='paper-dark'] *, [data-theme='sakura-dark'], [data-theme='sakura-dark'] *, [data-theme='ocean-dark'], [data-theme='ocean-dark'] *, [data-theme='matcha-dark'], [data-theme='matcha-dark'] *));
 
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body {
+    overscroll-behavior-y: contain;
+  }
+}
+
 /*
   ──────────────────────────────────────────────
   Tsuki — Japanese bookshop aesthetic
@@ -674,6 +688,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
+    white-space: nowrap;
     background: var(--surface-soft);
     padding: 0.18rem 0.5rem;
     font-size: 0.68rem;
@@ -735,7 +750,25 @@
   .exp-filter-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.4rem;
+    gap: 0.5rem;
+  }
+
+  @media (pointer: coarse) {
+    .exp-row:active,
+    .exp-row-hover:active {
+      background: var(--washi);
+    }
+
+    .exp-hero a:active,
+    .exp-hero button:active {
+      opacity: 0.85;
+    }
+
+    .manga-stamp:active,
+    .delight-cta:active,
+    .exp-guide-card:active {
+      opacity: 0.8;
+    }
   }
 
   .exp-toolbar-copy {

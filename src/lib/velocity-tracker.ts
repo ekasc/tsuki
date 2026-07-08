@@ -10,7 +10,12 @@
  * turns.
  */
 
-export type ReadingVelocity = 'stationary' | 'slow' | 'normal' | 'fast' | 'speed'
+export type ReadingVelocity =
+  | 'stationary'
+  | 'slow'
+  | 'normal'
+  | 'fast'
+  | 'speed'
 
 export interface VelocitySample {
   pageIndex: number
@@ -137,7 +142,7 @@ export class VelocityTracker {
 
     if (pagesPerSecond > 5.0) {
       velocity = 'speed'
-    } else if (pagesPerSecond > 2.0) {
+    } else if (pagesPerSecond >= 2.0) {
       velocity = 'fast'
     } else if (pagesPerSecond > 0.4) {
       velocity = 'normal'
@@ -153,14 +158,18 @@ export class VelocityTracker {
     // === param mapping ===
     const params = this.velocityToParams(velocity)
     const directionBias = this.getDirectionBias()
+    const hasDirectionData =
+      this._totalForwardMoves + this._totalBackwardMoves > 0
 
     // Shift the prefetch window toward the reading direction
-    const lookaheadAdjust = Math.round(
-      params.lookahead * Math.max(0.15, 0.5 + directionBias * 0.5),
-    )
-    const lookbehindAdjust = Math.round(
-      params.lookbehind * Math.max(0.15, 0.5 - directionBias * 0.5),
-    )
+    const lookaheadAdjust = hasDirectionData
+      ? Math.round(params.lookahead * Math.max(0.15, 0.5 + directionBias * 0.5))
+      : params.lookahead
+    const lookbehindAdjust = hasDirectionData
+      ? Math.round(
+          params.lookbehind * Math.max(0.15, 0.5 - directionBias * 0.5),
+        )
+      : params.lookbehind
 
     return {
       velocity,
@@ -172,9 +181,11 @@ export class VelocityTracker {
     }
   }
 
-  private velocityToParams(
-    velocity: ReadingVelocity,
-  ): { lookahead: number; lookbehind: number; concurrency: number } {
+  private velocityToParams(velocity: ReadingVelocity): {
+    lookahead: number
+    lookbehind: number
+    concurrency: number
+  } {
     switch (velocity) {
       case 'speed':
         return { lookahead: 24, lookbehind: 8, concurrency: 6 }

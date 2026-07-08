@@ -131,12 +131,15 @@ function WeebcentralSeriesPage() {
     'oldest',
   )
   const [chapterQuery, setChapterQuery] = useState('')
-  const [chapterReadFilter, setChapterReadFilter] = useState<'all' | 'read' | 'unread'>('all')
+  const [chapterReadFilter, setChapterReadFilter] = useState<
+    'all' | 'read' | 'unread'
+  >('all')
   const [chapterPage, setChapterPage] = useState(1)
   const [isSavedInLibrary, setIsSavedInLibrary] = useState(false)
   const [isSyncingMetadata, setIsSyncingMetadata] = useState(false)
   const [syncTimedOut, setSyncTimedOut] = useState(false)
   const [loadingLineIndex, setLoadingLineIndex] = useState(0)
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false)
 
   const loadSeries = useCallback(
     async (forceRefresh = false) => {
@@ -192,6 +195,9 @@ function WeebcentralSeriesPage() {
       }, {}),
     )
     setLatestHistoryEntry(history[0] ?? null)
+    if (history.length > 0) {
+      setChapterOrder('newest')
+    }
   }, [seriesId])
 
   useEffect(() => {
@@ -565,16 +571,30 @@ function WeebcentralSeriesPage() {
                 {series.title}
               </h1>
               {series.description ? (
-                <p className="mt-2 text-sm leading-6 text-muted-foreground sm:line-clamp-5 md:line-clamp-none">
-                  {series.description}
-                </p>
+                <>
+                  <p
+                    className={cn(
+                      'mt-2 text-sm leading-6 text-muted-foreground',
+                      !descriptionExpanded && 'truncate',
+                    )}
+                  >
+                    {series.description}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setDescriptionExpanded((v) => !v)}
+                    className="mt-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                  >
+                    {descriptionExpanded ? 'Show less' : 'Show more'}
+                  </button>
+                </>
               ) : null}
               {series.author ? (
                 <p className="mt-2 text-sm text-muted-foreground">
                   Author: {series.author}
                 </p>
               ) : null}
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="mt-4 flex gap-2">
                 <span className="manga-stamp">{chapterCount} chapters</span>
                 <a
                   href={sourceLink}
@@ -590,10 +610,6 @@ function WeebcentralSeriesPage() {
                   </span>
                 ) : null}
               </div>
-              <p className="mt-3 text-sm text-muted-foreground">
-                Start with the next unread chapter, or browse the full chapter
-                list below.
-              </p>
               {latestHistoryLabel ? (
                 <p className="mt-1 text-xs text-muted-foreground">
                   Last read: {latestHistoryLabel}
@@ -624,7 +640,7 @@ function WeebcentralSeriesPage() {
               type="button"
               variant={isSavedInLibrary ? 'destructive' : 'soft'}
               size="icon"
-              className="size-9"
+              className="size-10"
               onClick={() => {
                 if (isSavedInLibrary) {
                   removeSavedWeebcentralSeries(series.id)
@@ -664,7 +680,7 @@ function WeebcentralSeriesPage() {
                   variant="outline"
                   size="icon"
                   className={cn(
-                    'size-9',
+                    'size-10',
                     syncTimedOut ? 'text-muted-foreground' : '',
                   )}
                   onClick={() => {
@@ -693,7 +709,7 @@ function WeebcentralSeriesPage() {
                 type="button"
                 variant="outline"
                 size="icon"
-                className="size-9"
+                className="size-10"
                 onClick={resetSeriesHistory}
                 title="Reset reading history"
                 aria-label="Reset reading history"
@@ -724,21 +740,12 @@ function WeebcentralSeriesPage() {
       <section className="space-y-2">
         <div className="manga-divider" aria-hidden />
         <div className="exp-filter-toolbar">
-          <div className="exp-toolbar-copy">
-            <span className="issue-label">Chapters</span>
-            <p className="text-sm text-foreground">
-              Filter, sort, or switch views.
-            </p>
-            <p className="text-xs">
-              Search by chapter number, title, or release date.
-            </p>
-          </div>
           <div className="exp-filter-actions">
             <Button
               type="button"
               variant={chapterView === 'grid' ? 'default' : 'soft'}
               size="icon"
-              className="size-8"
+              className="size-9"
               onClick={() => setChapterView('grid')}
               title="Grid view"
               aria-label="Grid view"
@@ -749,7 +756,7 @@ function WeebcentralSeriesPage() {
               type="button"
               variant={chapterView === 'list' ? 'default' : 'soft'}
               size="icon"
-              className="size-8"
+              className="size-9"
               onClick={() => setChapterView('list')}
               title="List view"
               aria-label="List view"
@@ -760,7 +767,7 @@ function WeebcentralSeriesPage() {
               type="button"
               variant={chapterOrder === 'oldest' ? 'default' : 'soft'}
               size="icon"
-              className="size-8"
+              className="size-9"
               onClick={() => setChapterOrder('oldest')}
               title="Oldest first"
               aria-label="Oldest first"
@@ -771,14 +778,14 @@ function WeebcentralSeriesPage() {
               type="button"
               variant={chapterOrder === 'newest' ? 'default' : 'soft'}
               size="icon"
-              className="size-8"
+              className="size-9"
               onClick={() => setChapterOrder('newest')}
               title="Newest first"
               aria-label="Newest first"
             >
               <ArrowDownWideNarrow className="size-3.5" />
             </Button>
-            <div className="flex items-center gap-1 rounded border border-border p-0.5">
+            <div className="flex items-center gap-0.5 rounded border border-border px-1">
               <button
                 type="button"
                 onClick={() => setChapterReadFilter('all')}

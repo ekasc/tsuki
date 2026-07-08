@@ -84,23 +84,43 @@ export function loadReaderUiPrefs(
       doublePageOffset: Boolean(parsed.doublePageOffset),
       preloadAhead:
         typeof parsed.preloadAhead === 'number'
-          ? clamp(parsed.preloadAhead, defaults.preloadAhead, defaults.preloadAhead < 7 ? [1, 16] : [1, 24])
+          ? clamp(
+              parsed.preloadAhead,
+              defaults.preloadAhead,
+              defaults.preloadAhead < 7 ? [1, 16] : [1, 24],
+            )
           : defaults.preloadAhead,
       preloadBehind:
         typeof parsed.preloadBehind === 'number'
-          ? clamp(parsed.preloadBehind, defaults.preloadBehind, defaults.preloadBehind < 3 ? [0, 8] : [0, 12])
+          ? clamp(
+              parsed.preloadBehind,
+              defaults.preloadBehind,
+              defaults.preloadBehind < 3 ? [0, 8] : [0, 12],
+            )
           : defaults.preloadBehind,
       prefetchConcurrency:
         typeof parsed.prefetchConcurrency === 'number'
-          ? clamp(parsed.prefetchConcurrency, defaults.prefetchConcurrency, defaults.prefetchConcurrency < 3 ? [1, 4] : [1, 8])
+          ? clamp(
+              parsed.prefetchConcurrency,
+              defaults.prefetchConcurrency,
+              defaults.prefetchConcurrency < 3 ? [1, 4] : [1, 8],
+            )
           : defaults.prefetchConcurrency,
       nextChapterPrefetchThreshold:
         typeof parsed.nextChapterPrefetchThreshold === 'number'
-          ? clamp(parsed.nextChapterPrefetchThreshold, defaults.nextChapterPrefetchThreshold, defaults.nextChapterPrefetchThreshold < 7 ? [1, 12] : [1, 24])
+          ? clamp(
+              parsed.nextChapterPrefetchThreshold,
+              defaults.nextChapterPrefetchThreshold,
+              defaults.nextChapterPrefetchThreshold < 7 ? [1, 12] : [1, 24],
+            )
           : defaults.nextChapterPrefetchThreshold,
       nextChapterWarmPages:
         typeof parsed.nextChapterWarmPages === 'number'
-          ? clamp(parsed.nextChapterWarmPages, defaults.nextChapterWarmPages, defaults.nextChapterWarmPages < 3 ? [1, 6] : [1, 16])
+          ? clamp(
+              parsed.nextChapterWarmPages,
+              defaults.nextChapterWarmPages,
+              defaults.nextChapterWarmPages < 3 ? [1, 6] : [1, 16],
+            )
           : defaults.nextChapterWarmPages,
       uiAutoHideMs:
         typeof parsed.uiAutoHideMs === 'number'
@@ -136,7 +156,10 @@ export function loadReaderSeriesPreset(
     const raw = readStorageWithLegacy(seriesPresetsKey, legacySeriesPresetsKey)
     if (!raw) return null
 
-    const payload = JSON.parse(raw) as Record<string, Partial<ReaderSeriesPreset>>
+    const payload = JSON.parse(raw) as Record<
+      string,
+      Partial<ReaderSeriesPreset>
+    >
     const preset = payload[seriesId]
     if (!preset) return null
 
@@ -276,5 +299,7 @@ function clamp(
   range: [number, number],
 ): number {
   const [min, max] = range
-  return Math.max(min, Math.min(max, Math.floor(value)))
+  const clamped = Math.floor(value)
+  if (Number.isNaN(clamped)) return fallback
+  return Math.max(min, Math.min(max, clamped))
 }

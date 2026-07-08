@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-react'
 import type * as React from 'react'
 
 import { cn } from '#/lib/utils'
@@ -15,15 +16,18 @@ interface SelectFieldProps extends SelectProps {
 
 export function Select({ className, children, ...props }: SelectProps) {
   return (
-    <select
-      className={cn(
-        'h-10 w-full border border-border bg-surface px-3 text-sm text-foreground outline-none transition-colors duration-150 hover:bg-washi focus:border-koten/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-koten/40',
-        className,
-      )}
-      {...props}
-    >
-      {children}
-    </select>
+    <div className="relative">
+      <select
+        className={cn(
+          'h-10 w-full appearance-none border border-border bg-surface pl-3 pr-10 text-sm text-foreground outline-none transition-colors duration-150 hover:bg-washi focus:border-koten/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-koten/40',
+          className,
+        )}
+        {...props}
+      >
+        {children}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+    </div>
   )
 }
 

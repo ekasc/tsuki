@@ -47,7 +47,6 @@ import {
 import type { AppRouterContext } from '#/lib/router-context'
 import { upsertReadingHistory } from '#/lib/reading-history'
 import {
-  buildTwoPageSteps,
   findStepIndexByPageIndex,
   inferAutoSpreadFlags,
   type PairingPage,
@@ -137,26 +136,6 @@ const LOCAL_READER_OPENING_LINES = [
 ] as const
 const SESSION_EXPIRED_ERROR =
   'Session expired. Please upload the file again from Home.'
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 function buildSinglePageSteps(
   pages: ChapterPageManifest[],
@@ -410,7 +389,11 @@ function ReaderPage() {
       if (typeof window === 'undefined') return 'rtl'
       const payload = chapterPayload
       if (!payload) return 'rtl'
-      const preset = ReaderUI.loadReaderSeriesPreset(payload.manifest.seriesId, LOCAL_READER_SERIES_PRESETS_KEY, LEGACY_LOCAL_READER_SERIES_PRESETS_KEY)
+      const preset = ReaderUI.loadReaderSeriesPreset(
+        payload.manifest.seriesId,
+        LOCAL_READER_SERIES_PRESETS_KEY,
+        LEGACY_LOCAL_READER_SERIES_PRESETS_KEY,
+      )
       return preset?.readingDirection ?? 'rtl'
     },
   )
@@ -531,7 +514,12 @@ function ReaderPage() {
     [doublePageOffset, pages],
   )
   const portraitSingleSteps = useMemo(
-    () => ReaderUI.expandStepsForPortraitSingle(twoPageSteps, pages, readingDirection),
+    () =>
+      ReaderUI.expandStepsForPortraitSingle(
+        twoPageSteps,
+        pages,
+        readingDirection,
+      ),
     [pages, readingDirection, twoPageSteps],
   )
   const singlePageSteps = useMemo(
@@ -677,13 +665,12 @@ function ReaderPage() {
   // --- Double-tap to cycle zoom ---
   const cycleZoom = useCallback(() => {
     setZoomPreset((current) => {
-      if (current === "fit-height") return "fit-width"
-      if (current === "fit-width") return "actual"
-      return "fit-height"
+      if (current === 'fit-height') return 'fit-width'
+      if (current === 'fit-width') return 'actual'
+      return 'fit-height'
     })
   }, [])
   const { handleTap: handleDoubleTap } = useDoubleTapZoom(cycleZoom)
-
 
   useEffect(() => {
     if (!nextChapterId || pages.length === 0) {
@@ -946,7 +933,11 @@ function ReaderPage() {
       return
     }
 
-    const preset = ReaderUI.loadReaderSeriesPreset(activeSeriesId, LOCAL_READER_SERIES_PRESETS_KEY, LEGACY_LOCAL_READER_SERIES_PRESETS_KEY)
+    const preset = ReaderUI.loadReaderSeriesPreset(
+      activeSeriesId,
+      LOCAL_READER_SERIES_PRESETS_KEY,
+      LEGACY_LOCAL_READER_SERIES_PRESETS_KEY,
+    )
     setReadingDirection(preset?.readingDirection ?? 'rtl')
 
     if (!preset) {
@@ -965,14 +956,19 @@ function ReaderPage() {
       return
     }
 
-    ReaderUI.saveReaderSeriesPreset(activeSeriesId, {
-      mode,
-      zoomPreset,
-      readingDirection,
-      doublePageOffset,
-      magnifierEnabled,
-      focusMode,
-    }, LOCAL_READER_SERIES_PRESETS_KEY, LEGACY_LOCAL_READER_SERIES_PRESETS_KEY)
+    ReaderUI.saveReaderSeriesPreset(
+      activeSeriesId,
+      {
+        mode,
+        zoomPreset,
+        readingDirection,
+        doublePageOffset,
+        magnifierEnabled,
+        focusMode,
+      },
+      LOCAL_READER_SERIES_PRESETS_KEY,
+      LEGACY_LOCAL_READER_SERIES_PRESETS_KEY,
+    )
   }, [
     activeSeriesId,
     doublePageOffset,
@@ -1076,18 +1072,21 @@ function ReaderPage() {
 
   const goToPage = useCallback(
     (nextPageIndex: number) => {
-      withTransition(nextPageIndex > currentTargetPageIndex ? 'next' : 'prev', () => {
-      setPageState(
-        derivePageIndicesForLocal(
-          nextPageIndex,
-          pages,
-          doublePageOffset,
-          isTouchPortrait,
-          readingDirection,
-        ),
+      withTransition(
+        nextPageIndex > currentTargetPageIndex ? 'next' : 'prev',
+        () => {
+          setPageState(
+            derivePageIndicesForLocal(
+              nextPageIndex,
+              pages,
+              doublePageOffset,
+              isTouchPortrait,
+              readingDirection,
+            ),
+          )
+          onPageChangeRef.current(nextPageIndex)
+        },
       )
-      onPageChangeRef.current(nextPageIndex)
-      })
     },
     [doublePageOffset, isTouchPortrait, pages, readingDirection],
   )
@@ -1347,14 +1346,15 @@ function ReaderPage() {
       }
 
       withTransition('next', () => {
-      setPageState((prev) => {
-        const next = Math.min(prev.stepIndex + 1, maxStepIndex)
-        return {
-          ...prev,
-          stepIndex: next,
-          pageIndex: activeDoubleSteps[next]?.anchorPageIndex ?? prev.pageIndex,
-        }
-      })
+        setPageState((prev) => {
+          const next = Math.min(prev.stepIndex + 1, maxStepIndex)
+          return {
+            ...prev,
+            stepIndex: next,
+            pageIndex:
+              activeDoubleSteps[next]?.anchorPageIndex ?? prev.pageIndex,
+          }
+        })
       })
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
@@ -1372,14 +1372,14 @@ function ReaderPage() {
       }
 
       withTransition('next', () => {
-      setPageState((prev) => {
-        const next = Math.min(prev.singleStepIndex + 1, maxSingleStepIndex)
-        return {
-          ...prev,
-          singleStepIndex: next,
-          pageIndex: singlePageSteps[next]?.anchorPageIndex ?? prev.pageIndex,
-        }
-      })
+        setPageState((prev) => {
+          const next = Math.min(prev.singleStepIndex + 1, maxSingleStepIndex)
+          return {
+            ...prev,
+            singleStepIndex: next,
+            pageIndex: singlePageSteps[next]?.anchorPageIndex ?? prev.pageIndex,
+          }
+        })
       })
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
@@ -1457,14 +1457,15 @@ function ReaderPage() {
       }
 
       withTransition('prev', () => {
-      setPageState((prev) => {
-        const next = Math.max(prev.stepIndex - 1, 0)
-        return {
-          ...prev,
-          stepIndex: next,
-          pageIndex: activeDoubleSteps[next]?.anchorPageIndex ?? prev.pageIndex,
-        }
-      })
+        setPageState((prev) => {
+          const next = Math.max(prev.stepIndex - 1, 0)
+          return {
+            ...prev,
+            stepIndex: next,
+            pageIndex:
+              activeDoubleSteps[next]?.anchorPageIndex ?? prev.pageIndex,
+          }
+        })
       })
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
@@ -1482,14 +1483,14 @@ function ReaderPage() {
       }
 
       withTransition('prev', () => {
-      setPageState((prev) => {
-        const next = Math.max(prev.singleStepIndex - 1, 0)
-        return {
-          ...prev,
-          singleStepIndex: next,
-          pageIndex: singlePageSteps[next]?.anchorPageIndex ?? prev.pageIndex,
-        }
-      })
+        setPageState((prev) => {
+          const next = Math.max(prev.singleStepIndex - 1, 0)
+          return {
+            ...prev,
+            singleStepIndex: next,
+            pageIndex: singlePageSteps[next]?.anchorPageIndex ?? prev.pageIndex,
+          }
+        })
       })
       setPendingBoundaryDirection(null)
       setBoundaryNotice(null)
@@ -1772,7 +1773,6 @@ function ReaderPage() {
         return
       }
 
-
       // Check for double-tap to cycle zoom
       if (handleDoubleTap(event.clientX, event.clientY)) {
         suppressTapRef.current = true
@@ -1864,7 +1864,6 @@ function ReaderPage() {
         cycleMode()
         return
       } else if (event.code === 'KeyQ' && event.shiftKey) {
-
         event.preventDefault()
         blurReaderFocusTarget()
         cycleZoom()
@@ -2315,7 +2314,7 @@ function ReaderPage() {
           <Button
             type="button"
             variant={magnifierEnabled ? 'default' : 'soft'}
-            className="h-11 w-full px-3"
+            className="h-10 w-full px-3"
             onClick={() => setMagnifierEnabled((value) => !value)}
           >
             Magnifier: {magnifierEnabled ? 'On' : 'Off'}
@@ -2323,7 +2322,7 @@ function ReaderPage() {
           <Button
             type="button"
             variant={focusMode ? 'default' : 'soft'}
-            className="h-11 w-full px-3"
+            className="h-10 w-full px-3"
             onClick={() => setFocusMode((value) => !value)}
           >
             Distraction-free mode: {focusMode ? 'On' : 'Off'}
@@ -2490,7 +2489,7 @@ function ReaderPage() {
           type="button"
           variant="soft"
           size="sm"
-          className="absolute ui-right-safe-offset ui-top-safe-offset z-40 h-11 px-3 text-xs"
+          className="absolute ui-right-safe-offset ui-top-safe-offset z-40 h-10 px-3 text-xs"
           onClick={() => {
             void toggleFullscreen()
           }}
@@ -2519,12 +2518,16 @@ function ReaderPage() {
         >
           {isTouchDevice && isTouchPortrait ? (
             <div className="flex items-center justify-between px-1 pb-1">
-              <span className="text-xs font-semibold text-foreground">Settings</span>
+              <span className="text-xs font-semibold text-foreground">
+                Settings
+              </span>
               <Button
                 type="button"
                 variant="soft"
-                className="h-11 px-4 text-xs"
-                onClick={() => setMobileSettingsMinimized((current) => !current)}
+                className="h-10 px-4 text-xs"
+                onClick={() =>
+                  setMobileSettingsMinimized((current) => !current)
+                }
               >
                 {mobileSettingsMinimized ? 'Open settings' : 'Close'}
               </Button>
@@ -2537,7 +2540,7 @@ function ReaderPage() {
               <Link
                 to="/series/$seriesId"
                 params={{ seriesId: chapterPayload.manifest.seriesId }}
-                className="reader-settings-action inline-flex h-11 shrink-0 items-center border border-border bg-surface-soft px-3 text-muted-foreground hover:bg-surface"
+                className="reader-settings-action inline-flex h-10 shrink-0 items-center border border-border bg-surface-soft px-3 text-muted-foreground hover:bg-surface"
               >
                 Series
               </Link>
@@ -2545,7 +2548,7 @@ function ReaderPage() {
                 <Button
                   type="button"
                   variant={mode === 'single' ? 'default' : 'soft'}
-                  className="h-12 px-3 text-xs"
+                  className="h-10 px-3 text-xs"
                   aria-label="Switch to single-page mode"
                   onClick={() => {
                     setMode('single')
@@ -2557,7 +2560,7 @@ function ReaderPage() {
                 <Button
                   type="button"
                   variant={mode === 'double' ? 'default' : 'soft'}
-                  className="h-12 px-3 text-xs"
+                  className="h-10 px-3 text-xs"
                   aria-label="Switch to two-page mode"
                   onClick={() => {
                     setMode('double')
@@ -2614,9 +2617,7 @@ function ReaderPage() {
           {!(isTouchDevice && !isTouchPortrait) ? (
             <div
               ref={settingsContentRef}
-              className={
-                isTouchDevice ? 'invisible' : ''
-              }
+              className={isTouchDevice ? 'invisible' : ''}
             >
               <div className="reader-settings-surface space-y-2 text-xs text-muted-foreground">
                 <Link
@@ -3025,7 +3026,9 @@ function ReaderPage() {
                       className="reader-shortcut-sheet mt-2 text-xs"
                     >
                       <p>Nav: A/D or arrows, Space, [ ]</p>
-                      <p>View: Q mode, Shift+Q zoom, 0 reset zoom, F fullscreen</p>
+                      <p>
+                        View: Q mode, Shift+Q zoom, 0 reset zoom, F fullscreen
+                      </p>
                       <p>UI: S sidebar, X focus, Z magnifier</p>
                     </div>
                   ) : null}
@@ -3121,10 +3124,9 @@ function ReaderPage() {
                   pageIndex,
                   stepIndex: 0,
                   singleStepIndex: 0,
-                }));
-                onPageChangeRef.current(pageIndex);
-              }
-              }
+                }))
+                onPageChangeRef.current(pageIndex)
+              }}
             />
             {fullscreenActive && showPageHud ? (
               <div
@@ -3223,182 +3225,244 @@ function ReaderPage() {
         )}
       </section>
 
-
-    {/* Mobile bottom sheet overlay */}
-    {isTouchDevice && !mobileSettingsMinimized && !fullscreenActive ? (
-      <>
-        <div
-          className="reader-bottom-sheet-overlay"
-          onClick={() => setMobileSettingsMinimized(true)}
-        />
-        <div className="reader-bottom-sheet">
-          <div className="reader-bottom-sheet-drag-handle" />
-          <div className="px-3 pb-4 pt-1 text-xs text-muted-foreground">
-            {seriesTitle ? (
-              <p className="truncate text-sm font-semibold text-foreground">
-                {seriesTitle}
-              </p>
-            ) : null}
-            <p className="mt-1">Ch {chapterPayload?.manifest?.chapterNumber ?? "?"} · {chapterPayload?.manifest?.pageCount ?? "?"}p</p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 px-3 pb-3">
-            <Button
-              type="button"
-              variant={mode === "single" ? "default" : "soft"}
-              className="h-12"
-              onClick={() => { setMode("single"); goToPage(currentTargetPageIndex); }}
-            >
-              Single
-            </Button>
-            <Button
-              type="button"
-              variant={mode === "double" ? "default" : "soft"}
-              className="h-12"
-              onClick={() => { setMode("double"); goToPage(currentTargetPageIndex); }}
-            >
-              Double
-            </Button>
-            <Button
-              type="button"
-              variant={mode === "scroll" ? "default" : "soft"}
-              className="h-12"
-              onClick={() => { setMode("scroll"); goToPage(currentTargetPageIndex); }}
-            >
-              Scroll
-            </Button>
-            <Button
-              type="button"
-              variant={readingDirection === "rtl" ? "default" : "soft"}
-              className="h-12"
-              onClick={() => setReadingDirection("rtl")}
-            >
-              RTL
-            </Button>
-            <Button
-              type="button"
-              variant={readingDirection === "ltr" ? "default" : "soft"}
-              className="h-12"
-              onClick={() => setReadingDirection("ltr")}
-            >
-              LTR
-            </Button>
-            <Button
-              type="button"
-              variant={zoomPreset === "fit-height" ? "default" : "soft"}
-              className="h-12"
-              onClick={() => setZoomPreset("fit-height")}
-            >
-              Fit screen
-            </Button>
-            <Button
-              type="button"
-              variant={zoomPreset === "fit-width" ? "default" : "soft"}
-              className="h-12"
-              onClick={() => setZoomPreset("fit-width")}
-            >
-              Fit width
-            </Button>
-            <Button
-              type="button"
-              variant={zoomPreset === "actual" ? "default" : "soft"}
-              className="h-12"
-              onClick={() => setZoomPreset("actual")}
-            >
-              Actual size
-            </Button>
-            <Button
-              type="button"
-              variant={doublePageOffset ? "default" : "soft"}
-              className="h-12"
-              onClick={() => setDoublePageOffset((v) => !v)}
-            >
-              Offset: {doublePageOffset ? "On" : "Off"}
-            </Button>
-          </div>
-          <div className="flex gap-2 px-3 pb-4">
-            <Link
-              to="/series/$seriesId"
-              params={{ seriesId: chapterPayload?.manifest?.seriesId ?? "" }}
-              className="reader-settings-action inline-flex h-12 flex-1 items-center justify-center border border-border bg-surface-soft px-3 text-xs text-muted-foreground hover:bg-surface"
-              onClick={() => setMobileSettingsMinimized(true)}
-            >
-              Back to series
-            </Link>
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-12 flex-1 border border-border text-xs"
-              onClick={() => { setMobileSettingsMinimized(true); goToNextChapter(); }}
-              disabled={!nextChapterId}
-            >
-              Next chapter
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-12 flex-1 border border-border text-xs"
-              onClick={() => { setMobileSettingsMinimized(true); goToPreviousChapter(); }}
-              disabled={!previousChapterId}
-            >
-              Previous chapter
-            </Button>
-          </div>
-        </div>
-      </>
-    ) : null}
-
-    {/* Mobile bottom navigation bar */}
-    {isTouchDevice && mode !== "scroll" && !fullscreenActive ? (
-      <div className="reader-mobile-bottom-bar" style={{
-        opacity: mobileSettingsMinimized ? 1 : 0,
-        transform: mobileSettingsMinimized ? "translateY(0)" : "translateY(16px)",
-        pointerEvents: mobileSettingsMinimized ? "auto" : "none",
-      }}>
-        <Button
-          type="button"
-          variant="ghost"
-          className="touch-min-44-wide flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-0 bg-transparent p-0 text-foreground/80"
-          onClick={goPrevious}
-          aria-label="Previous page"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
-        </Button>
-        <span className="shrink-0 text-xs tabular-nums text-foreground/70" style={{ minWidth: 48, textAlign: "center" }}>
-          {currentTargetPageIndex + 1}
-        </span>
-        <div className="mobile-scrubber flex-1 mx-1">
-          <RangeSlider
-            min={0}
-            max={scrubberMax}
-            value={scrubberValue}
-            onChange={(event) => goToPage(Number.parseInt(event.target.value, 10))}
-            className="w-full accent-primary"
-            style={readingDirection === "rtl" ? { transform: "scaleX(-1)" } : undefined}
+      {/* Mobile bottom sheet overlay */}
+      {isTouchDevice && !mobileSettingsMinimized && !fullscreenActive ? (
+        <>
+          <div
+            className="reader-bottom-sheet-overlay"
+            onClick={() => setMobileSettingsMinimized(true)}
           />
+          <div className="reader-bottom-sheet">
+            <div className="reader-bottom-sheet-drag-handle" />
+            <div className="px-3 pb-4 pt-1 text-xs text-muted-foreground">
+              {seriesTitle ? (
+                <p className="truncate text-sm font-semibold text-foreground">
+                  {seriesTitle}
+                </p>
+              ) : null}
+              <p className="mt-1">
+                Ch {chapterPayload?.manifest?.chapterNumber ?? '?'} ·{' '}
+                {chapterPayload?.manifest?.pageCount ?? '?'}p
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 px-3 pb-3">
+              <Button
+                type="button"
+                variant={mode === 'single' ? 'default' : 'soft'}
+                className="h-12"
+                onClick={() => {
+                  setMode('single')
+                  goToPage(currentTargetPageIndex)
+                }}
+              >
+                Single
+              </Button>
+              <Button
+                type="button"
+                variant={mode === 'double' ? 'default' : 'soft'}
+                className="h-12"
+                onClick={() => {
+                  setMode('double')
+                  goToPage(currentTargetPageIndex)
+                }}
+              >
+                Double
+              </Button>
+              <Button
+                type="button"
+                variant={mode === 'scroll' ? 'default' : 'soft'}
+                className="h-12"
+                onClick={() => {
+                  setMode('scroll')
+                  goToPage(currentTargetPageIndex)
+                }}
+              >
+                Scroll
+              </Button>
+              <Button
+                type="button"
+                variant={readingDirection === 'rtl' ? 'default' : 'soft'}
+                className="h-12"
+                onClick={() => setReadingDirection('rtl')}
+              >
+                RTL
+              </Button>
+              <Button
+                type="button"
+                variant={readingDirection === 'ltr' ? 'default' : 'soft'}
+                className="h-12"
+                onClick={() => setReadingDirection('ltr')}
+              >
+                LTR
+              </Button>
+              <Button
+                type="button"
+                variant={zoomPreset === 'fit-height' ? 'default' : 'soft'}
+                className="h-12"
+                onClick={() => setZoomPreset('fit-height')}
+              >
+                Fit screen
+              </Button>
+              <Button
+                type="button"
+                variant={zoomPreset === 'fit-width' ? 'default' : 'soft'}
+                className="h-12"
+                onClick={() => setZoomPreset('fit-width')}
+              >
+                Fit width
+              </Button>
+              <Button
+                type="button"
+                variant={zoomPreset === 'actual' ? 'default' : 'soft'}
+                className="h-12"
+                onClick={() => setZoomPreset('actual')}
+              >
+                Actual size
+              </Button>
+              <Button
+                type="button"
+                variant={doublePageOffset ? 'default' : 'soft'}
+                className="h-12"
+                onClick={() => setDoublePageOffset((v) => !v)}
+              >
+                Offset: {doublePageOffset ? 'On' : 'Off'}
+              </Button>
+            </div>
+            <div className="flex gap-2 px-3 pb-4">
+              <Link
+                to="/series/$seriesId"
+                params={{ seriesId: chapterPayload?.manifest?.seriesId ?? '' }}
+                className="reader-settings-action inline-flex h-10 flex-1 items-center justify-center border border-border bg-surface-soft px-3 text-xs text-muted-foreground hover:bg-surface"
+                onClick={() => setMobileSettingsMinimized(true)}
+              >
+                Back to series
+              </Link>
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-10 flex-1 border border-border text-xs"
+                onClick={() => {
+                  setMobileSettingsMinimized(true)
+                  goToNextChapter()
+                }}
+                disabled={!nextChapterId}
+              >
+                Next chapter
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-12 flex-1 border border-border text-xs"
+                onClick={() => {
+                  setMobileSettingsMinimized(true)
+                  goToPreviousChapter()
+                }}
+                disabled={!previousChapterId}
+              >
+                Previous chapter
+              </Button>
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      {/* Mobile bottom navigation bar */}
+      {isTouchDevice && mode !== 'scroll' && !fullscreenActive ? (
+        <div
+          className="reader-mobile-bottom-bar"
+          style={{
+            opacity: mobileSettingsMinimized ? 1 : 0,
+            transform: mobileSettingsMinimized
+              ? 'translateY(0)'
+              : 'translateY(16px)',
+            pointerEvents: mobileSettingsMinimized ? 'auto' : 'none',
+          }}
+        >
+          <Button
+            type="button"
+            variant="ghost"
+            className="touch-min-44-wide flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-0 bg-transparent p-0 text-foreground/80"
+            onClick={goPrevious}
+            aria-label="Previous page"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </Button>
+          <span
+            className="shrink-0 text-xs tabular-nums text-foreground/70"
+            style={{ minWidth: 48, textAlign: 'center' }}
+          >
+            {currentTargetPageIndex + 1}
+          </span>
+          <div className="mobile-scrubber flex-1 mx-1">
+            <RangeSlider
+              min={0}
+              max={scrubberMax}
+              value={scrubberValue}
+              onChange={(event) =>
+                goToPage(Number.parseInt(event.target.value, 10))
+              }
+              className="w-full accent-primary"
+              style={
+                readingDirection === 'rtl'
+                  ? { transform: 'scaleX(-1)' }
+                  : undefined
+              }
+            />
+          </div>
+          <span
+            className="shrink-0 text-xs tabular-nums text-foreground/70"
+            style={{ minWidth: 48, textAlign: 'center' }}
+          >
+            {pages.length}
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            className="touch-min-44-wide flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-0 bg-transparent p-0 text-foreground/80"
+            onClick={goNext}
+            aria-label="Next page"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </Button>
+          <Button
+            type="button"
+            variant="soft"
+            className="touch-min-44-wide flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-0 bg-surface-soft p-0 text-foreground/80"
+            onClick={() => setMobileSettingsMinimized(false)}
+            aria-label="Open settings"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </Button>
         </div>
-        <span className="shrink-0 text-xs tabular-nums text-foreground/70" style={{ minWidth: 48, textAlign: "center" }}>
-          {pages.length}
-        </span>
-        <Button
-          type="button"
-          variant="ghost"
-          className="touch-min-44-wide flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-0 bg-transparent p-0 text-foreground/80"
-          onClick={goNext}
-          aria-label="Next page"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
-        </Button>
-        <Button
-          type="button"
-          variant="soft"
-          className="touch-min-44-wide flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-0 bg-surface-soft p-0 text-foreground/80"
-          onClick={() => setMobileSettingsMinimized(false)}
-          aria-label="Open settings"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        </Button>
-      </div>
-    ) : null}
+      ) : null}
       {magnifierEnabled && magnifierFrame ? (
         <div
           className="pointer-events-none fixed z-[90] overflow-hidden border border-border bg-surface/80"

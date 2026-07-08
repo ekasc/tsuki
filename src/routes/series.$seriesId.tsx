@@ -89,6 +89,7 @@ function SeriesPage() {
   const [chapterPage, setChapterPage] = useState(1)
   const [previewCoverPageIndex, setPreviewCoverPageIndex] = useState(0)
   const [loadingLineIndex, setLoadingLineIndex] = useState(0)
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false)
 
   const loadSeries = useCallback(async () => {
     if (!isSeriesAllowed) {
@@ -142,6 +143,9 @@ function SeriesPage() {
 
     setHistoryByChapterId(latestByChapter)
     setLatestHistoryEntry(history[0] ?? null)
+    if (history.length > 0) {
+      setChapterOrder('newest')
+    }
   }, [params.seriesId])
 
   useEffect(() => {
@@ -393,10 +397,30 @@ function SeriesPage() {
                   <h1 className="manga-title mt-4 text-3xl font-bold tracking-tight text-foreground md:text-4xl">
                     {series.title}
                   </h1>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground sm:line-clamp-5 md:line-clamp-none">
-                    {series.description ?? 'No summary yet.'}
-                  </p>
-                  <div className="mt-4 flex flex-wrap gap-2">
+                  {series.description ? (
+                    <>
+                      <p
+                        className={cn(
+                          'mt-2 text-sm leading-6 text-muted-foreground',
+                          !descriptionExpanded && 'truncate',
+                        )}
+                      >
+                        {series.description}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setDescriptionExpanded((v) => !v)}
+                        className="mt-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                      >
+                        {descriptionExpanded ? 'Show less' : 'Show more'}
+                      </button>
+                    </>
+                  ) : (
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                      No summary yet.
+                    </p>
+                  )}
+                  <div className="mt-4 flex gap-2">
                     <span className="manga-stamp">
                       {sortedChapters.length} chapters
                     </span>
@@ -405,10 +429,6 @@ function SeriesPage() {
                     </span>
                     <span className="manga-stamp">Source: {series.source}</span>
                   </div>
-                  <p className="mt-3 text-sm text-muted-foreground">
-                    Start with the next unread chapter, or browse the full list
-                    below.
-                  </p>
                   {latestHistoryLabel ? (
                     <p className="mt-1 text-xs text-muted-foreground">
                       Last read: {latestHistoryLabel}
@@ -470,7 +490,7 @@ function SeriesPage() {
                 type="button"
                 variant={chapterView === 'grid' ? 'default' : 'soft'}
                 size="icon"
-                className="size-10"
+                className="size-9"
                 onClick={() => setChapterView('grid')}
                 title="Grid view"
                 aria-label="Grid view"
@@ -481,7 +501,7 @@ function SeriesPage() {
                 type="button"
                 variant={chapterView === 'list' ? 'default' : 'soft'}
                 size="icon"
-                className="size-10"
+                className="size-9"
                 onClick={() => setChapterView('list')}
                 title="List view"
                 aria-label="List view"
@@ -492,7 +512,7 @@ function SeriesPage() {
                 type="button"
                 variant={chapterOrder === 'oldest' ? 'default' : 'soft'}
                 size="icon"
-                className="size-10"
+                className="size-9"
                 onClick={() => setChapterOrder('oldest')}
                 title="Oldest first"
                 aria-label="Oldest first"
@@ -503,7 +523,7 @@ function SeriesPage() {
                 type="button"
                 variant={chapterOrder === 'newest' ? 'default' : 'soft'}
                 size="icon"
-                className="size-10"
+                className="size-9"
                 onClick={() => setChapterOrder('newest')}
                 title="Newest first"
                 aria-label="Newest first"

@@ -49,7 +49,6 @@ import type { AppRouterContext } from '#/lib/router-context'
 import { upsertReadingHistory } from '#/lib/reading-history'
 import { canonicalUrl } from '#/lib/seo'
 import {
-  buildTwoPageSteps,
   findStepIndexByPageIndex,
   inferAutoSpreadFlags,
   type PairingPage,
@@ -162,32 +161,12 @@ const REMOTE_READER_OPENING_LINES = [
 const useIsomorphicLayoutEffect =
   typeof window === 'undefined' ? useEffect : useLayoutEffect
 
-
-
 interface StoredRemoteProgress {
   pageIndex: number
   mode: ReaderMode
   direction: ReaderDirection
   zoomPreset: ZoomPreset
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 function buildSinglePageSteps(
   pages: ChapterPageManifest[],
@@ -506,7 +485,11 @@ function WeebcentralReaderPage() {
       if (typeof window === 'undefined') return 'rtl'
       const maybeSeriesId = search.seriesId
       if (!maybeSeriesId) return 'rtl'
-      const preset = ReaderUI.loadReaderSeriesPreset(maybeSeriesId, REMOTE_READER_SERIES_PRESETS_KEY, LEGACY_REMOTE_READER_SERIES_PRESETS_KEY)
+      const preset = ReaderUI.loadReaderSeriesPreset(
+        maybeSeriesId,
+        REMOTE_READER_SERIES_PRESETS_KEY,
+        LEGACY_REMOTE_READER_SERIES_PRESETS_KEY,
+      )
       return preset?.readingDirection ?? 'rtl'
     },
   )
@@ -674,7 +657,12 @@ function WeebcentralReaderPage() {
     [doublePageOffset, pages],
   )
   const portraitSingleSteps = useMemo(
-    () => ReaderUI.expandStepsForPortraitSingle(twoPageSteps, pages, readingDirection),
+    () =>
+      ReaderUI.expandStepsForPortraitSingle(
+        twoPageSteps,
+        pages,
+        readingDirection,
+      ),
     [pages, readingDirection, twoPageSteps],
   )
   const singlePageSteps = useMemo(
@@ -967,7 +955,7 @@ function WeebcentralReaderPage() {
           <Button
             type="button"
             variant={magnifierEnabled ? 'default' : 'soft'}
-            className="h-11 w-full px-3"
+            className="h-10 w-full px-3"
             onClick={() => setMagnifierEnabled((value) => !value)}
           >
             Magnifier: {magnifierEnabled ? 'On' : 'Off'}
@@ -975,7 +963,7 @@ function WeebcentralReaderPage() {
           <Button
             type="button"
             variant={mode === 'single' ? 'default' : 'soft'}
-            className="h-12 px-3 text-xs"
+            className="h-10 px-3 text-xs"
             aria-label="Switch to single-page mode"
             onClick={() => {
               setMode('single')
@@ -987,7 +975,7 @@ function WeebcentralReaderPage() {
           <Button
             type="button"
             variant={mode === 'double' ? 'default' : 'soft'}
-            className="h-12 px-3 text-xs"
+            className="h-10 px-3 text-xs"
             aria-label="Switch to two-page mode"
             onClick={() => {
               setMode('double')
@@ -999,7 +987,7 @@ function WeebcentralReaderPage() {
           <Button
             type="button"
             variant={mode === 'scroll' ? 'default' : 'soft'}
-            className="h-12 px-3 text-xs"
+            className="h-10 px-3 text-xs"
             aria-label="Switch to scroll mode"
             onClick={() => {
               setMode('scroll')
@@ -1445,7 +1433,11 @@ function WeebcentralReaderPage() {
       return
     }
 
-    const preset = ReaderUI.loadReaderSeriesPreset(activeSeriesId, REMOTE_READER_SERIES_PRESETS_KEY, LEGACY_REMOTE_READER_SERIES_PRESETS_KEY)
+    const preset = ReaderUI.loadReaderSeriesPreset(
+      activeSeriesId,
+      REMOTE_READER_SERIES_PRESETS_KEY,
+      LEGACY_REMOTE_READER_SERIES_PRESETS_KEY,
+    )
     setReadingDirection(preset?.readingDirection ?? 'rtl')
 
     if (!preset) {
@@ -1464,14 +1456,19 @@ function WeebcentralReaderPage() {
       return
     }
 
-    ReaderUI.saveReaderSeriesPreset(activeSeriesId, {
-      mode,
-      zoomPreset,
-      readingDirection,
-      doublePageOffset,
-      magnifierEnabled,
-      focusMode,
-    }, REMOTE_READER_SERIES_PRESETS_KEY, LEGACY_REMOTE_READER_SERIES_PRESETS_KEY)
+    ReaderUI.saveReaderSeriesPreset(
+      activeSeriesId,
+      {
+        mode,
+        zoomPreset,
+        readingDirection,
+        doublePageOffset,
+        magnifierEnabled,
+        focusMode,
+      },
+      REMOTE_READER_SERIES_PRESETS_KEY,
+      LEGACY_REMOTE_READER_SERIES_PRESETS_KEY,
+    )
   }, [
     activeSeriesId,
     doublePageOffset,
@@ -2992,7 +2989,7 @@ function WeebcentralReaderPage() {
           type="button"
           variant="soft"
           size="sm"
-          className="absolute ui-right-safe-offset ui-top-safe-offset z-40 h-11 px-3 text-xs"
+          className="absolute ui-right-safe-offset ui-top-safe-offset z-40 h-10 px-3 text-xs"
           onClick={() => {
             void toggleFullscreen()
           }}
@@ -3028,7 +3025,7 @@ function WeebcentralReaderPage() {
                 type="button"
                 variant="soft"
                 size="sm"
-                className="h-12 px-3 text-xs"
+                className="h-10 px-3 text-xs"
                 onClick={() =>
                   setMobileSettingsMinimized((current) => !current)
                 }

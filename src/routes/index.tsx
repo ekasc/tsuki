@@ -4,6 +4,7 @@ import {
   Download,
   EllipsisVertical,
   Monitor,
+  RefreshCw,
   Search,
   Share2,
   Smartphone,
@@ -16,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '#/components/ui/button'
 import { FadeImage } from '#/components/ui/fade-image'
 import { Input } from '#/components/ui/input'
+import { cn } from '#/lib/utils'
 import type { ReadingHistoryItem, SavedSeriesSummary } from '#/lib/contracts'
 import { weebcentralSearchQueryOptions } from '#/lib/query-options'
 import { loadReadingHistory } from '#/lib/reading-history'
@@ -93,8 +95,15 @@ function LibraryPage() {
     timer: number | null
   } | null>(null)
   const [libraryFilter, setLibraryFilter] = useState('')
-  const [librarySort, setLibrarySort] = useState<'title' | 'recent' | 'chapters'>('recent')
+  const [librarySort, setLibrarySort] = useState<
+    'title' | 'recent' | 'chapters'
+  >('recent')
   const [importMessage, setImportMessage] = useState<string | null>(null)
+  const [pullToRefresh, setPullToRefresh] = useState<
+    'idle' | 'pulling' | 'ready' | 'refreshing'
+  >('idle')
+  const pullStartY = useRef(0)
+  const pullDist = useRef(0)
   const debounceTimer = useRef<number | null>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
 
@@ -199,6 +208,50 @@ function LibraryPage() {
       window.removeEventListener('keydown', onShortcut)
     }
   }, [searchInputId])
+
+  useEffect(() => {
+    const el = document.getElementById('main-content')
+    if (!el) return
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (window.scrollY > 0) return
+      pullStartY.current = e.touches[0].clientY
+      pullDist.current = 0
+    }
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (pullToRefresh === 'refreshing') return
+      const dist = e.touches[0].clientY - pullStartY.current
+      if (dist <= 0 || window.scrollY > 0) {
+        pullDist.current = 0
+        setPullToRefresh('idle')
+        return
+      }
+      pullDist.current = dist
+      setPullToRefresh(dist > 60 ? 'ready' : 'pulling')
+    }
+
+    const onTouchEnd = () => {
+      if (pullDist.current > 60 && pullToRefresh !== 'refreshing') {
+        setPullToRefresh('refreshing')
+        refreshSideData()
+        setTimeout(() => setPullToRefresh('idle'), 600)
+      } else {
+        setPullToRefresh('idle')
+      }
+      pullDist.current = 0
+    }
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true })
+    el.addEventListener('touchmove', onTouchMove, { passive: true })
+    el.addEventListener('touchend', onTouchEnd, { passive: true })
+
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart)
+      el.removeEventListener('touchmove', onTouchMove)
+      el.removeEventListener('touchend', onTouchEnd)
+    }
+  }, [pullToRefresh, refreshSideData])
 
   const handleRemoveSeries = useCallback(
     (item: SavedSeriesSummary) => {
@@ -322,6 +375,19 @@ function LibraryPage() {
 
   return (
     <div className="pb-10">
+      {pullToRefresh !== 'idle' ? (
+        <div className="flex justify-center pb-2 pt-4">
+          <RefreshCw
+            className={cn(
+              'size-5 text-muted-foreground transition-transform duration-300',
+              pullToRefresh === 'ready' || pullToRefresh === 'refreshing'
+                ? 'rotate-180'
+                : '',
+              pullToRefresh === 'refreshing' ? 'animate-spin' : '',
+            )}
+          />
+        </div>
+      ) : null}
       <section className="exp-hero pb-8">
         <span className="issue-label">Library</span>
         <div className="mt-4 grid gap-5 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
@@ -345,14 +411,14 @@ function LibraryPage() {
                     seriesId: topHistory.seriesId,
                     seriesTitle: topHistory.seriesTitle,
                   }}
-                  className="delight-cta inline-flex h-11 items-center bg-koten px-5 text-sm font-semibold text-[var(--active-contrast)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-koten"
+                  className="delight-cta inline-flex h-10 items-center bg-koten px-4 text-sm font-semibold text-[var(--active-contrast)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-koten"
                 >
                   Continue reading
                 </Link>
               ) : (
                 <a
                   href="#proxy"
-                  className="delight-cta inline-flex h-11 items-center bg-koten px-5 text-sm font-semibold text-[var(--active-contrast)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-koten"
+                  className="delight-cta inline-flex h-10 items-center bg-koten px-4 text-sm font-semibold text-[var(--active-contrast)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-koten"
                 >
                   Search for a series
                 </a>
@@ -544,7 +610,10 @@ function LibraryPage() {
           <kbd className="delight-kbd">/</kbd> to focus search.
         </p>
         <div className="relative mt-4">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
           <Input
             id={searchInputId}
             type="search"
@@ -578,10 +647,14 @@ function LibraryPage() {
           </div>
         ) : null}
 
-        {debouncedQuery.length >= 2 && !isSearching && searchResults && searchResults.length > 0 ? (
+        {debouncedQuery.length >= 2 &&
+        !isSearching &&
+        searchResults &&
+        searchResults.length > 0 ? (
           <div className="mt-3 space-y-1.5">
             <p className="text-xs text-muted-foreground">
-              Found {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
+              Found {searchResults.length} result
+              {searchResults.length !== 1 ? 's' : ''}
             </p>
             {searchResults.map((result) => (
               <Link
@@ -611,7 +684,9 @@ function LibraryPage() {
                   </h4>
                   <p className="text-xs text-muted-foreground">
                     {result.year ? `${result.year} · ` : ''}WeebCentral
-                    {result.chapterCount ? ` · ${result.chapterCount} chapters` : ''}
+                    {result.chapterCount
+                      ? ` · ${result.chapterCount} chapters`
+                      : ''}
                   </p>
                 </div>
               </Link>
@@ -619,9 +694,13 @@ function LibraryPage() {
           </div>
         ) : null}
 
-        {debouncedQuery.length >= 2 && !isSearching && searchResults && searchResults.length === 0 ? (
+        {debouncedQuery.length >= 2 &&
+        !isSearching &&
+        searchResults &&
+        searchResults.length === 0 ? (
           <p className="mt-3 text-sm text-muted-foreground">
-            No results found for &ldquo;{debouncedQuery}&rdquo;. Try a different search term.
+            No results found for &ldquo;{debouncedQuery}&rdquo;. Try a different
+            search term.
           </p>
         ) : null}
 
@@ -643,7 +722,11 @@ function LibraryPage() {
                 />
                 <select
                   value={librarySort}
-                  onChange={(e) => setLibrarySort(e.target.value as 'title' | 'recent' | 'chapters')}
+                  onChange={(e) =>
+                    setLibrarySort(
+                      e.target.value as 'title' | 'recent' | 'chapters',
+                    )
+                  }
                   className="h-7 rounded border border-border bg-surface px-1.5 text-xs text-foreground"
                   aria-label="Sort order"
                 >
@@ -654,8 +737,10 @@ function LibraryPage() {
               </div>
             </div>
             {filteredLibrarySeries.map((item) => {
-              const completedCount = completedChaptersBySeriesId.get(item.id) ?? 0
-              const progress = item.chapterCount > 0 ? completedCount / item.chapterCount : 0
+              const completedCount =
+                completedChaptersBySeriesId.get(item.id) ?? 0
+              const progress =
+                item.chapterCount > 0 ? completedCount / item.chapterCount : 0
 
               return (
                 <article key={`remote:${item.id}`} className="exp-row">
@@ -688,10 +773,19 @@ function LibraryPage() {
                         {completedCount > 0 ? ` · ${completedCount} read` : ''}
                       </p>
                       {item.chapterCount > 0 ? (
-                        <div className="mt-1 h-1 w-24 rounded-full bg-border" role="progressbar" aria-valuenow={completedCount} aria-valuemin={0} aria-valuemax={item.chapterCount} aria-label={`${Math.round(progress * 100)}% read`}>
+                        <div
+                          className="mt-1 h-1 w-24 rounded-full bg-border"
+                          role="progressbar"
+                          aria-valuenow={completedCount}
+                          aria-valuemin={0}
+                          aria-valuemax={item.chapterCount}
+                          aria-label={`${Math.round(progress * 100)}% read`}
+                        >
                           <div
                             className="h-full rounded-full bg-koten transition-all"
-                            style={{ width: `${Math.min(100, Math.round(progress * 100))}%` }}
+                            style={{
+                              width: `${Math.min(100, Math.round(progress * 100))}%`,
+                            }}
                           />
                         </div>
                       ) : null}
@@ -700,7 +794,7 @@ function LibraryPage() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-8 text-destructive/90 hover:text-destructive"
+                    className="size-9 text-destructive/90 hover:text-destructive"
                     aria-label={`Remove saved series ${item.title}`}
                     title={`Remove saved series ${item.title}`}
                     onClick={() => handleRemoveSeries(item)}
@@ -789,9 +883,7 @@ function LibraryPage() {
           </p>
         </details>
         <details className="exp-details-panel px-3 py-2">
-          <summary className="exp-details-summary">
-            Data management
-          </summary>
+          <summary className="exp-details-summary">Data management</summary>
           <p className="mt-2 text-sm text-muted-foreground">
             Export your library, reading history, and progress as a JSON file.
             Import a backup to restore your data on another device or after
@@ -847,7 +939,9 @@ function LibraryPage() {
             </Button>
           </div>
           {importMessage ? (
-            <p className="mt-2 text-xs text-muted-foreground">{importMessage}</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {importMessage}
+            </p>
           ) : null}
         </details>
       </section>
